@@ -1,11 +1,21 @@
 :host {
   display: block;
   height: 100vh;
+  /* Overrides the line above in browsers that support it (all current mobile
+     ones) — `100vh` on mobile is sized against the LARGEST possible viewport
+     (address bar hidden), not what's actually visible on first paint (address
+     bar still showing), so the bottom of the layout was clipped until the user
+     scrolled once and the browser chrome collapsed to reveal it. `100dvh`
+     tracks the actual visible viewport as the browser chrome shows/hides,
+     closing that gap without needing a scroll at all. Kept `100vh` as the first
+     declaration for older/non-supporting browsers to fall back to. */
+  height: 100dvh;
   color: #d1d4dc;
 }
 
 .layout {
   height: 100vh;
+  height: 100dvh;
 }
 
 /* ── Top bar: ticker search + Micha toggle, always visible ─────────────── */

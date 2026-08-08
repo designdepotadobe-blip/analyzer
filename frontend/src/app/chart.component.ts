@@ -100,6 +100,11 @@ const MAX_VISIBLE_BARS = 220;
         width: 100%;
         height: 100%;
         min-height: 0;
+        /* Hands pinch/drag gestures inside the chart entirely to lightweight-charts'
+           own zoom/pan handling instead of the browser's default touch behavior
+           (page scroll/pinch-zoom) competing for the same gesture — see the
+           viewport meta tag in index.html for the other half of this fix. */
+        touch-action: none;
       }
       .chart-legend {
         position: absolute;

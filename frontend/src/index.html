@@ -4,7 +4,12 @@
   <meta charset="utf-8">
   <title>Stock Analyzer</title>
   <base href="/">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- user-scalable=no: without this, pinching the chart to zoom its own price/
+       time scale (lightweight-charts' own touch handling) fought with the browser's
+       native page-zoom for the same gesture, so a pinch zoomed the whole screen
+       instead of the chart. The app has no page content that benefits from
+       pinch-zoom anyway (it's a fixed dashboard layout, not text to zoom into). -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 </head>
 <body>
   <app-root></app-root>
