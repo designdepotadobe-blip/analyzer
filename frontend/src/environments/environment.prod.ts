@@ -4,5 +4,5 @@
 // though both live in the same project.
 export const environment = {
   production: true,
-  apiBase: 'https://web-production-74f948.up.railway.app',
+  apiBase: 'https://analyzer-production-21a7.up.railway.app',
 };
