@@ -1,5 +1,13 @@
-# Railway (and any other Nixpacks/Heroku-style Python buildpack) looks for
-# requirements.txt at the repo root — the real dependency list lives in
-# backend/requirements.txt, this just points there so both stay a single
-# source of truth instead of two files to keep in sync.
--r backend/requirements.txt
+# Kept identical to backend/requirements.txt (the file local dev/README use) —
+# NOT a `-r backend/requirements.txt` reference: Railway's Nixpacks builder
+# copies only requirements.txt into its dependency-install layer before the
+# rest of the repo (including backend/) is copied in, so a cross-directory
+# reference here fails with "No such file or directory" at build time. This
+# has to be self-contained.
+fastapi>=0.110
+uvicorn[standard]>=0.27
+yahooquery>=2.3
+pandas>=2.0
+numpy>=1.24
+scipy>=1.10
+pytickersymbols>=1.13
