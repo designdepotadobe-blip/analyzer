@@ -75,6 +75,15 @@ def _universe() -> tuple[str, ...]:
                 'ORCL', 'NEE', 'LITE', 'NVTS', 'TE')
 
 
+@app.get("/")
+def root():
+    # Deploy platforms (Railway included) default their own healthcheck to
+    # GET / — this API otherwise has no route there, which made Railway treat
+    # an actually-healthy container as failed and never cut public traffic
+    # over to it (502 at the edge despite a clean startup log).
+    return {"status": "ok", "docs": "/docs"}
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
