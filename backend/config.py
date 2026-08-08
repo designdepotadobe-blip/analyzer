@@ -1,0 +1,444 @@
+"""
+Tuning constants and shared helpers for the stock analyzer.
+
+Every distance threshold is expressed in ATR multiples so that calm and volatile
+stocks are judged on the same footing. Grouped by the subsystem that consumes them.
+"""
+
+from __future__ import annotations
+
+import math
+from typing import Optional
+
+# ── Data / indicators ─────────────────────────────────────────────────────────
+SMA_PERIODS = (20, 50, 150, 200)
+ATR_PERIOD = 14
+
+HISTORY_PERIOD = '3y'        # fetch 3 yrs so SMA150 is fully warmed up before the display window
+HISTORY_INTERVAL = '1d'
+DISPLAY_BARS = 504           # bars sent to the frontend (~2 trading years)
+MIN_BARS = 160              # refuse to analyze anything with fewer usable bars
+
+FETCH_CACHE_TTL = 300       # seconds to reuse a downloaded history (speeds up scans + re-analyze)
+
+# ── Swing pivots ──────────────────────────────────────────────────────────────
+PEAK_DISTANCE_BARS = 5      # min bar gap between swing pivots
+SWING_PROMINENCE_ATR = 0.5  # a pivot must stand out by ≥ this many ATRs
+
+# ── Horizontal support / resistance ───────────────────────────────────────────
+CLUSTER_ATR_FACTOR = 0.6    # merge horizontal pivots within this many ATRs
+# …but a cluster may never grow WIDER than this in total. Clustering is single-linkage
+# (each pivot is compared to the last one admitted), so without a span cap a run of
+# pivots each 0.59 ATR apart chains into one "level" of unlimited width: GTLB carried
+# a level whose zone ran 28.33-37.83, i.e. 4.86 ATR, swallowing every real wall in
+# between. Since `_edge()` quotes `zone_top` as the breakout price, a bloated zone
+# both hides nearer resistance and overshoots the line. His own drawn bands measure
+# 0.1 ATR (CRWD "553.93 - 555.81") to 0.6 ATR (GTLB "32.99 - 33.97"), so 1.0 is a
+# generous ceiling rather than a tight one.
+LEVEL_MAX_SPAN_ATR = 1.0
+LEVEL_NEAR_ATR = 4          # only show levels within this many ATRs of price
+LEVEL_STRONG_TOUCHES = 4    # always show levels with this many touches, even if far away
+LEVEL_MAX_SHOW = 2          # max levels shown per side (resistance / support)
+LEVEL_NEAR_BUCKET_ATR = 2.0  # levels this close sort ahead of everything else
+MIN_LEVEL_TOUCHES = 2
+
+SR_MERGE_ATR = 0.35         # merge a R+S pair into a zone if they are within this many ATRs
+SR_KEEP_TOUCHES = 4         # but keep both lines if EITHER has this many touches (well-tested)
+
+ZONE_MIN_SPREAD_ATR = 0.18  # min cluster spread (ATRs) to draw as a two-line zone instead of one line
+CONSOL_MIN_BARS = 8         # min consecutive bars to qualify as a consolidation zone
+CONSOL_MAX_RANGE = 1.5      # max range of a consolidation (ATR multiples)
+ABSORPTION_PCT = 0.65       # if this fraction of recent bars closed "through" a level → absorbed
+BREAKOUT_LOOKFORWARD = 20   # bars ahead to score a historical breakout
+
+# ── Trend geometry ────────────────────────────────────────────────────────────
+NEAR_ATR = 0.7              # "close to a level" tolerance, in ATRs
+EXTENDED_ATR = 2.0          # > this many ATRs above a broken level ⇒ extended
+MIN_TREND_SLOPE_PCT = 0.03  # min |slope| (% of price per bar) to call a line "sloped"
+
+# ── Micha-style segment trendlines / channels ─────────────────────────────────
+# Micha's lines are pivot-snapped segments ("snap it with magnets — high to high to
+# high, four, five highs"), anchored at the extreme of the CURRENT leg, and only
+# drawn when today's price is actually interacting with them.
+TL_TOUCH_TOL_ATR = 0.5      # within this many ATRs of the line counts as a touch
+TL_MIN_TOUCHES = 3          # 2 pivots define a line, the 3rd makes it real
+TL_MIN_SPAN_BARS = 15       # a line spanning less than this is noise, not a trend
+TL_MAX_VIOLATION_BARS = 10  # older crossings invalidate the line; newer = a breakout
+TL_RELEVANT_ATR = 3.0       # keep a line only if it passes this close to today's price
+TRI_RELEVANT_ATR = 6.0      # triangle: BOTH lines must be this close to price (near apex)
+CH_MIN_RAIL_TOUCHES = 2     # the parallel rail needs this many touches of its own
+CH_MIN_WIDTH_ATR = 1.5      # rails closer than this are noise, not a channel
+
+BULLFLAG_POLE_GAIN = 0.18   # pole must rise ≥ 18%
+BULLFLAG_POLE_BARS = 35     # ...within this many bars
+BULLFLAG_FLAG_BARS = 25     # flag/consolidation length
+
+FIB_MIN_RISE_PCT = 0.15     # a "nice rise" is ≥ 15%
+FIB_ZONE = (0.45, 0.66)     # current retracement inside this band ⇒ ripe (0.5–0.618)
+# Micha measures the retracement of the RECENT rally, not an ancient IPO low. Bounding
+# the base search to ~1 trading year before the peak makes the % match what he draws.
+RALLY_LOOKBACK_BARS = 252
+
+BOUNCE_LOOKBACK = 15        # bars to look back for an MA bounce
+GAP_LOOKBACK = 60           # bars to look back for unfilled gaps
+
+# ── Volatility + volume ───────────────────────────────────────────────────────
+# Calibrated against Micha's actual watermark circles: PM 2.67%=🟢, NVDA 3.46%=🟡,
+# LMND 6.5%=🔴, WGMI 9.2%=🔴 → green < 3, yellow 3-5, red ≥ 5.
+ATR_PCT_LOW = 3.0           # ATR/price %: below this → calm volatility (green)
+ATR_PCT_HIGH = 5.0          # ATR/price %: above this → high volatility (red)
+VOL_SPIKE_FACTOR = 1.5      # breakout bar volume must be ≥ this × avg to be confirmed
+VOL_AVG_PERIOD = 20         # bars used to compute average volume baseline
+VOL_BREAKOUT_LOOKBACK = 60  # bars to scan for vol-confirmed resistance breakouts
+# `breakout_markers()` above scans a full 60-bar (~3 month) window so the CHART can
+# still show an old breakout arrow. But the verdict engine's "broke resistance —
+# enter here" framing means something happening NOW — reading any marker in that
+# whole 60-bar window as "currently broke out" let a 2-month-old event drive an
+# "enter now" call today, long after the actual trigger. Bound to the same recency
+# window the direction-change sequence itself uses.
+BREAKOUT_FRESH_BARS = 15
+
+# ── Micha-method thresholds (learned from his daily videos) ───────────────────
+# "The 20 method" — distance from the 20MA is his overextension gauge. Once price
+# runs too far above the 20MA ("too hard, too fast") he expects a snap-back and
+# refuses to chase — he waits for the pullback / capitulation instead.
+EXT20_STRETCHED_ATR = 4.0   # > this many ATRs above the 20MA ⇒ parabolic / don't chase
+# …and the band below it, which he names separately and treats differently: "מתוחה
+# קצת מהממוצע. אם השוק אוהב את הדיווח - אתם לא מאחרים" (AAPL — a caveat, not a veto),
+# "כרגע קצת מתוחה אז זהירות עם הכניסה" (LUNR). Between here and STRETCHED it costs a
+# little and says so; above STRETCHED it caps the letter.
+EXT20_MILD_ATR = 2.5
+GOLDEN_POCKET = (0.60, 0.68)  # the 61.8–66% "golden pocket" Fib zone — his premium value entry
+MOMENTUM_RUN_DAYS = 5       # this many consecutive up-closes ⇒ a momentum run (getting extended)
+CAPITULATION_VOL = 1.8      # a wash-out bar's volume vs the 20-day average
+LONG_BASE_BARS = 25         # a consolidation this long is a "pressure-relief" base (bullish coil)
+MIN_MARKET_CAP = 1_000_000_000  # Micha screens out sub-$1B names for the 150 method
+ROUND_NEAR_ATR = 0.6        # a round number this close to price is a psychological level
+EARNINGS_SOON_DAYS = 5      # earnings within this many days → defer new entries
+STATION_MERGE_ATR = 0.6     # target "stations" closer than this merge into one
+MAX_TARGET_STATIONS = 3     # the ladder Micha shows: next station → next → ATH
+
+# ── How long a target actually takes, and how often it is reached ─────────────
+# ATR is the right UNIT for distance ("כל יומיים כאלה זה יכול להיות 16%") but it is a
+# RANGE measure, not net drift — the same trap already documented for the alert at
+# ALERT_MAX_PCT. The old model read `days = gain% / ATR%`, i.e. one full average
+# range of NET progress every single day, and produced "ONDS +20% ≈ 2.4 days" and
+# "MSTR +30% ≈ 4.2 days, fast" on a stock graded F/"get out".
+#
+# Measured instead: 69 tickers × 5y daily, every bar with close > SMA150 (the
+# method's own entry anchor), target set k×ATR above the close, first touch of the
+# high within a 120-day horizon. n ≈ 690 ticker/k cells.
+#   k(ATR)  1     2     3     4     6     8     12    16    20    25
+#   days    4    12    20    28    42    52    66    78    82    83
+#   hit%   91    83    75    68    54    42    27    17    12     7
+# Reality is ~6-7× slower than the old model through the tradeable range (k≤8).
+# The curve is close to the random-walk result (days ≈ 2k²) up to k≈4, then bends
+# under survivorship: past k≈8 only the fast movers ever arrive inside the horizon,
+# so `days` there is "when it works", which is why HIT_RATE must be shown with it.
+TIME_TO_TARGET_K    = (1,   2,   3,   4,   6,   8,   12,  16,  20,  25)
+TIME_TO_TARGET_DAYS = (4,   12,  20,  28,  42,  52,  66,  78,  82,  83)
+TIME_TO_TARGET_HIT  = (.91, .83, .75, .68, .54, .42, .27, .17, .12, .07)
+# Volatility tilts it slightly — a hot name covers the same ATR distance a little
+# faster (k=4: calm 32d / mid 28d / hot 26d). Real, but small: keep it bounded so a
+# volatile name can never look like a different asset class.
+TIME_VOL_PIVOT_ATR_PCT = 3.5
+TIME_VOL_SLOPE = 0.03
+TIME_VOL_CLAMP = (0.88, 1.12)
+# Pace bands, in REAL trading days (the old 5/12 thresholds were on the 6×-fast scale)
+PACE_FAST_DAYS = 15
+PACE_NORMAL_DAYS = 40
+# How much the grade may move on time-to-target. Swing trading has two objectives —
+# earn, and do not sit in it for a year — and the grade only ever scored the first.
+# Two setups with identical structure and identical R/R are NOT equally good if one
+# reaches its first station in 12 days and the other in 60.
+#
+# Deliberately small, and deliberately NOT a reward for raw volatility. High ATR
+# earns more percent per day AND risks more percent per trade; measured, the two
+# cancel to roughly a wash on a risk-adjusted basis (that is why the stop is judged
+# in ATR, see STOP_WIDE_ATR). Paying points for ATR itself would be paying for risk.
+# What is paid for here is DISTANCE TO THE FIRST TARGET IN ATR, which is what
+# actually sets both the wait and the odds — and which R/R alone reads backwards,
+# since a nearer target lowers R/R. The pair together say: tight stop, reachable
+# target. That is the method's ideal, and neither term expresses it alone.
+#
+# Scored against the THESIS target (the top of the ladder — the same one `risk_reward`
+# is measured to), not the first station: the first station is by construction the
+# next nearby level, ~1 ATR out for every name, so it carries no information and
+# scored full marks for every stock tested. Bands are the measured quantiles of
+# days-to-thesis across 150 universe names (p25 14d / p50 25d / p90 56d), pivoting
+# at the median so the term is a true ± around typical rather than a free bonus.
+# Sanity checks on that sample: corr(days, ATR%) = -0.34 — volatile names do reach
+# their thesis sooner, which is the effect being paid for, but far from a proxy for
+# ATR itself; and corr(days, current grade) = +0.25, i.e. the grade today mildly
+# FAVOURS slower theses, so this term corrects an existing tilt rather than
+# amplifying one.
+TIME_EFFICIENCY_MAX = 4.0      # ± points, out of a 100-point grade
+TIME_FAST_DAYS = 14.0          # p25 — full bonus at/under
+TIME_MEDIAN_DAYS = 25.0        # p50 — neutral
+TIME_SLOW_DAYS = 56.0          # p90 — full penalty at/over
+
+# ── Expectancy: what a setup is actually worth ───────────────────────────────
+# `growth.hit_rate` answers "is the target reached inside 6 months" and IGNORES the
+# stop, so it cannot rank a home-run setup against a safe one. This is the number
+# that can: P(target touched BEFORE the stop), measured, and the expectancy in R
+# that falls out of it.
+#
+# Measured: 60 tickers × 5y, every bar with close > SMA150, stop j ATR below entry,
+# target j*R above, walked forward 120 days, first touch wins, same-bar ties given
+# to the STOP. n = 39,589 per cell. P(win) by (stop ATR, R multiple):
+#             R=1     1.5     2       3       4       5       7      10
+#   stop 1.0  52.7%  43.6%  37.3%  28.9%  24.0%  20.8%  16.6%  12.4%
+#   stop 1.5  53.8%  44.3%  37.9%  29.9%  25.2%  21.7%  16.0%  10.2%
+#   stop 2.0  54.6%  45.1%  38.8%  31.0%  25.2%  20.6%  13.7%   7.5%
+#   stop 2.5  55.0%  45.7%  39.9%  30.8%  23.8%  18.5%  11.0%   5.2%
+#   stop 3.0  55.6%  46.7%  40.4%  29.2%  21.8%  15.8%   8.6%   3.7%
+#
+# The finding that matters: expectancy peaks at a HIGHER R the TIGHTER the stop —
+# 1.0 ATR/10R = +0.40R, 2.0 ATR/5R = +0.32R, 3.0 ATR/3R = +0.29R. Tight stop plus
+# far target is the highest-expectancy shape there is, at a ~12% win rate. That is
+# "prefer home runs while minimising entry risk" stated in numbers, and it is why
+# the grade's old `rr >= 3` ceiling had to go: it could not see the best zone.
+# The mirror-image trap is real too — a WIDE stop with a far target times out 35% of
+# the time and turns negative (3.0 ATR/10R = -0.25R): capital stuck, thesis unpaid.
+#
+# Caveat kept deliberately: this is the baseline edge of "above the 150" with NO
+# setup-quality filter, so it is a floor the app's own setups should beat, not a
+# claim about them. Re-run the study rather than hand-editing these knots.
+EXPECTANCY_STOPS = (1.0, 1.5, 2.0, 2.5, 3.0)
+EXPECTANCY_RS = (1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 7.0, 10.0)
+EXPECTANCY_PWIN = (
+    (.527, .436, .373, .289, .240, .208, .166, .124),   # stop 1.0 ATR
+    (.538, .443, .379, .299, .252, .217, .160, .102),   # stop 1.5
+    (.546, .451, .388, .310, .252, .206, .137, .075),   # stop 2.0
+    (.550, .457, .399, .308, .238, .185, .110, .052),   # stop 2.5
+    (.556, .467, .404, .292, .218, .158, .086, .037),   # stop 3.0
+)
+
+
+def _interp(x, xs, ys):
+    if x <= xs[0]:
+        return ys[0]
+    if x >= xs[-1]:
+        return ys[-1]
+    i = next(j for j in range(1, len(xs)) if xs[j] >= x)
+    t = (x - xs[i - 1]) / (xs[i] - xs[i - 1])
+    return ys[i - 1] + t * (ys[i] - ys[i - 1])
+
+
+def expectancy(stop_atr: float | None, rr: float | None) -> tuple:
+    """
+    (P(target before stop), expectancy in R) for a setup with this stop width and
+    this reward-to-risk. Bilinear over the measured grid above.
+
+    E = p*R - (1-p), i.e. win R, lose 1 — the honest way to compare a 12%/10R
+    home run against a 55%/1R scalp, which raw R/R and raw win-rate each get wrong
+    on their own.
+    """
+    if stop_atr is None or rr is None or stop_atr <= 0 or rr <= 0:
+        return None, None
+    rows = [_interp(rr, EXPECTANCY_RS, row) for row in EXPECTANCY_PWIN]
+    p = _interp(stop_atr, EXPECTANCY_STOPS, rows)
+    p = min(max(p, 0.0), 1.0)
+    return round(p, 4), round(p * rr - (1 - p), 4)
+
+
+def time_to_target(gain_atr: float, atr_pct: float | None = None) -> tuple:
+    """
+    (median trading days, probability of getting there within ~6 months) for a move
+    of `gain_atr` ATRs, from the table above. Linear interpolation between the
+    measured knots; flat outside them.
+    """
+    k = max(0.0, float(gain_atr))
+    ks, ds, hs = TIME_TO_TARGET_K, TIME_TO_TARGET_DAYS, TIME_TO_TARGET_HIT
+    if k <= ks[0]:
+        # below the smallest measured knot, scale the first cell down linearly —
+        # a fifth of an ATR is not four days away
+        f = k / ks[0]
+        days, hit = ds[0] * max(f, 0.25), min(0.97, hs[0] + (1 - hs[0]) * (1 - f))
+    elif k >= ks[-1]:
+        days, hit = ds[-1], hs[-1]
+    else:
+        i = next(j for j in range(1, len(ks)) if ks[j] >= k)
+        t = (k - ks[i - 1]) / (ks[i] - ks[i - 1])
+        days = ds[i - 1] + t * (ds[i] - ds[i - 1])
+        hit = hs[i - 1] + t * (hs[i] - hs[i - 1])
+    if atr_pct:
+        adj = 1.0 - TIME_VOL_SLOPE * (float(atr_pct) - TIME_VOL_PIVOT_ATR_PCT)
+        days *= min(max(adj, TIME_VOL_CLAMP[0]), TIME_VOL_CLAMP[1])
+    return round(days, 1), round(hit, 3)
+
+# ── "שינוי כיוון" — the direction-change sequence ──────────────────────────────
+# From the IGV community live, where he stops and dictates the checklist outright:
+# "you'll now have three or four things you look at, and for every stock you'll know
+# whether it meets the criterion or not". He is explicit that this is read on the
+# WEEKLY candle ("שבועי. אני מדבר איתכם כרגע על שבועי") and that the two things that
+# can't be faked are price and volume. The four stages, in his order:
+#   1. ווליום ספייק  — "was there a volume SPIKE? a spike is not a rise of 0.1. If
+#      there was no volume increase, the stock simply didn't interest anyone."
+#   2. נר שינוי כיוון — a direction-change candle: a doji ("it will NOT necessarily
+#      be green — sometimes it's red, and it's still a doji to me"), or a bullish
+#      harami / inside candle "whose whole body sits in the middle".
+#   3. שפלים עולים   — rising lows, connectable by a line: "that gives you greater
+#      confidence" (IGV 79.27 → 79.71).
+#   4. פריצה          — "the last stage, no less important: wait for a clear point
+#      that says we have CONTINUITY, meaning a breakout" — of resistance ABOVE
+#      price, "אף פעם לא מתחתיי" (never below me). This is his condition for
+#      actually taking the trade; stages 1-3 only make it interesting.
+DC_WEEKLY_BARS = 5          # daily bars aggregated into one weekly candle
+DC_LOOKBACK_WEEKS = 14      # weekly window the sequence is read over
+DC_VOL_SPIKE = 1.35         # weekly volume ≥ this × the weekly average ⇒ a real "spike"
+DC_DOJI_BODY = 0.34         # |close-open| ≤ this × the week's range ⇒ a doji (red counts)
+DC_RECENT_WEEKS = 3         # stages 1-2 must have happened within this many weeks
+
+# ── The judgement layer (verdict.py) ──────────────────────────────────────────
+# The three axes of the grade come straight from the shape of his own A-grade
+# sentence, which always has exactly three clauses: "מעל נקודת הפריצה (trigger).
+# מעל ממוצע 150 (setup). קרוב לממוצע (risk — the stop is right there). מה עוד נותר
+# לבקש" (GEV). Risk carries as much weight as structure because what separates an
+# excellent setup from a merely good one, in every post he writes, is that the
+# invalidation sits close enough to be obvious.
+GRADE_BUDGET = {'setup': 40, 'trigger': 30, 'risk': 30}
+GRADE_BANDS = [(4, 85.0), (3, 70.0), (2, 55.0), (1, 40.0), (0, 0.0)]
+GRADE_BAND_RANGE = {4: (85.0, 99.0), 3: (70.0, 84.9), 2: (55.0, 69.9),
+                    1: (40.0, 54.9), 0: (0.0, 39.9)}
+
+# How far the named trigger price is, in ATR. "אין מה להיכנס לפני" — a pending
+# trigger is an alert, never an entry, so this only grades how watchable it is.
+TRIGGER_AT_HAND_ATR = 1.0
+TRIGGER_NEAR_ATR = 2.5
+TRIGGER_REACH_ATR = 5.0
+
+# Resistances this close together are ONE wall, and he quotes the breakout as the
+# band rather than a line: "קו הפריצה 85.8-86.5$" (LRCX), "התנגדות עשבו ב 477-484"
+# (SPGI). Confirmed on his own charts, which draw the band and label its range —
+# CRWD 2026-04-22 carries "553.93 - 555.81", "516.62 - 519.96", "454.00 - 455.59",
+# and GTLB 2026-07-09 a "32.99 - 33.97" band under the caption "פריצה אחרי מחיר $34":
+# **the price he names is the TOP of the band**, which is what this produces.
+# Measured off those charts his bands run 0.1 ATR (CRWD) to 0.6 ATR (GTLB), so this
+# matches CLUSTER_ATR_FACTOR rather than exceeding it — an earlier 1.0 here was a
+# guess made before the charts were read, and merged walls he keeps separate.
+TRIGGER_ZONE_ATR = 0.6
+
+# "קרוב לממוצע" is a clause of his A-grade sentence, and distance from it is a
+# spectrum he grades explicitly: RDDT — "where it was last time: close to the
+# average, not stretched / now: stretched and far from the average. Is this a
+# suitable entry point right now — I'm not sure"; VRT — "above the 150 BUT NOT
+# STRETCHED" said as praise; SHAK — "stretched from its averages… what is certain
+# is you MUST put a stop"; LUNR — "a bit stretched so be careful with the entry".
+# Measured (80 names x 5y, n=44k): being far above the 150 does NOT lower the
+# R-multiple hit rate — but the drawdown you must sit through to get it grows from
+# -12.2% (0-5% above) to -18.0% (25-40%) to -22.7% (40%+). So it is not a worse
+# STOCK, it is a worse ENTRY, which is precisely the axis the grade scores.
+FAR_FROM_MA_PCT = 0.35      # beyond this, "רחוקה מהממוצע" — a poor entry point
+# "מתוחה" is declared off the 150 and the 200 only — never the 20, which measures a
+# different thing (how fast the last few weeks went; `ran_hot` covers that) and
+# routinely disagrees: CRWD/FTNT/PANW all sit at or under their 20MA while 40%+ above
+# their 150. Below FAR it is "קצת מתוחה" (AAPL "אתם לא מאחרים"); above it, "מתוחה"
+# (SHAK "חייבים לשים סטופ"); clear of the 200 by FAR_FROM_MA200_PCT as well and it is
+# "מהממוצעים" — plural, both gone — the state he declines outright (RDDT).
+MILD_FROM_MA_PCT = 0.15     # matches _near_ma's own "close to the average" threshold
+FAR_FROM_MA200_PCT = 0.50
+
+# Top reward marks require a thesis the market actually reaches, not just a big
+# ratio scaled by poor odds. Measured (70 names x 5y, 62k levels): 4-6 ATR out is
+# reached 72.7% of the time, 6-9 ATR 53.0%, 9-13 ATR 24.8%. Set between the 6-9 and
+# 9-13 bands — a coin flip still qualifies for full marks, a 1-in-4 does not.
+TARGET_ODDS_FLOOR = 0.40
+
+# The rim of a cup is a price he names as the breakout even though it is a SINGLE
+# pivot and therefore can never become a clustered level (MIN_LEVEL_TOUCHES=2):
+# MMM "קאם אנד הנדל, פריצה פוטנציאלית מעל 177.5", LVS "cup … breakout above 55.66",
+# GTLB "cup and handle, פריצה אחרי מחיר $34". With no candidate for it, `_trigger`
+# fell through to the all-time high and the setup read as further away than he calls
+# it. Gated on the SHAPE rather than on the pivot alone, or every ordinary pullback
+# high qualifies:
+#   • the decline after the rim must be deep enough to be a cup, not a shelf;
+#   • price must have climbed back near the rim — from the bottom of the cup the rim
+#     is not today's obstacle, it is a different trade entirely.
+CUP_RIM_DEPTH_ATR = 3.0     # min drop from the rim to the trough behind it
+CUP_RIM_NEAR_ATR = 3.0      # ...and how close price must be back to the rim now
+
+# "הבעיה שלי זה שהיא רצה כל כך הרבה בימים האחרונים … 6 ימים רצופים של עליות" (CRWD).
+# The short-term twin of the extension gauge: he refused a stock that had just
+# reclaimed its 150 — a trigger by the method's own rules — because the run INTO the
+# trigger was the move. Counted both ways he says it: consecutive up days, and the
+# size of the recent run in ATRs (a 3-day gap-and-drift shows up in the second).
+RUN_UP_LOOKBACK = 6
+RUN_UP_DAYS = 6             # consecutive green days
+RUN_UP_ATR = 3.0            # or this much ground covered in RUN_UP_LOOKBACK days
+
+# (An OVERHEAD_WALL_PENALTY lived here and was removed after measurement — it charged
+#  a stock for owning a target ladder and cost TEAM its A. See the note in
+#  verdict._grade before considering anything like it again.)
+
+# ── "מתקרב להכרעה. שימו התראה" — the alert band ───────────────────────────────
+# A stock can be a clear "not now" and still sit one ordinary day's move from
+# becoming a setup, and he tracks exactly those by name and by alert price:
+# ONDS "מתקרב להכרעה. שימו התראה. כשהיא תקפוץ אני אעלה את הסט אפ", AMD "שימו התראה
+# ותמתינו בסבלנות - כשתפרוץ אני מבטיח סט אפ", SMCI "קפצה התראה אז הנה", UPS "התראה
+# מעל 111$", AZEK "שימו אותה למעקב + התראה".
+#
+# This is deliberately SEPARATE from the grade. The grade answers "is this a trade
+# today" and must stay honest about a D; the alert answers "how far is it from
+# becoming one", and the two are different questions. Measured in ATR, so it means
+# the same thing on a 10%-ATR miner and a 2%-ATR mega-cap: fractions of an average
+# day, not a percentage that flatters calm names.
+ALERT_IMMINENT_ATR = 0.5    # under half an average daily range
+ALERT_CLOSE_ATR = 1.0       # about one average daily range
+ALERT_NEAR_ATR = 2.0        # a couple of ranges; beyond this it is not "soon"
+# ATR is a RANGE measure, not net directional drift, so it cannot be the only gate:
+# INTC's trigger sits 16.8% away, which on an 8.4%-ATR name computes to "2 average
+# days" and reads as imminent. It is not. A move that large is a different thesis,
+# whatever the volatility, so cap the alert in plain percent too.
+ALERT_MAX_PCT = 8.0
+# ...and a floor, because a trigger 0.2% overhead (ADBE) is not a decision point,
+# it is the same price — it will be crossed and re-crossed by ordinary noise.
+ALERT_MIN_ATR = 0.10
+ALERT_MIN_PCT = 0.3
+
+# "growth at a reasonable price — מה זה מחיר טוב? קרוב לממוצע". A value call is only
+# a value call near the average; this is how far BELOW the 150 still counts.
+VALUE_NEAR_150_ATR = 3.0
+OFF_HIGH_VALUE_PCT = 25.0    # "מינוס 46% מהשיא", "45% ירידה מהשיא" — the discount
+STOP_BUFFER = 0.005          # "המחירים שאני כותב — אלו גם איזורי הסטופ ±חצי אחוז"
+
+# ── Stop quality ──────────────────────────────────────────────────────────────
+# Micha's stops are TIGHT and always defined ("סטופ ±0.5%" under the level). Stop
+# quality is the most method-faithful risk measure there is, and it was missing from
+# the grade entirely — INTC measured a 40.3% stop while still being told "enter now".
+# Two failure modes, and they need different tests:
+#   • too WIDE in % terms — not a Micha trade at any R/R (INTC: 40.3%)
+#   • too TIGHT vs ATR — will be stopped out by ordinary daily noise regardless of
+#     how good the R/R looks on paper (ORCL: a 1.0% stop on an 8.4%-ATR name is
+#     0.15 ATR, i.e. inside a single average day's range)
+STOP_IDEAL_ATR = (0.75, 2.5)   # stop distance in ATR that is neither noise nor reckless
+STOP_NOISE_ATR = 0.5           # tighter than this ⇒ likely stopped by noise
+# Two widths, because he names both: "מעל 288 עם סטופ קרוב יחסית למי שבטרייד. מי
+# שמחזיק לטווח ארוך - סטופ רחב יותר" (AAPL). A swing position gets more room —
+# "לוודא שאתם לא חונקים את הסטופ" (KRE, a months-long trade).
+STOP_POSITION_WIDEN = 1.6      # multiply the trade stop's distance for a position stop
+# ATR is the primary unit, % only a far backstop. Judging stop width in % punishes
+# volatility: ARM's stop measured 1.58 ATR — squarely sensible — yet 17.0% tripped a
+# 15% ceiling, while INTC's genuinely reckless stop was 3.40 ATR / 40.3%. A 17% stop
+# on a 9.2%-ATR name is 1.6 average days; the same 17% on a 2%-ATR name would be 8.
+STOP_WIDE_ATR = 4.0            # beyond this many ATR ⇒ not a stop in this method
+STOP_MAX_RISK_PCT = 30.0       # ...or this much of the position, where sizing breaks
+# The other half of that argument: a wide-in-% stop is not forbidden, it is SMALLER.
+# Risking this much of the account per trade, position size = budget / stop%, so a
+# 16.8% stop (ONDS) is a 6% position and a 2.4% stop (NVDA) is a 42% one — same money
+# at risk. Quoting the stop % without this makes the volatile name look untradeable.
+STOP_RISK_BUDGET_PCT = 1.0
+# A gap only works as a stop reference while it is still near price — FTNT's unfilled
+# gap measured ~31% below, which is history, not a stop level.
+GAP_STOP_MAX_ATR = 3.0
+
+
+def jnum(x) -> Optional[float]:
+    """numpy/pandas scalar → clean python float (or None for NaN/inf) for JSON."""
+    if x is None:
+        return None
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(v) or math.isinf(v) else round(v, 4)

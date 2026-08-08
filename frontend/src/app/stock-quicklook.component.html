@@ -1,0 +1,107 @@
+<!-- The first `position:fixed` overlay in this app, so it follows the codebase's
+     hard-won safe-CSS rules from the start: never `dir="rtl"` on a flex container
+     (only on plain text-only leaf elements), `row-reverse` + `text-align:right`
+     instead, no CSS Grid anywhere in here. -->
+<div class="ql-backdrop" *ngIf="mode === 'sheet'" (click)="close()"></div>
+
+<div
+  class="ql-wrap"
+  [class.ql-popover]="mode === 'popover'"
+  [class.ql-sheet]="mode === 'sheet'"
+  [style.left.px]="mode === 'popover' ? posLeft : null"
+  [style.top.px]="mode === 'popover' ? posTop : null"
+  (mouseenter)="onEnter()"
+  (mouseleave)="onLeave()"
+>
+  <!-- Trimmed-preview chrome — in practice this only ever renders on DESKTOP
+       (popover mode): sheet mode (mobile) jumps straight to the full page via
+       `showFullAnalysis = mode === 'sheet'` in ngOnChanges, so this row and
+       the embedded page's own topbar were rendering as TWO STACKED bars on
+       phone, pushing the chart below the fold and forcing a scroll just to
+       see anything — found from an actual "I have to scroll to see the
+       analysis" report, not by inspection. -->
+  <div class="ql-top" *ngIf="!showFullAnalysis">
+    <button type="button" class="ql-close" (click)="close()">✕</button>
+    <span class="ql-top-tk" *ngIf="ticker">{{ ticker }}</span>
+  </div>
+
+  <!-- Full-page mode (mobile): ONE small floating close button overlaid
+       directly on the embedded page instead of a second chrome row — the
+       embedded page already has its own complete topbar (search/Analyze/nav
+       links), so this is purely "how do I get back to Radar/Portfolio",
+       nothing else. Text-labeled, not just an arrow/✕ glyph, specifically
+       because an unlabeled "←" read as an ambiguous extra step rather than
+       an obvious "leave this view" — this replaces that back-to-trimmed-
+       preview behavior entirely; on mobile there is no trimmed preview to
+       go back TO, so the only sane action here is close. -->
+  <button type="button" class="ql-float-close" *ngIf="showFullAnalysis" (click)="close()">
+    ✕ סגור וחזור
+  </button>
+
+  <!-- The real, complete Analyzer page — every section of the full `.micha`
+       panel — embedded in place instead of navigated to, so Radar/Portfolio's
+       own state (scan results, wizard step) is never destroyed. `[initialTicker]`
+       tells its `ngOnInit` to load THIS ticker instead of its routed default
+       ('GTLB') — see that component's own comment for why this has to be an
+       `@Input` consumed in `ngOnInit`, not a post-creation `load()` call: the
+       latter (a `@ViewChild` setter calling `ref.load(ticker)`) was the actual
+       component's constructor firing its own default GTLB load microtasks
+       earlier — a real, wasted extra `/api/analyze/GTLB` request (briefly
+       visible on the chart) every single time a Radar/Portfolio card was
+       clicked. Mutually exclusive with the trimmed view below so the two never
+       hold two live `<app-chart>` instances at once. -->
+  <app-analyzer-page *ngIf="showFullAnalysis" [initialTicker]="ticker" class="ql-full-page"></app-analyzer-page>
+
+  <ng-container *ngIf="!showFullAnalysis">
+    <div class="ql-loading" *ngIf="loading">
+      <span class="ql-spin">⏳</span>
+      <span>טוען ניתוח…</span>
+    </div>
+
+    <div class="ql-error" *ngIf="error">{{ error }}</div>
+
+    <ng-container *ngIf="!loading && analysis as a">
+      <div class="ql-head">
+        <span class="ql-grade" [style.background]="gradeColor(a.micha.grade)"
+              [title]="a.micha.grade_why_he">{{ a.micha.grade }}</span>
+        <span class="ql-price">{{ a.meta.price | number: '1.2-2' }}</span>
+        <span class="ql-sector" *ngIf="a.meta.sector_icon">{{ a.meta.sector_icon }}</span>
+        <span class="ql-state">{{ a.micha.state_label_he }}</span>
+      </div>
+
+      <div class="ql-chart">
+        <app-chart [analysis]="a" [toggles]="toggles" [michaMode]="true"></app-chart>
+      </div>
+
+      <p class="ql-call" dir="rtl">{{ a.micha.report.call_he }}</p>
+      <p class="ql-read" dir="rtl">{{ a.micha.report.read_he }}</p>
+
+      <div class="ql-alert" *ngIf="a.micha.alert as al" [ngClass]="'tier-' + al.tier">
+        <span class="ql-alert-title">🔔 {{ alertTitleHe[al.tier] }}</span>
+        <span class="ql-alert-txt" dir="rtl">{{ al.label_he }}</span>
+      </div>
+
+      <!-- the two-sentence "why this grade" — see verdict._grade_sentence -->
+      <p class="ql-why" dir="rtl" *ngIf="a.micha.grade_why_he">{{ a.micha.grade_why_he }}</p>
+
+      <div class="ql-opt" *ngIf="bestOption(a) as o">
+        <div class="ql-opt-row">
+          <span class="ql-opt-kind">{{ optionLabelsHe[o.kind] }}</span>
+          <span class="ql-opt-entry">{{ o.entry | number: '1.2-2' }}</span>
+          <span class="ql-opt-rr" *ngIf="o.risk_reward != null">יחס {{ o.risk_reward | number: '1.1-1' }}</span>
+        </div>
+        <div class="ql-opt-row">
+          <span class="ql-opt-stop-k">סטופ</span>
+          <b class="ql-opt-stop-v">{{ o.stop | number: '1.2-2' }}</b>
+          <span class="ql-opt-risk" *ngIf="o.risk_pct != null">
+            −{{ o.risk_pct | number: '1.1-1' }}% · {{ o.stop_atr | number: '1.1-1' }} ATR</span>
+          <span class="ql-opt-exp" dir="rtl" *ngIf="o.expectancy_r != null"
+                [class.exp-good]="o.expectancy_r >= 0.25" [class.exp-bad]="o.expectancy_r < 0">
+            E {{ o.expectancy_r >= 0 ? '+' : '' }}{{ o.expectancy_r | number: '1.2-2' }}R</span>
+        </div>
+      </div>
+
+      <button type="button" class="ql-full-btn" (click)="openFullAnalysis()">→ ניתוח מלא</button>
+    </ng-container>
+  </ng-container>
+</div>

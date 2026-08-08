@@ -1,0 +1,596 @@
+<div class="layout">
+  <main class="main">
+    <!-- ── Top bar: ticker search + Micha toggle — always visible ────────── -->
+    <div class="topbar">
+      <span class="brand">📈</span>
+      <div class="search-wrap">
+        <input
+          [(ngModel)]="ticker"
+          (keydown)="onKey($event)"
+          (input)="onTickerInput()"
+          (focus)="showSuggestions = true"
+          (blur)="onBlur()"
+          placeholder="Ticker e.g. GTLB"
+          spellcheck="false"
+          autocomplete="off"
+        />
+        <div class="suggestions" *ngIf="showSuggestions && filteredTickers.length">
+          <div
+            class="suggestion"
+            *ngFor="let t of filteredTickers; let i = index"
+            [class.highlighted]="i === suggestionIndex"
+            (mousedown)="selectTicker(t)"
+          >{{ t }}</div>
+        </div>
+      </div>
+      <button (click)="load()" [disabled]="loading">
+        {{ loading ? '…' : 'Analyze' }}
+      </button>
+      <!-- Links to the other two pages — the shell carries no nav chrome of its
+           own (see app.component.ts), so each page owns getting to the others. -->
+      <a routerLink="/radar" class="radar-link" title="Radar — stocks close to a decision">
+        <span class="radar-dot"></span>
+        <span class="radar-link-label">Radar</span>
+      </a>
+      <a routerLink="/portfolio" class="radar-link portfolio-link" title="Portfolio — build a diverse basket">
+        <span class="radar-dot portfolio-dot"></span>
+        <span class="radar-link-label">Portfolio</span>
+      </a>
+      <label class="micha-toggle">
+        <input type="checkbox" [(ngModel)]="michaMode" (ngModelChange)="onMichaModeChange()" />
+        <span>📊 <span class="toggle-en">Micha Analyze</span> <span class="he">מיכה אנלייז</span></span>
+      </label>
+    </div>
+
+    <header class="header" *ngIf="analysis as a">
+      <div class="title">
+        <span class="ticker-icon">
+          <img
+            *ngIf="a.meta.logo_url && !logoFailed"
+            [src]="a.meta.logo_url"
+            (error)="logoFailed = true"
+            alt=""
+          />
+          <span class="icon-emoji" *ngIf="!a.meta.logo_url || logoFailed">{{
+            a.meta.sector_icon || '📈'
+          }}</span>
+        </span>
+        <span class="sym">{{ a.ticker }}</span>
+        <span class="price">{{ a.meta.price | number: '1.2-2' }}</span>
+        <span class="sector-chip" *ngIf="a.meta.sector" [title]="a.meta.industry || ''">
+          {{ a.meta.sector }}
+        </span>
+        <span
+          class="badge"
+          [class.up]="a.meta.ma_context === 'bull'"
+          [class.transition]="a.meta.ma_context === 'transition' || a.meta.ma_context === 'weak'"
+          [class.down]="a.meta.ma_context === 'bear'"
+        >{{ maContextLabel(a.meta) }}</span>
+        <span class="atr" [ngClass]="'vol-' + a.meta.vol_tier">
+          ATR {{ a.meta.atr_pct != null ? ((a.meta.atr_pct | number: '1.1-1') + '%') : (a.meta.atr | number: '1.2-2') }}
+        </span>
+      </div>
+
+      <div class="toggles" *ngIf="!michaMode">
+        <!-- Phone-only: the mode switch itself, inline with the indicator boxes —
+             on desktop it stays up in the topbar as its own control. -->
+        <label class="tgl mode-tgl">
+          <input type="checkbox" [(ngModel)]="michaMode" (ngModelChange)="onMichaModeChange()" />
+          📊 מיכה
+        </label>
+        <ng-container *ngFor="let t of toggleKeys">
+          <label class="tgl" *ngIf="hasOverlay(t.key)">
+            <input type="checkbox" [(ngModel)]="toggles[t.key]" (ngModelChange)="onToggleChange()" />
+            {{ t.label }}
+          </label>
+        </ng-container>
+      </div>
+      <div class="toggles" *ngIf="michaMode && analysis as a">
+        <label class="tgl mode-tgl">
+          <input type="checkbox" [(ngModel)]="michaMode" (ngModelChange)="onMichaModeChange()" />
+          📊 מיכה
+        </label>
+        <label class="tgl">
+          <input type="checkbox" [(ngModel)]="michaToggles.sma150" (ngModelChange)="onMichaToggleChange()" />
+          150MA
+        </label>
+        <label class="tgl" *ngIf="a.micha.chart_focus.sma200">
+          <input type="checkbox" [(ngModel)]="michaToggles.sma200" (ngModelChange)="onMichaToggleChange()" />
+          200MA
+        </label>
+        <label class="tgl" *ngIf="a.micha.chart_focus.sma20">
+          <input type="checkbox" [(ngModel)]="michaToggles.sma20" (ngModelChange)="onMichaToggleChange()" />
+          20MA
+        </label>
+        <label class="tgl">
+          <input type="checkbox" [(ngModel)]="michaToggles.levels" (ngModelChange)="onMichaToggleChange()" />
+          S/R
+        </label>
+        <label class="tgl" *ngIf="a.micha.chart_focus.fib">
+          <input type="checkbox" [(ngModel)]="michaToggles.fib" (ngModelChange)="onMichaToggleChange()" />
+          Fib
+        </label>
+        <label class="tgl" *ngIf="a.micha.chart_focus.trendlines">
+          <input type="checkbox" [(ngModel)]="michaToggles.trendlines" (ngModelChange)="onMichaToggleChange()" />
+          Trend line
+        </label>
+        <label class="tgl" *ngIf="a.micha.chart_focus.channels">
+          <input type="checkbox" [(ngModel)]="michaToggles.channels" (ngModelChange)="onMichaToggleChange()" />
+          Channel
+        </label>
+        <label class="tgl" *ngIf="a.micha.chart_focus.triangles">
+          <input type="checkbox" [(ngModel)]="michaToggles.triangles" (ngModelChange)="onMichaToggleChange()" />
+          Triangle
+        </label>
+        <label class="tgl">
+          <input type="checkbox" [(ngModel)]="michaToggles.markers" (ngModelChange)="onMichaToggleChange()" />
+          Markers
+        </label>
+      </div>
+    </header>
+
+    <div class="error" *ngIf="error">{{ error }}</div>
+
+    <!-- ── Workspace: chart (hero) + Micha info side panel ───────────────── -->
+    <div class="workspace" [class.with-panel]="michaMode && analysis" [class.panel-collapsed]="panelCollapsed">
+      <div class="chart-wrap">
+        <app-chart [analysis]="analysis" [toggles]="michaMode ? michaToggles : toggles"
+                   [michaMode]="michaMode" [highlight]="chartHighlight"
+                   [metaBadge]="analysis ? maContextLabel(analysis.meta) : ''"></app-chart>
+
+        <!-- Phone-only: a small floating toggle anchored to the CHART's own
+             corner (this button lives inside .chart-wrap on purpose, not
+             .workspace, so it tracks the chart's bottom edge regardless of
+             whether the panel below it is showing, peeked, or collapsed —
+             anchoring it to .workspace instead would pin it to the bottom of
+             the whole stack, i.e. UNDER the panel when the panel is visible,
+             not at the chart at all). Same `panelCollapsed` flag and
+             `togglePanelCollapsed()` the desktop edge-tab uses; the mobile CSS
+             effect hides the whole `.micha` block (not just the peek→full
+             `micha-expand-toggle` already does) so the chart can use the full
+             workspace height — "let me just see the graph". -->
+        <button type="button" class="mobile-panel-toggle" *ngIf="michaMode && analysis"
+                (click)="togglePanelCollapsed()">
+          {{ panelCollapsed ? '📊 הצג ניתוח' : '🔼 הסתר ניתוח' }}
+        </button>
+      </div>
+
+      <!-- Desktop/tablet-only handle to shrink the side panel back to the chart
+           (see panelCollapsed on the component) — a separate control from the
+           "Micha Analyze" checkbox, which changes what's analysed, not just
+           whether the text is showing. Media-query gated to the same ≥1151px
+           range where the panel is a fixed-width sidebar rather than a
+           stacked/peek panel, so it never fights the mobile expand toggle. -->
+      <button type="button" class="panel-collapse-btn" *ngIf="michaMode && analysis"
+              (click)="togglePanelCollapsed()"
+              [title]="panelCollapsed ? 'הצג ניתוח' : 'הסתר ניתוח — הצג את הגרף'">
+        {{ panelCollapsed ? '❮' : '❯' }}
+      </button>
+
+    <!-- ── Micha Analyze verdict (Hebrew) ────────────────────────────────── -->
+    <aside class="micha" [class.expanded]="michaExpanded" *ngIf="michaMode && analysis as a">
+      <!-- ALWAYS VISIBLE peek: the call, the grade, the plan. He writes a chart in
+           four lines — what to do and at what price, what the chart is, why, and
+           what kills it — so that is what leads here, not a wall of readings. -->
+      <div class="decision" [ngClass]="'act-' + a.micha.action" dir="rtl">
+        <div class="decision-head">
+          <!-- hovering the badge gives the real per-stock reasoning, not the fixed
+               per-letter string that says the same thing about every B -->
+          <span class="decision-grade" [style.background]="gradeColor(a.micha.grade)"
+                [title]="a.micha.grade_why_he">{{ a.micha.grade }}</span>
+          <span class="decision-action">{{ a.micha.action_label_he }}</span>
+          <span class="decision-state">{{ a.micha.state_label_he }}</span>
+        </div>
+
+        <p class="call-line">{{ a.micha.report.call_he }}</p>
+        <p class="read-line">{{ a.micha.report.read_he }}</p>
+
+        <!-- "מתקרב להכרעה. שימו התראה" — a low grade and a nearby trigger are two
+             different facts, and the second one is the reason to keep watching a
+             stock the first one just dismissed. Sits right under the call so a D
+             that is a third of a daily range from its trigger can't be missed. -->
+        <div class="alert-band" *ngIf="a.micha.alert as al" [ngClass]="'tier-' + al.tier">
+          <div class="alert-top">
+            <span class="alert-bell">🔔</span>
+            <span class="alert-title">{{ alertTitleHe[al.tier] }}</span>
+            <span class="alert-price">{{ al.price | number: '1.2-2' }}</span>
+            <span class="alert-dist">+{{ al.distance_pct | number: '1.1-1' }}%
+              · {{ al.distance_atr | number: '1.2-2' }} ATR</span>
+          </div>
+          <div class="alert-txt">{{ al.label_he }}</div>
+        </div>
+
+        <!-- "and if it DOES break?" — the grade answers what the chart IS today,
+             which is right and also easy to misread: GILD sits D below its 150MA
+             for a real reason (setup 18/40, the anchor is failing), but clears
+             134.88 and the same chart is a B. Not always good news — a break can
+             also make R/R worse once the entry moves. Shown only when the letter
+             actually moves, so this never nags on a break that changes nothing. -->
+        <div class="ifbreak" *ngIf="a.micha.grade_if_break as ib" [class.moves]="ib.moves">
+          <div class="ifbreak-top">
+            <span class="ifbreak-icon">{{ ib.moves ? '⚡' : 'ℹ' }}</span>
+            <!-- dir="rtl" required here: Hebrew words mixed with several separate
+                 interpolated numbers in one text node, no ancestor sets direction
+                 (see the bidi-corruption fix on the Radar/Portfolio cards) — without
+                 it the numbers and even Hebrew letters can visibly reorder. -->
+            <!-- The arrow (←) never mirrors with bidi context — it always points
+                 physically left. To read as "current grade becomes the projected
+                 one" the projected grade (arrowhead side) must be the FIRST span
+                 and the current grade (tail side) the SECOND — empirically verified
+                 by screenshot, not derived from bidi theory (which misled once
+                 already here): with [from, ←, to] in source order, "D" landed
+                 physically left of the arrow and "B" physically right, i.e. the
+                 arrowhead pointed AT D — reading as "B becomes D", backwards. -->
+            <span class="ifbreak-txt" dir="rtl" *ngIf="ib.moves">
+              אם תפרוץ {{ ib.at_price | number: '1.2-2' }} —
+              <span class="ifbreak-to" [style.background]="gradeColor(ib.grade)">{{ ib.grade }}</span>
+              ←
+              <span class="ifbreak-from" [style.color]="gradeColor(a.micha.grade)">{{ a.micha.grade }}</span>
+              <span class="ifbreak-score">({{ ib.score | number: '1.0-0' }}{{ ib.delta > 0 ? '+' : '' }}{{ ib.delta | number: '1.0-0' }})</span>
+            </span>
+            <span class="ifbreak-txt" dir="rtl" *ngIf="!ib.moves">
+              גם אם תפרוץ {{ ib.at_price | number: '1.2-2' }} — נשארת {{ ib.grade }}
+              ({{ ib.score | number: '1.0-0' }}{{ ib.delta >= 0 ? '+' : '' }}{{ ib.delta | number: '1.0-0' }})
+            </span>
+          </div>
+          <!-- What the projected letter would rest on, in the same two sentences as
+               the grade's own explanation. Only when the letter actually moves —
+               otherwise it restates today's reasoning under a different heading.
+               Hidden in the mobile peek (shown once expanded), like every other
+               second-order row. -->
+          <p class="ifbreak-why" *ngIf="ib.moves && ib.why_he" dir="rtl">{{ ib.why_he }}</p>
+        </div>
+
+        <!-- The plan: one row per way in. He names two often enough that a single
+             row would be hiding half the answer — "אפשרות 1: כניסה וסטופ מתחת לקו ·
+             אפשרות 2: לחכות לפריצה" (TSLA). -->
+        <div class="opts" *ngIf="a.micha.options.length">
+          <div class="opt" *ngFor="let o of a.micha.options; let i = index"
+               [ngClass]="'opt-' + o.kind">
+            <!-- Pointing at a row lights up the matching line on the chart, which is
+                 how the exact price stays discoverable without five labels stacked
+                 on the price axis. -->
+            <div class="opt-head" [class.hl]="isDrawnOption(a.micha, o.kind)"
+                 [class.active]="chartHighlight === 'entry' && isDrawnOption(a.micha, o.kind)"
+                 (mouseenter)="isDrawnOption(a.micha, o.kind) && setHighlight('entry')"
+                 (mouseleave)="setHighlight(null)"
+                 (click)="isDrawnOption(a.micha, o.kind) && toggleHighlight('entry')">
+              <span class="opt-kind">{{ optionLabelsHe[o.kind] }}</span>
+              <span class="opt-entry">{{ o.entry | number: '1.2-2' }}</span>
+              <span class="opt-rr" *ngIf="o.risk_reward != null"
+                    [class.rr-good]="o.risk_reward >= 2" [class.rr-bad]="o.risk_reward < 1"
+                    title="סיכוי מול סיכון עד קצה סולם היעדים">
+                יחס {{ o.risk_reward | number: '1.1-1' }}</span>
+              <!-- P(target before stop) and the expectancy that falls out of it —
+                   the number that ranks a 12%/10R home run against a 55%/1R scalp,
+                   which raw R/R alone cannot. A low p_win here on a high-R option is
+                   the shape of a good trade, not a warning. -->
+              <span class="opt-exp" dir="rtl" *ngIf="o.expectancy_r != null"
+                    [class.exp-good]="o.expectancy_r >= 0.25" [class.exp-bad]="o.expectancy_r < 0"
+                    title="סיכוי שהיעד יגיע לפני הסטופ, וה-Expectancy שנובע ממנו">
+                {{ o.p_win! * 100 | number: '1.0-0' }}% ·
+                E {{ o.expectancy_r >= 0 ? '+' : '' }}{{ o.expectancy_r | number: '1.2-2' }}R</span>
+            </div>
+            <div class="opt-stop" [class.hl]="isDrawnOption(a.micha, o.kind)"
+                 [class.active]="chartHighlight === 'stop' && isDrawnOption(a.micha, o.kind)"
+                 (mouseenter)="isDrawnOption(a.micha, o.kind) && setHighlight('stop')"
+                 (mouseleave)="setHighlight(null)"
+                 (click)="isDrawnOption(a.micha, o.kind) && toggleHighlight('stop')">
+              <span class="opt-stop-k">סטופ</span>
+              <b>{{ o.stop | number: '1.2-2' }}</b>
+              <span class="opt-stop-why">{{ o.stop_what_he }}</span>
+              <span class="opt-risk" *ngIf="o.risk_pct != null"
+                    [class.risk-hi]="o.risk_pct > 18">
+                −{{ o.risk_pct | number: '1.1-1' }}% · {{ o.stop_atr | number: '1.1-1' }} ATR</span>
+            </div>
+            <div class="opt-stop pos" *ngIf="o.stop_position != null"
+                 title="למי שמחזיק לטווח ארוך — סטופ רחב יותר">
+              <span class="opt-stop-k">לטווח ארוך</span>
+              <b>{{ o.stop_position | number: '1.2-2' }}</b>
+              <span class="opt-risk" *ngIf="o.position_risk_pct != null">
+                −{{ o.position_risk_pct | number: '1.1-1' }}%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="ep">
+          <div class="ep-row hold" *ngIf="a.micha.report.invalidation_he as inv">
+            <span class="ep-tag">תנאי</span>
+            <span class="ep-txt">{{ inv }}</span>
+          </div>
+          <div class="ep-row growth" *ngIf="a.micha.growth as g"
+               [ngClass]="'pace-' + g.pace">
+            <span class="ep-tag">רווח צפוי</span>
+            <span class="ep-txt">
+              <b>+{{ g.gain_pct | number: '1.0-0' }}%</b>
+              · {{ g.days | number: '1.0-0' }} ימי מסחר
+              · <span class="ep-hit">{{ g.hit_rate * 100 | number: '1.0-0' }}% מהפעמים</span>
+              · {{ g.pct_per_day | number: '1.1-1' }}%/יום
+              <span class="ep-stretch" *ngIf="g.first_gain_pct < g.gain_pct">
+                | תחנה ראשונה +{{ g.first_gain_pct | number: '1.0-0' }}%
+                ({{ g.first_days | number: '1.0-0' }} ימים,
+                {{ g.first_hit_rate * 100 | number: '1.0-0' }}%)
+              </span>
+            </span>
+          </div>
+          <div class="ep-row warn" *ngFor="let w of a.micha.report.warnings">
+            <span class="ep-tag">⚠</span>
+            <span class="ep-txt">{{ w.he }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- phone-only: tap to reveal the full analysis below -->
+      <button type="button" class="micha-expand-toggle" (click)="michaExpanded = !michaExpanded">
+        <span dir="rtl">{{ michaExpanded ? 'הצג פחות' : 'לניתוח המלא' }}</span>
+        <span class="chev">{{ michaExpanded ? '▲' : '▼' }}</span>
+      </button>
+
+      <div class="micha-details">
+        <div class="micha-head">
+          <span class="micha-grade" [style.background]="gradeColor(a.micha.grade)">{{ a.micha.grade }}</span>
+          <div class="micha-grade-meaning" dir="rtl">
+            <span class="gm-sub">{{ a.micha.grade_score | number: '1.0-0' }}/100</span>
+          </div>
+        </div>
+
+        <!-- ── Why THIS stock got THIS letter, in two sentences ───────────────
+             What carries the grade, then the one thing holding it back (or "מה
+             עוד נותר לבקש" when nothing is). Composed in verdict._grade_sentence
+             from the grade's OWN terms, so it can never argue with the number
+             above it. It replaces the old per-letter `grade_meaning_he`, which
+             was one fixed string saying the same thing about every B in the
+             universe. The bars below still show WHICH axes scored; this says
+             what that means.
+             `dir="rtl"` belongs here — it is a plain text-only leaf, which is
+             the safe case; on a flex container it triggers the invisible-text
+             bug documented in the run skill. -->
+        <p class="grade-why" *ngIf="a.micha.grade_why_he" dir="rtl">{{ a.micha.grade_why_he }}</p>
+
+        <!-- ── Why this grade: the three axes ────────────────────────────────
+             They are the three clauses of his own top-grade sentence: is there a
+             structure, is the trigger in hand, and is the stop right there. -->
+        <div class="grade-bd" *ngIf="a.micha.grade_breakdown as bd" dir="rtl">
+          <ng-container *ngFor="let c of bd.components">
+            <!-- `time` is a signed ± already folded into `risk`, so it gets a
+                 centre-anchored bar, not a 0→max fill, and never a /max total that
+                 would read as a fourth axis. -->
+            <div class="gbd-row" [class.adj]="c.adjustment">
+              <span class="gbd-k">{{ c.label_he }}</span>
+              <span class="gbd-bar" *ngIf="!c.adjustment">
+                <span class="gbd-fill" [style.width.%]="c.max ? (c.got / c.max) * 100 : 0"
+                      [class.lo]="c.got / c.max < 0.4"
+                      [class.mid]="c.got / c.max >= 0.4 && c.got / c.max < 0.7"></span>
+              </span>
+              <span class="gbd-bar adj-bar" *ngIf="c.adjustment">
+                <span class="adj-zero"></span>
+                <span class="adj-fill" [class.neg]="c.got < 0"
+                      [style.width.%]="c.max ? (absVal(c.got) / c.max) * 50 : 0"
+                      [style.left.%]="c.got < 0 ? 50 - (absVal(c.got) / c.max) * 50 : 50"></span>
+              </span>
+              <span class="gbd-v" [class.pos]="c.adjustment && c.got > 0"
+                    [class.neg]="c.adjustment && c.got < 0">
+                <ng-container *ngIf="c.adjustment && c.got > 0">+</ng-container>{{ c.got | number: '1.0-1' }}<span
+                  class="gbd-max" *ngIf="!c.adjustment">/{{ c.max }}</span>
+              </span>
+            </div>
+            <div class="gbd-d" *ngIf="c.detail_he">{{ c.detail_he }}</div>
+          </ng-container>
+          <!-- why the letter is lower than the recommendation sounds -->
+          <div class="gbd-caps" *ngIf="bd.caps?.length">
+            <span class="gbd-cap" *ngFor="let c of bd.caps">⚠ {{ c.label_he }}</span>
+          </div>
+        </div>
+
+        <!-- ── The ✅ list — literally the format he posts ─────────────────── -->
+        <div class="why" dir="rtl">
+          <div class="why-row" *ngFor="let w of a.micha.report.why" [class.no]="!w.ok">
+            <span class="why-icon">{{ w.ok ? '✅' : '✕' }}</span>
+            <span class="why-txt">{{ w.he }}</span>
+          </div>
+        </div>
+
+        <!-- ── The case, in sentences ────────────────────────────────────────
+             The ✅ list above names WHICH conditions hold; this says what they
+             mean. "מעל ממוצע 150" is a checkbox, "52% מעל ממוצע 150 — גרף מעולה,
+             אבל אין מכאן סטופ טוב" is the actual argument, and it is the second
+             one that tells a reader why an excellent chart is still a B. Same
+             `reasons` the groups below hold, with the strongest points on each
+             side lifted out — the groups stay collapsed because 24 lines at once
+             is not readable, but a letter with only "+2 −1" next to it explains
+             nothing. -->
+        <div class="case" dir="rtl" *ngIf="topReasons(a, 'for').length || topReasons(a, 'against').length">
+          <div class="case-side case-for" *ngIf="topReasons(a, 'for') as fors">
+            <div class="case-head" *ngIf="fors.length">בעד</div>
+            <div class="case-row" *ngFor="let t of fors">
+              <span class="case-mark">+</span><span class="case-txt">{{ t }}</span>
+            </div>
+          </div>
+          <div class="case-side case-against" *ngIf="topReasons(a, 'against') as againsts">
+            <div class="case-head" *ngIf="againsts.length">נגד</div>
+            <div class="case-row" *ngFor="let t of againsts">
+              <span class="case-mark">−</span><span class="case-txt">{{ t }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── The full argument, grouped the way he walks a chart ───────────
+             Everything here is measured off today's candles. Points AGAINST are
+             shown next to the points for, because the missing piece is usually
+             the whole answer ("הבעיה היחידה היא הווליום"). -->
+        <div class="reasons" dir="rtl">
+          <div class="rg" *ngFor="let g of a.micha.reasons">
+            <button type="button" class="rg-head" (click)="toggleReason(g.key)">
+              <span class="rg-chev">{{ openReasons[g.key] ? '▾' : '▸' }}</span>
+              <span class="rg-title">{{ g.label_he }}</span>
+              <span class="rg-count">
+                <span class="rc for" *ngIf="countStance(g, 'for') as n">+{{ n }}</span>
+                <span class="rc against" *ngIf="countStance(g, 'against') as n">−{{ n }}</span>
+              </span>
+            </button>
+            <div class="rg-body" *ngIf="openReasons[g.key]">
+              <div class="ri" *ngFor="let it of g.items" [ngClass]="'st-' + it.stance"
+                   [title]="it.en">
+                <span class="ri-mark">{{ it.stance === 'for' ? '+' : it.stance === 'against' ? '−' : '·' }}</span>
+                <span class="ri-txt">{{ it.he }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- current status: the S/R map, in plain language -->
+        <div class="micha-status">
+          <p class="status-line he" dir="rtl">{{ a.micha.level_context.narrative_he }}</p>
+          <div class="status-bar" *ngIf="a.micha.level_context.position_pct != null">
+            <div class="status-bar-fill" [style.width.%]="a.micha.level_context.position_pct"></div>
+            <span class="status-bar-label sup">S</span>
+            <span class="status-bar-label res">R</span>
+          </div>
+        </div>
+
+        <!-- ── שינוי כיוון: the four stages Micha dictates, in his order ──────
+             Only shown when applicable — i.e. the stock was actually weak before
+             the turn. An already-healthy name ticking these boxes is just normal
+             continuation, not a "direction change", so the panel stays hidden. -->
+        <div class="micha-dc" *ngIf="a.micha.direction_change?.applicable && a.micha.direction_change as dc"
+             [class.confirmed]="dc.confirmed" [class.turning]="dc.turning" dir="rtl">
+          <div class="dc-head">
+            <span class="dc-title">שינוי כיוון</span>
+            <span class="dc-count">{{ dc.stages_done }}/{{ dc.stages_total }}</span>
+            <span class="dc-label">{{ dc.label_he }}</span>
+          </div>
+          <div class="dc-stages">
+            <span class="dc-stage" *ngFor="let s of dc.stages" [class.done]="s.done"
+                  [title]="s.label">
+              <span class="dc-icon">{{ s.done ? '✓' : '○' }}</span>{{ s.label_he }}
+            </span>
+          </div>
+        </div>
+
+        <!-- key indicators row -->
+        <div class="micha-tags" dir="rtl">
+          <span class="mtag" [class.up]="a.micha.trend === 'uptrend'" [class.down]="a.micha.trend === 'downtrend'">
+            {{ trendLabelsHe[a.micha.trend] }}</span>
+          <span class="mtag" *ngIf="a.micha.golden_pocket">גולדן פוקט</span>
+          <!-- His three bands, each with the wording he uses for it: "קצת מתוחה"
+               is a caveat (AAPL/LUNR), "מתוחה" demands the stop (SHAK/CRML), and
+               "מתוחה ורחוקה" is the one he declines outright (RDDT/GOLD). A single
+               warn-coloured flag could not tell the reader which of the three. -->
+          <span class="mtag danger" *ngIf="a.micha.extension === 'severe'"
+                title="רחוקה משני הממוצעים — זו לא נקודת כניסה">
+            רחוקה מהממוצעים +{{ a.micha.d150_pct | number:'1.0-0' }}% מ-150 ·
+            +{{ a.micha.d200_pct | number:'1.0-0' }}% מ-200</span>
+          <span class="mtag warn" *ngIf="a.micha.extension === 'stretched'"
+                title="לא לרדוף — ואם בכל זאת נכנסים, חייבים סטופ">
+            מתוחה +{{ a.micha.d150_pct | number:'1.0-0' }}% מממוצע 150</span>
+          <span class="mtag" *ngIf="a.micha.extension === 'mild'"
+                title="זהירות עם הכניסה — אבל לא מאחרים">
+            קצת מתוחה +{{ a.micha.d150_pct | number:'1.0-0' }}% מממוצע 150</span>
+          <span class="mtag warn" *ngIf="a.micha.ran_hot"
+                title="הריצה אל הטריגר הייתה המהלך">
+            רצה {{ a.micha.run_pct | number:'1.0-0' }}% בימים האחרונים</span>
+          <span class="mtag" *ngIf="a.micha.momentum_days >= 5">{{ a.micha.momentum_days }} ימים ירוקים ברצף</span>
+          <span class="mtag" *ngIf="a.micha.market_cap">{{ marketCapLabel(a.micha.market_cap) }}</span>
+          <span class="mtag warn" *ngIf="a.micha.small_cap">מתחת ל-1B$</span>
+          <span class="mtag potential" *ngIf="a.micha.trigger as t" [title]="t.label_he">
+            🎯 {{ t.what_he }} {{ t.price | number: '1.2-2' }} · {{ t.distance_atr | number: '1.1-1' }} ATR
+            <!-- How well-defended this exact price is — informational only, never
+                 scored (measured: touch count predicted neither breakout
+                 follow-through nor stop reliability). Only a horizontal level
+                 carries this; a trendline/average never does. -->
+            <span class="wall-tag" *ngIf="t.wall as w"
+                  [class.wall-strong]="w.strength === 'strong'"
+                  [title]="w.touches + ' מגעים · ' + (w.freshness === 'retested' ? 'נבחנה שוב' : 'טרייה')">
+              · {{ w.touches }}×{{ w.flipped ? ' התהפכה' : '' }}
+            </span>
+          </span>
+          <span class="mtag" *ngIf="a.micha.channel as ch"
+                [class.up]="ch.zone === 'bottom'" [class.warn]="ch.zone === 'middle'">
+            {{ ch.kind === 'rising' ? 'תעלה עולה' : 'תעלה יורדת' }}
+            <ng-container [ngSwitch]="ch.zone">
+              <ng-container *ngSwitchCase="'bottom'"> · בתחתית</ng-container>
+              <ng-container *ngSwitchCase="'top'"> · בפסגה</ng-container>
+              <ng-container *ngSwitchCase="'middle'"> · באמצע</ng-container>
+              <ng-container *ngSwitchCase="'upper_rail'"> · על הרף העליון</ng-container>
+            </ng-container>
+          </span>
+        </div>
+
+        <div class="micha-body">
+          <!-- the numbers behind the call -->
+          <!-- Target ladder — its own block rather than rows of `.micha-plan`,
+               because that grid uses `display:contents` on its rows (they generate
+               no box, so they can't be hovered or given a highlight background). -->
+          <div class="targets" dir="rtl">
+            <div class="tgt-row" *ngFor="let t of a.micha.targets; let i = index"
+                 [class.active]="chartHighlight === 't' + i"
+                 (mouseenter)="setHighlight('t' + i)" (mouseleave)="setHighlight(null)"
+                 (click)="toggleHighlight('t' + i)">
+              <span class="tgt-k">{{ i === 0 ? 'יעד 1' : 'תחנה ' + (i + 1) }}</span>
+              <span class="tgt-v" [title]="t.label_he">{{ t.price | number: '1.2-2' }}</span>
+              <span class="tgt-up" *ngIf="t.pct != null">+{{ t.pct | number: '1.0-0' }}%</span>
+            </div>
+          </div>
+
+          <div class="micha-plan" dir="rtl">
+            <div class="plan-row" *ngIf="a.micha.earnings_days != null">
+              <span class="plan-k">דיווח תוצאות</span>
+              <span class="plan-v" [class.earn-soon]="a.micha.earnings_days <= 5">
+                {{ a.micha.earnings_days }} ימים</span>
+            </div>
+            <div class="plan-row plan-detail" *ngIf="a.micha.target.measured_detail_he as md">
+              <span class="plan-k">חישוב</span>
+              <span class="plan-v small">{{ md }}</span>
+            </div>
+            <div class="plan-row" *ngIf="a.micha.off_high_pct != null">
+              <span class="plan-k">מהשיא</span>
+              <span class="plan-v">{{ a.micha.off_high_pct | number: '1.0-0' }}%</span>
+            </div>
+            <div class="plan-row" *ngIf="a.micha.fib_retracement != null">
+              <span class="plan-k">פיבונאצ'י</span>
+              <span class="plan-v">{{ a.micha.fib_retracement | number: '1.0-0' }}%</span>
+            </div>
+            <div class="plan-row">
+              <span class="plan-k">ווליום</span>
+              <span class="plan-v" [ngClass]="'vol-' + (a.micha.volume_trend === 'rising' ? 'low' : a.micha.volume_trend === 'falling' ? 'high' : 'medium')">
+                {{ volumeLabelsHe[a.micha.volume_trend] }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- if-then scenarios: Micha never predicts, he maps both branches -->
+        <div class="micha-scenarios" *ngIf="a.micha.scenarios.length" dir="rtl">
+          <div class="scenario" *ngFor="let s of a.micha.scenarios"
+               [class.bull]="s.kind === 'bull'" [class.bear]="s.kind === 'bear'">
+            <span class="sc-icon">{{ s.kind === 'bull' ? '▲' : '▼' }}</span>
+            <span class="sc-text">{{ s.he }}</span>
+          </div>
+        </div>
+
+        <!-- observations -->
+        <ul class="micha-notes" *ngIf="a.micha.notes.length" dir="rtl">
+          <li *ngFor="let n of a.micha.notes">{{ n.he }}</li>
+        </ul>
+      </div>
+    </aside>
+    </div><!-- /workspace -->
+
+    <!-- Setup-detail cards are only shown outside Micha mode — Micha mode already
+         covers this (checklist + scenarios) in the side panel, so hiding it here
+         gives the chart the full area. -->
+    <section class="setups" *ngIf="!michaMode && analysis as a">
+      <div class="setups-empty" *ngIf="!a.setups.length">
+        No setups detected on {{ a.ticker }}.
+      </div>
+      <div class="setup-card" *ngFor="let s of a.setups" [class.dim]="!s.active">
+        <div class="setup-title">
+          <span class="dot" [style.background]="setupColor(s.code)"></span>
+          {{ s.label }}
+          <span class="tag" *ngIf="s.active">active</span>
+          <span class="tag watch" *ngIf="!s.active">watch</span>
+        </div>
+        <div class="setup-detail">{{ s.detail }}</div>
+      </div>
+    </section>
+  </main>
+</div>

@@ -1,0 +1,272 @@
+/* ── First position:fixed overlay in this app ────────────────────────────────
+   Safe-CSS rules proven across Radar/Portfolio, followed from the start here:
+     - never `dir="rtl"` on a flex container, only on plain text-only leaves
+     - `row-reverse` + `text-align:right` for RTL-reading rows, not dir="rtl"
+     - no CSS Grid anywhere
+     - no percentage/vw width on any element (this component is never a flex-wrap
+       repeating child, so that specific trigger doesn't apply, but literal units
+       throughout keep it consistent with the rest of the codebase). */
+
+.ql-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 90;
+}
+
+.ql-wrap {
+  position: fixed;
+  background: #131722;
+  border: 1px solid #2a2e39;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  color: #d1d4dc;
+  z-index: 95;
+  overflow-y: auto;
+  padding: 10px 12px 14px;
+}
+
+.ql-popover {
+  width: 400px;
+  max-height: 520px;
+}
+
+.ql-sheet {
+  /* Genuinely full-screen — reaches the very top, not just "most of it". Two
+     rounds of this: first 80vh (too cramped), then 94vh (still visibly short of
+     the top edge on a real device). `top:0` + `height:100%` (not `max-height`,
+     which would only cap growth, not force it) is what actually closes the gap.
+     No rounded corners or border on any edge either, since there's no visible
+     backdrop left around it to round against — it IS the screen. Dismissed via
+     the ✕ button (`.ql-close`), not by tapping outside (nothing outside is
+     visible to tap). */
+  inset: 0;
+  width: auto;
+  height: 100%;
+  border-radius: 0;
+  border: none;
+}
+/* More room to use on the sheet now that it's taller — the popover (desktop,
+   fixed 400px wide) keeps its own 220px, this only grows the mobile variant. */
+.ql-sheet .ql-chart {
+  height: 300px;
+}
+
+.ql-top {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.ql-top-tk {
+  font-size: 13px;
+  font-weight: 700;
+  color: #9aa0aa;
+}
+.ql-close {
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: #d1d4dc;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+.ql-close:hover { background: rgba(255, 255, 255, 0.16); }
+
+/* The ONE affordance in full-page mode — see the HTML comment for why this
+   replaced a second chrome row (it was stacking with the embedded page's own
+   topbar and pushing the chart below the fold). Anchored bottom-center rather
+   than a top corner deliberately: the embedded page's OWN topbar (search box,
+   Analyze button, nav dots) occupies the top edge, and a top-corner overlay
+   risked sitting right on top of the search input — bottom-center is clear of
+   all of it, plus more thumb-reachable one-handed on a phone anyway.
+   `position:fixed` — not `absolute` relative to `.ql-wrap` — so it stays put
+   and reachable even once the embedded page's own content scrolls under it;
+   z-index above `.ql-wrap` itself (95) so it's never covered. Text-labeled
+   (not just ✕ or ←) specifically because an icon-only affordance here read as
+   ambiguous.
+
+   Bottom-RIGHT specifically, not centered: the embedded Analyzer page has its
+   OWN bottom-center floating toggle for hiding its analysis panel
+   (`.mobile-panel-toggle`, analyzer-page.component.css) — anchored to the
+   CHART's bottom edge, which sits AT the viewport's own bottom edge once that
+   panel is collapsed and the chart grows to fill the screen. Two bottom-
+   center pills would then stack on top of each other. Off to the side avoids
+   it entirely regardless of that toggle's state. */
+.ql-float-close {
+  position: fixed;
+  bottom: 16px;
+  right: 12px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(19, 23, 34, 0.94);
+  border: 1px solid #2a2e39;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 9px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+.ql-float-close:active { background: rgba(42, 46, 57, 0.96); }
+
+/* The embedded real Analyzer page fills the sheet edge-to-edge — its own `:host`
+   is a rigid `height:100vh`, which is right for the sheet (itself `inset:0`, i.e.
+   also full-viewport) but would overflow `.ql-wrap`'s own padding by exactly that
+   padding amount without this; negative margins cancel it so the embedded page's
+   edges line up with the sheet's own. */
+.ql-full-page {
+  display: block;
+  margin: -10px -12px -14px;
+}
+
+.ql-loading, .ql-error {
+  padding: 30px 10px;
+  text-align: center;
+  color: #9aa0aa;
+  font-size: 13px;
+}
+.ql-spin { display: inline-block; margin-inline-end: 6px; animation: ql-spin 1.4s linear infinite; }
+@keyframes ql-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.ql-head {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.ql-grade {
+  font-size: 15px;
+  font-weight: 800;
+  color: #0e1117;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.ql-price { font-size: 14px; font-weight: 700; color: #fff; }
+.ql-sector { font-size: 14px; }
+.ql-state { font-size: 11.5px; color: #9aa0aa; }
+
+.ql-chart {
+  height: 220px;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 8px;
+  border: 1px solid #1e222d;
+}
+
+.ql-call {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #fff;
+  margin: 0 0 4px;
+}
+.ql-read {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #9aa0aa;
+  margin: 0 0 8px;
+}
+
+.ql-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px dashed rgba(171, 71, 188, 0.55);
+  background: rgba(171, 71, 188, 0.09);
+}
+.ql-alert.tier-imminent {
+  border-style: solid;
+  border-color: rgba(255, 167, 38, 0.75);
+  background: rgba(255, 167, 38, 0.12);
+}
+.ql-alert.tier-close {
+  border-color: rgba(255, 167, 38, 0.5);
+  background: rgba(255, 167, 38, 0.08);
+}
+.ql-alert-title { font-size: 11.5px; font-weight: 700; color: #ce93d8; }
+.ql-alert.tier-imminent .ql-alert-title,
+.ql-alert.tier-close .ql-alert-title { color: #ffa726; }
+.ql-alert-txt { display: block; font-size: 11px; color: #d1d4dc; }
+
+.ql-why {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: #d1d4dc;
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  background: #0e1117;
+  border: 1px solid #1e222d;
+  border-radius: 6px;
+}
+
+.ql-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #0e1117;
+  border: 1px solid #1e222d;
+}
+.ql-opt-row {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.ql-opt-kind { color: #9aa0aa; }
+.ql-opt-entry { font-weight: 700; color: #fff; }
+.ql-opt-rr { color: #66bb6a; }
+.ql-opt-stop-k { color: #9aa0aa; }
+.ql-opt-stop-v { color: #ef5350; }
+.ql-opt-risk { color: #9aa0aa; font-size: 11px; }
+.ql-opt-exp { font-weight: 600; }
+.ql-opt-exp.exp-good { color: #26a69a; }
+.ql-opt-exp.exp-bad { color: #ef5350; }
+
+.ql-full-btn {
+  width: 100%;
+  padding: 9px;
+  border-radius: 7px;
+  border: 1px solid #2a2e39;
+  background: rgba(66, 165, 245, 0.12);
+  color: #42a5f5;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ql-full-btn:hover { background: rgba(66, 165, 245, 0.2); }
+
+@media (max-width: 480px) {
+  .ql-popover {
+    /* narrow phones: a fixed 400px could overflow a ~360px viewport. A literal px
+       ceiling, never `vw`/`%` — this codebase has a confirmed headless-Chromium bug
+       where a percentage/vw width specifically on a FLEX-WRAP CHILD makes its own
+       text invisible at ~300-400px widths. This element isn't a flex-wrap child
+       (it's `position:fixed`, positioned via JS-computed left/top), so the trigger
+       condition doesn't apply either way — kept as a literal px purely to match
+       the rest of the codebase's zero-exceptions rule rather than relying on that
+       distinction being airtight. */
+    max-width: 340px;
+  }
+}

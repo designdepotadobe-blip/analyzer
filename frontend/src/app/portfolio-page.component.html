@@ -1,0 +1,314 @@
+<div class="layout">
+  <main class="main">
+    <!-- ── Header ──────────────────────────────────────────────────────── -->
+    <header class="pf-header">
+      <div class="pf-title-wrap">
+        <span class="pf-icon">📊</span>
+        <div class="pf-title-text">
+          <h1>בניית תיק <span class="pf-title-en">Portfolio</span></h1>
+          <p class="pf-sub">4-6 מניות מגוונות, לא הימור אחד עם כמה כובעים — לפי Expectancy וסיכון</p>
+        </div>
+      </div>
+      <div class="pf-nav">
+        <a routerLink="/radar" class="pf-back">
+          <span>📡</span>
+          <span class="pf-back-label">רדאר</span>
+        </a>
+        <a routerLink="/" class="pf-back">
+          <span>📈</span>
+          <span class="pf-back-label">ניתוח</span>
+        </a>
+      </div>
+    </header>
+
+    <!-- ── Step indicator — hidden until the wizard actually starts ──────── -->
+    <div class="pf-steps" *ngIf="ran && wizardStep !== 'holdings'">
+      <span class="pf-step" [class.active]="wizardStep === 'risk'" [class.done]="wizardStep !== 'risk'">1. סיכון</span>
+      <span class="pf-step-sep">‹</span>
+      <span class="pf-step" [class.active]="wizardStep === 'sectors'"
+            [class.done]="wizardStep === 'review' || wizardStep === 'summary'">2. סקטורים</span>
+      <span class="pf-step-sep">‹</span>
+      <span class="pf-step" [class.active]="wizardStep === 'review'" [class.done]="wizardStep === 'summary'">3. סקירה</span>
+      <span class="pf-step-sep">‹</span>
+      <span class="pf-step" [class.active]="wizardStep === 'summary'">4. סיכום</span>
+    </div>
+
+    <!-- ── Step 1: holdings input — unchanged from before the wizard existed ── -->
+    <div class="pf-input-bar" *ngIf="wizardStep === 'holdings'">
+      <textarea
+        class="pf-input"
+        [(ngModel)]="tickerInput"
+        placeholder="התיק הנוכחי שלכם (אופציונלי) — לדוגמה: NVDA, AAPL MSFT&#10;השאירו ריק כדי לבנות תיק חדש מאפס"
+        rows="2"
+      ></textarea>
+      <div class="pf-input-controls">
+        <div class="pf-ctrl-group">
+          <span class="pf-ctrl-label">גודל תיק יעד</span>
+          <div class="pf-chips">
+            <button *ngFor="let n of targetOptions" class="pf-chip"
+                    [class.active]="targetSize === n" [disabled]="loading"
+                    (click)="targetSize = n">{{ n }}</button>
+          </div>
+        </div>
+        <button class="pf-build-btn" [disabled]="loading" (click)="build()">
+          <span class="pf-build-icon" [class.spin]="loading">🔄</span>
+          {{ loading ? 'בונה…' : (tickerInput.trim() ? 'המשך' : 'בנה תיק חדש') }}
+        </button>
+      </div>
+    </div>
+
+    <div class="pf-body">
+      <!-- ── Loading (holdings analysis) ──────────────────────────────── -->
+      <div class="pf-loading" *ngIf="loading && wizardStep === 'holdings'">
+        <div class="pf-radar-anim">
+          <div class="pf-ring r1"></div>
+          <div class="pf-ring r2"></div>
+          <div class="pf-ring r3"></div>
+          <div class="pf-sweep"></div>
+        </div>
+        <p class="pf-loading-txt">בודק את התיק הקיים…</p>
+      </div>
+
+      <!-- ── Error ─────────────────────────────────────────────────────── -->
+      <div class="pf-error" *ngIf="error">
+        <span class="pf-error-icon">⚠</span>
+        <p>{{ error }}</p>
+        <button (click)="wizardStep === 'review' ? confirmSectors() : build()">נסה שוב</button>
+      </div>
+
+      <!-- ── Intro ─────────────────────────────────────────────────────── -->
+      <div class="pf-intro" *ngIf="!loading && !error && !ran">
+        <span class="pf-intro-icon">📊</span>
+        <p>הקלידו את המניות שכבר יש לכם, או השאירו ריק ולחצו "בנה תיק חדש".</p>
+        <p class="pf-intro-sub">אחרי זה — כמה שאלות קצרות (סיכון, סקטורים להימנע מהם), ואז נעבור מועמד
+          מועמד יחד, לא רשימה סטטית אחת.</p>
+      </div>
+
+      <div class="pf-failed" *ngIf="failedTickers.length && wizardStep === 'holdings'">
+        ⚠ לא נמצאו נתונים עבור: {{ failedTickers.join(', ') }}
+      </div>
+
+      <!-- ── Step 2: risk tolerance ────────────────────────────────────── -->
+      <div class="pf-risk-step" *ngIf="wizardStep === 'risk'" dir="rtl">
+        <h2 class="pf-step-title">כמה סיכון אתם מוכנים לקחת?</h2>
+        <p class="pf-step-sub">קובע איזה מועמדים יוצעו לכם ובאיזה סדר — אפשר לשנות בהמשך.</p>
+        <div class="pf-risk-cards">
+          <button type="button" class="pf-risk-card" *ngFor="let r of riskOrder"
+                  [class.active]="riskTolerance === r" (click)="selectRisk(r)">
+            <span class="pf-risk-label">{{ riskPresets[r].label }}</span>
+            <span class="pf-risk-desc">{{ riskPresets[r].desc }}</span>
+          </button>
+        </div>
+        <button type="button" class="pf-step-next" (click)="confirmRisk()">המשך →</button>
+      </div>
+
+      <!-- ── Step 3: sectors to avoid ──────────────────────────────────── -->
+      <div class="pf-sectors-step" *ngIf="wizardStep === 'sectors'" dir="rtl">
+        <h2 class="pf-step-title">יש סקטורים שהייתם רוצים להימנע מהם?</h2>
+        <p class="pf-step-sub">אופציונלי — סמנו מה לא רלוונטי לכם כרגע. השאר יוצע כרגיל.</p>
+        <div class="pf-sector-checks">
+          <button type="button" class="pf-sector-check" *ngFor="let s of knownSectors"
+                  [class.excluded]="excludedSectors.has(s.name)" (click)="toggleExcludedSector(s.name)">
+            <span class="pf-sc-icon">{{ s.icon }}</span>
+            <span class="pf-sc-name">{{ s.name }}</span>
+            <span class="pf-sc-mark">{{ excludedSectors.has(s.name) ? '✕' : '' }}</span>
+          </button>
+        </div>
+        <div class="pf-step-nav">
+          <button type="button" class="pf-step-back" (click)="backToRisk()">← הקודם</button>
+          <button type="button" class="pf-step-next" (click)="confirmSectors()">התחל סקירה →</button>
+        </div>
+      </div>
+
+      <!-- ── Step 4: review, one candidate at a time ────────────────────── -->
+      <div class="pf-review-step" *ngIf="wizardStep === 'review'" dir="rtl">
+        <div class="pf-review-progress" *ngIf="reviewStreaming">
+          <span class="pf-scan-dot"></span><span class="pf-scan-emoji">🔍</span> מחפש מועמדים… {{ reviewFoundCount }} נמצאו עד כה
+        </div>
+
+        <ng-container *ngIf="currentCandidateRow as c">
+          <p class="pf-review-count">הצעה {{ suggestions.length + 1 }} מתוך {{ slotsLeft }}</p>
+
+          <button type="button" class="pf-review-card" [ngClass]="'act-' + c.action"
+                  (mouseenter)="onCardEnter(c.ticker, $event)" (mouseleave)="onCardLeave()"
+                  (click)="onCardTap(c.ticker)">
+            <div class="pf-card-top">
+              <span class="pf-card-grade" [style.background]="gradeColor(c.grade)">{{ c.grade }}</span>
+              <span class="pf-card-tk">{{ c.ticker }}</span>
+            </div>
+            <div class="pf-card-meta">
+              <span class="pf-card-sector" *ngIf="c.sector">{{ c.sector_icon }} {{ c.sector }}</span>
+              <span class="pf-card-price">{{ c.price | number: '1.2-2' }}</span>
+            </div>
+            <div class="pf-card-entry" *ngIf="c.entry != null">
+              <span class="pf-entry-rr" *ngIf="c.risk_reward != null">יחס {{ c.risk_reward | number: '1.1-1' }}</span>
+              <span class="pf-entry-price">{{ c.entry | number: '1.2-2' }}</span>
+              <span class="pf-entry-arrow">→</span>
+            </div>
+            <div class="pf-card-risk" *ngIf="c.stop_atr != null">
+              <span class="pf-risk-txt" dir="rtl" [ngClass]="expClass(c.expectancy_r)">
+                🛡 סטופ {{ c.stop_atr | number: '1.1-1' }}ATR · −{{ c.risk_pct | number: '1.0-0' }}%
+                <ng-container *ngIf="c.expectancy_r != null">
+                  · E {{ c.expectancy_r >= 0 ? '+' : '' }}{{ c.expectancy_r | number: '1.2-2' }}R</ng-container>
+              </span>
+            </div>
+            <p class="pf-card-call">{{ c.call_he }}</p>
+          </button>
+
+          <div class="pf-review-actions">
+            <button type="button" class="pf-review-reject" (click)="rejectCandidate()">✕ הבא</button>
+            <button type="button" class="pf-review-accept" (click)="acceptCandidate()">✓ הוסף לתיק</button>
+          </div>
+        </ng-container>
+
+        <div class="pf-review-empty" *ngIf="!currentCandidateRow && !reviewStreaming">
+          <p>לא נשארו מועמדים מתאימים בהעדפות הנוכחיות.</p>
+          <button type="button" class="pf-step-back" (click)="backFromReview()">← לשנות העדפות</button>
+        </div>
+
+        <div class="pf-step-nav" *ngIf="currentCandidateRow">
+          <button type="button" class="pf-step-back" (click)="backFromReview()">← הקודם</button>
+        </div>
+      </div>
+
+      <!-- ── Step 5: summary — unchanged logic from before the wizard ───── -->
+      <ng-container *ngIf="wizardStep === 'summary' && (holdings.length || suggestions.length)">
+        <div class="pf-summary">
+          <div class="pf-sum-stat">
+            <span class="pf-sum-v">{{ allRows.length }}</span>
+            <span class="pf-sum-k">מניות בתיק</span>
+          </div>
+          <div class="pf-sum-stat">
+            <span class="pf-sum-v warn">−{{ worstCaseRiskPct | number: '1.0-1' }}%</span>
+            <span class="pf-sum-k">אם כל הסטופים נפגעים יחד</span>
+          </div>
+          <div class="pf-sum-stat">
+            <span class="pf-sum-v" [class.exp-good]="expectedReturnPct >= 0" [class.exp-bad]="expectedReturnPct < 0">
+              {{ expectedReturnPct >= 0 ? '+' : '' }}{{ expectedReturnPct | number: '1.1-1' }}%
+            </span>
+            <span class="pf-sum-k">תוחלת התיק (Σ Expectancy)</span>
+          </div>
+          <div class="pf-sum-stat">
+            <span class="pf-sum-v">{{ sectorBreakdown().length }}</span>
+            <span class="pf-sum-k">סקטורים</span>
+          </div>
+        </div>
+
+        <div class="pf-warn" *ngIf="worstSectorConcentration as w">
+          ⚠ {{ w.count }} מתוך {{ allRows.length }} מאותו סקטור ({{ w.sector }}) —
+          תנועה נגד הסקטור הזה פוגעת ביותר ממניה אחת בבת אחת.
+        </div>
+
+        <div class="pf-sectors">
+          <span class="pf-sector-chip" *ngFor="let s of sectorBreakdown()">
+            {{ s.icon }} {{ s.sector }} · {{ s.count }}
+          </span>
+        </div>
+
+        <!-- ── Holdings ────────────────────────────────────────────────── -->
+        <section class="pf-section" *ngIf="holdings.length">
+          <div class="pf-section-head">
+            <span class="pf-section-dot dot-held"></span><span class="pf-section-emoji">💼</span>
+            <h2>מה כבר יש לכם</h2>
+            <span class="pf-section-count">{{ holdings.length }}</span>
+          </div>
+          <div class="pf-grid">
+            <ng-container *ngTemplateOutlet="card; context: holdingsCtx"></ng-container>
+          </div>
+        </section>
+
+        <!-- ── Suggestions ─────────────────────────────────────────────── -->
+        <section class="pf-section" *ngIf="suggestions.length">
+          <div class="pf-section-head">
+            <span class="pf-section-dot dot-suggest"></span><span class="pf-section-emoji">✨</span>
+            <h2>{{ holdings.length ? 'נבחרו להשלמה' : 'התיק המוצע' }}</h2>
+            <span class="pf-section-sub">מהסקירה שלכם</span>
+            <span class="pf-section-count">{{ suggestions.length }}</span>
+          </div>
+          <div class="pf-grid">
+            <ng-container *ngTemplateOutlet="card; context: suggestionsCtx"></ng-container>
+          </div>
+        </section>
+
+        <div class="pf-empty-suggest" *ngIf="holdings.length && !suggestions.length">
+          התיק כבר מלא ב-{{ holdings.length }} מניות ביעד של {{ targetSize }} — אין צורך בהשלמות.
+        </div>
+
+        <button type="button" class="pf-edit-prefs" (click)="editPreferences()">↻ עריכת העדפות וסקירה מחדש</button>
+      </ng-container>
+    </div>
+  </main>
+
+  <app-stock-quicklook
+    *ngIf="previewTicker"
+    [ticker]="previewTicker"
+    [mode]="previewMode"
+    [anchorRect]="previewAnchor"
+    (closed)="closePreview()"
+    (hoverChange)="onQuicklookHover($event)"
+    (requestFull)="onQuicklookRequestFull()"
+  ></app-stock-quicklook>
+</div>
+
+<!-- ── The card template, shared by holdings and suggestions ────────────────
+     Every row inside .pf-card uses PLAIN flex with the DOM order manually
+     reversed to read right-to-left, never flex-direction:row-reverse — this
+     element repeats per position, and row-reverse at repetition is what made
+     short text disappear in this headless build (see Radar page / git history
+     for the full repro). Hover/tap opens the quick-look preview inline instead
+     of navigating away — `openStock` still exists as the quick-look's own
+     "→ ניתוח מלא" escape hatch. -->
+<ng-template #card let-list="list">
+  <div class="pf-card-wrap" *ngFor="let h of list; trackBy: trackByTicker">
+  <button type="button" class="pf-card" [ngClass]="'act-' + h.action"
+          (mouseenter)="onCardEnter(h.ticker, $event)" (mouseleave)="onCardLeave()"
+          (click)="onCardTap(h.ticker)">
+    <div class="pf-card-top">
+      <span class="pf-card-grade" [style.background]="gradeColor(h.grade)">{{ h.grade }}</span>
+      <span class="pf-card-tk">{{ h.ticker }}</span>
+    </div>
+
+    <div class="pf-card-meta">
+      <span class="pf-card-sector" *ngIf="h.sector">{{ h.sector_icon }} {{ h.sector }}</span>
+      <span class="pf-card-price">{{ h.price | number: '1.2-2' }}</span>
+    </div>
+
+    <div class="pf-card-entry" *ngIf="h.entry != null">
+      <span class="pf-entry-rr" *ngIf="h.risk_reward != null">יחס {{ h.risk_reward | number: '1.1-1' }}</span>
+      <span class="pf-entry-price">{{ h.entry | number: '1.2-2' }}</span>
+      <span class="pf-entry-arrow">→</span>
+    </div>
+
+    <!-- dir="rtl" directly on a plain text-only span (no flex children of its
+         own) is safe and required — mixing Hebrew words with several separate
+         numbers in one unmarked node lets the browser's default bidi algorithm
+         reorder the numbers and even reverse Hebrew words; see the identical
+         fix + comment on the Radar page's rd-card-gain/rd-card-risk. -->
+    <div class="pf-card-gain" *ngIf="h.gain_pct != null">
+      <span class="pf-gain-txt" dir="rtl">
+        📈 +{{ h.gain_pct | number: '1.0-0' }}% · {{ h.gain_days | number: '1.0-0' }}י׳
+        · {{ (h.gain_hit_rate || 0) * 100 | number: '1.0-0' }}%
+      </span>
+    </div>
+
+    <div class="pf-card-risk" *ngIf="h.stop_atr != null">
+      <span class="pf-risk-txt" dir="rtl" [ngClass]="expClass(h.expectancy_r)">
+        🛡 סטופ {{ h.stop_atr | number: '1.1-1' }}ATR · −{{ h.risk_pct | number: '1.0-0' }}%
+        <ng-container *ngIf="h.expectancy_r != null">
+          · E {{ h.expectancy_r >= 0 ? '+' : '' }}{{ h.expectancy_r | number: '1.2-2' }}R</ng-container>
+      </span>
+    </div>
+
+    <p class="pf-card-call">{{ h.call_he }}</p>
+
+    <p class="pf-card-why" *ngIf="h.why">💡 {{ h.why }}</p>
+
+    <div class="pf-card-foot">
+      <span class="pf-action-chip" [ngClass]="'act-' + h.action">{{ actionLabelHe[h.action] }}</span>
+      <span class="pf-state-chip">{{ stateLabelHe[h.state] }}</span>
+      <span class="pf-remove" *ngIf="h.held" (click)="$event.stopPropagation(); removeHolding(h.ticker)">✕</span>
+      <span class="pf-remove" *ngIf="!h.held" (click)="$event.stopPropagation(); removeSuggestion(h.ticker)">✕</span>
+    </div>
+  </button>
+  </div>
+</ng-template>

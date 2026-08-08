@@ -1,0 +1,739 @@
+:host {
+  display: block;
+  height: 100vh;
+  color: #d1d4dc;
+}
+.layout {
+  height: 100vh;
+  overflow: hidden;
+  max-width: 100vw;
+}
+.main {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #0e1117;
+  overflow-x: hidden;
+  /* No `dir`/`direction: rtl` anywhere on this page — this headless Edge build has
+     a rendering bug where a flex row nested under ANY ancestor with dir="rtl"
+     (however distant, and regardless of the row's own direction) makes its
+     children invisible for short text (long text is visibly clipped instead —
+     see git history for the isolate*.html repro). Hebrew still shapes and reads
+     correctly with plain LTR direction; text-align:right plus row-reverse on
+     each flex row gets the same visual RTL layout without ever touching
+     direction. */
+  text-align: right;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.rd-header {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 22px;
+  border-bottom: 1px solid #2a2e39;
+  background: linear-gradient(180deg, #131722 0%, #0e1117 100%);
+  flex-shrink: 0;
+}
+.rd-title-wrap {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.rd-title-text {
+  min-width: 0;
+}
+/* A tiny, always-alive version of the loading sweep — the page's identity, not
+   just a loading state. */
+.rd-sweep-icon {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(171, 71, 188, 0.4);
+  flex-shrink: 0;
+  overflow: hidden;
+  background: radial-gradient(circle at center, rgba(171, 71, 188, 0.12), transparent 70%);
+}
+.rd-sweep-arm {
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(from 0deg, rgba(171, 71, 188, 0.85) 0deg, transparent 50deg, transparent 360deg);
+  animation: rd-spin 3s linear infinite;
+}
+.rd-title-text h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+  color: #fff;
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.rd-title-en {
+  font-size: 12px;
+  font-weight: 600;
+  color: #787b86;
+  letter-spacing: 0.5px;
+}
+.rd-sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #9aa0aa;
+}
+.rd-back {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #d1d4dc;
+  text-decoration: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid #2a2e39;
+  background: #131722;
+  flex-shrink: 0;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.rd-back:hover {
+  border-color: #2962ff;
+  color: #fff;
+}
+.rd-nav {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.rd-back-alt:hover { border-color: #66bb6a; }
+
+/* ── Controls ────────────────────────────────────────────────────────────── */
+.rd-controls {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 12px 22px;
+  border-bottom: 1px solid #2a2e39;
+  flex-shrink: 0;
+}
+.rd-ctrl-group {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 8px;
+}
+.rd-ctrl-label {
+  font-size: 11px;
+  color: #787b86;
+  font-weight: 600;
+}
+.rd-chips {
+  display: flex;
+  flex-direction: row-reverse;
+  gap: 4px;
+  background: #131722;
+  border: 1px solid #2a2e39;
+  border-radius: 7px;
+  padding: 3px;
+}
+.rd-chip {
+  font-size: 12px;
+  font-weight: 600;
+  color: #9aa0aa;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.rd-chip:hover:not(.active) { color: #d1d4dc; }
+.rd-chip.active {
+  background: #2962ff;
+  color: #fff;
+}
+.rd-chip:disabled { cursor: default; opacity: 0.6; }
+
+.rd-sector-toggle {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  background: #131722;
+  border: 1px solid #2a2e39;
+  border-radius: 7px;
+  color: #9aa0aa;
+}
+.rd-sector-toggle.active {
+  background: rgba(171, 71, 188, 0.18);
+  border-color: rgba(171, 71, 188, 0.5);
+  color: #ce93d8;
+}
+
+.rd-scan-btn {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(171, 71, 188, 0.16);
+  border: 1px solid rgba(171, 71, 188, 0.5);
+  border-radius: 7px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.rd-scan-btn:hover:not(:disabled) { background: rgba(171, 71, 188, 0.28); }
+.rd-scan-btn:disabled { opacity: 0.6; cursor: default; }
+.rd-scan-icon.spin { display: inline-block; animation: rd-spin 1s linear infinite; }
+
+.rd-updated-row {
+  padding: 0 22px 10px;
+  margin-top: -6px;
+}
+.rd-updated {
+  font-size: 11.5px;
+  color: #787b86;
+}
+/* The live-streaming indicator — shown while the scan keeps running in the
+   background after the first results are already on screen. Row-reverse, not
+   dir="rtl", per the page-wide rule at the top of this file. */
+.rd-scanning {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 6px;
+  color: #ce93d8;
+  font-weight: 600;
+}
+.rd-scan-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ab47bc;
+  box-shadow: 0 0 6px rgba(171, 71, 188, 0.9);
+  animation: rd-pulse 1.1s ease-in-out infinite;
+}
+/* Phone gets the magnifying-glass emoji instead of the plain pulsing dot — a
+   real icon reads better at a glance than an abstract dot on a small screen.
+   Desktop keeps the dot (hidden here, shown again by the mobile media query
+   swapping which of the two is visible). */
+.rd-scan-emoji {
+  display: none;
+  font-size: 13px;
+  animation: rd-pulse 1.1s ease-in-out infinite;
+}
+@keyframes rd-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+/* ── Body / scroll area ─────────────────────────────────────────────────── */
+.rd-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 22px 40px;
+}
+
+/* ── Loading: an on-theme radar sweep ───────────────────────────────────── */
+.rd-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 70px 20px;
+  text-align: center;
+}
+.rd-radar-anim {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  margin-bottom: 22px;
+}
+.rd-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 50%;
+  border: 1px solid rgba(171, 71, 188, 0.22);
+  transform: translate(-50%, -50%);
+}
+.rd-ring.r1 { width: 140px; height: 140px; }
+.rd-ring.r2 { width: 96px; height: 96px; }
+.rd-ring.r3 { width: 52px; height: 52px; }
+.rd-sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(171, 71, 188, 0.55) 0deg, transparent 55deg, transparent 360deg);
+  animation: rd-spin 2s linear infinite;
+}
+.rd-blip {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffa726;
+  box-shadow: 0 0 9px rgba(255, 167, 38, 0.9);
+  animation: rd-blip 2.4s ease-in-out infinite;
+}
+.rd-blip.b1 { top: 28%; left: 66%; animation-delay: 0s; }
+.rd-blip.b2 { top: 62%; left: 32%; animation-delay: 0.8s; }
+.rd-blip.b3 { top: 46%; left: 56%; animation-delay: 1.6s; }
+@keyframes rd-spin { to { transform: rotate(360deg); } }
+@keyframes rd-blip {
+  0%, 100% { opacity: 0; transform: scale(0.4); }
+  50% { opacity: 1; transform: scale(1); }
+}
+.rd-loading-txt {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+}
+.rd-loading-sub {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: #787b86;
+  max-width: 340px;
+}
+
+/* ── Error / empty states ────────────────────────────────────────────────── */
+.rd-error, .rd-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 60px 20px;
+  color: #9aa0aa;
+}
+.rd-error-icon, .rd-empty-icon { font-size: 30px; margin-bottom: 10px; }
+.rd-error p { color: #ef5350; font-weight: 600; margin: 0 0 14px; }
+.rd-error button {
+  background: #2962ff;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rd-empty p { margin: 2px 0; font-size: 14px; }
+.rd-empty-sub { font-size: 12px; color: #787b86; }
+
+/* ── Results ─────────────────────────────────────────────────────────────── */
+.rd-results {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  transition: opacity 0.2s ease;
+}
+.rd-results.rd-refetching { opacity: 0.45; pointer-events: none; }
+
+.rd-bucket { margin-bottom: 8px; }
+.rd-bucket-head {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #1e222d;
+}
+.rd-bucket-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-now { background: #26a69a; box-shadow: 0 0 7px rgba(38, 166, 154, 0.8); }
+.dot-ready { background: #ffa726; box-shadow: 0 0 7px rgba(255, 167, 38, 0.8); }
+/* Mobile-only markup (.rd-mobile block, gated by *ngIf="isMobileNow" — never in
+   the DOM at desktop widths, so no display toggle needed here) uses a real
+   emoji instead of the plain colored dot: 🎯 for "sitting on the right price
+   now", ⏳ for "ready, waiting for the breakout" — matches the two states'
+   actual meaning better than an abstract color-only dot on a small screen. */
+.rd-bucket-emoji { font-size: 15px; flex-shrink: 0; }
+.rd-bucket-head h2 { margin: 0; font-size: 14px; font-weight: 800; color: #fff; }
+.rd-bucket-sub { font-size: 11.5px; color: #787b86; }
+.rd-bucket-count {
+  margin-right: auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: #9aa0aa;
+  background: #1e222d;
+  border-radius: 10px;
+  padding: 1px 9px;
+}
+
+/* "4 A-grades, all semiconductors" named on the page instead of left for the
+   reader to notice card by card, one at a time. */
+.rd-warn {
+  font-size: 11.5px;
+  color: #ffa726;
+  background: rgba(255, 167, 38, 0.08);
+  border: 1px solid rgba(255, 167, 38, 0.3);
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-bottom: 12px;
+}
+
+.rd-sector-group { margin-bottom: 18px; }
+.rd-sector-head {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.rd-sector-name { font-size: 12.5px; font-weight: 700; color: #c7ccd4; }
+.rd-sector-icon { font-size: 13px; }
+.rd-sector-count {
+  margin-right: auto;
+  font-size: 10.5px;
+  color: #787b86;
+  background: #1e222d;
+  border-radius: 8px;
+  padding: 1px 7px;
+}
+
+/* Flexbox, not CSS Grid — this headless Edge build has a rendering bug where a
+   display:grid ancestor makes a descendant card's short text invisible (see
+   git history for the isolate/test html repro files). Flex-wrap gives the
+   same auto-filling card grid without ever triggering it. */
+.rd-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+/* Sized with a plain `width`, never `flex`/`flex-basis`/`flex-grow` — any of
+   those on the element that (however indirectly) contains the row-reversed
+   card content reintroduces the invisible-text bug (see git history for the
+   isolate/test*.html repro). Plain width does not. The trade-off: a card
+   doesn't grow to fill leftover space at the end of an incomplete row, which
+   is a fair price for text that reliably renders. */
+.rd-card-wrap {
+  width: 230px;
+}
+
+/* ── The card — the core visual unit ────────────────────────────────────── */
+.rd-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: right;
+  gap: 6px;
+  min-width: 0; /* grid/flex items default to min-width:auto (content's natural
+    width), which lets a long what_he string blow past the grid track and force
+    the whole page wide in RTL — this is what actually lets ellipsis truncation
+    below take effect at all. */
+  background: #131722;
+  border: 1px solid #2a2e39;
+  border-right-width: 3px;
+  border-radius: 9px;
+  padding: 12px 13px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+}
+.rd-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+/* Data-driven by the card's own action, not by which bucket/section it renders
+   in — the card template is shared, so this is what lets the border read the
+   same whether the page is grouped by sector or flat. */
+.rd-card.act-enter { border-right-color: #26a69a; }
+.rd-card.act-enter:hover { border-color: rgba(38, 166, 154, 0.6); }
+.rd-card.act-wait_trigger,
+.rd-card.act-wait_buyers { border-right-color: #ffa726; }
+.rd-card.act-wait_trigger:hover,
+.rd-card.act-wait_buyers:hover { border-color: rgba(255, 167, 38, 0.6); }
+
+.rd-card-top {
+  /* Plain row, RTL visual order achieved via DOM order (grade first, ticker
+     last), NOT flex-direction:row-reverse — this repeats once per card, and
+     row-reverse here specifically is what makes short text disappear once
+     enough cards are on the page (see git history). */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.rd-card-tk {
+  font-size: 16px;
+  font-weight: 800;
+  color: #fff;
+}
+.rd-card-grade {
+  font-size: 12px;
+  font-weight: 800;
+  color: #0e1117;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.rd-card-price {
+  font-size: 13px;
+  color: #9aa0aa;
+}
+/* DOM order [sector, price] reversed on purpose — price renders first (right,
+   prominent), sector second (left, secondary). Plain flex, no row-reverse: see
+   the file-level note on why, this repeats once per card. */
+.rd-card-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: -2px;
+}
+.rd-card-sector {
+  font-size: 10.5px;
+  color: #787b86;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* the proximity gauge — a fuel-gauge read on "how close" */
+.rd-gauge-track {
+  height: 5px;
+  border-radius: 3px;
+  background: #1e222d;
+  overflow: hidden;
+}
+.rd-gauge-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #ab47bc, #ffa726);
+}
+.rd-gauge-txt {
+  display: block;
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: #787b86;
+}
+
+/* DOM order [kind, price, arrow, wall] reversed — arrow renders first (right),
+   wall tag last (left). Plain flex, no row-reverse (repeats per card). */
+.rd-card-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 5px;
+  padding: 4px 7px;
+}
+.rd-entry-arrow { color: #787b86; flex-shrink: 0; }
+.rd-entry-price { flex-shrink: 0; font-weight: 700; color: #fff; }
+.rd-entry-kind { color: #9aa0aa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-wall-tag {
+  margin-right: auto;
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #787b86;
+}
+.rd-wall-tag.wall-strong { color: #ce93d8; font-weight: 700; }
+
+/* Gain and risk — single dir="rtl" text node each (icon inlined as the first
+   character, not a separate flex child — see the bidi-corruption comment
+   above the template). No flex role left here beyond right-aligning the block. */
+.rd-card-gain, .rd-card-risk {
+  text-align: right;
+  font-size: 11px;
+}
+.rd-gain-txt, .rd-risk-txt { color: #9aa0aa; }
+.rd-risk-txt.exp-good { color: #26a69a; }
+.rd-risk-txt.exp-bad { color: #ef5350; }
+
+.rd-card-call {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #c7ccd4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.rd-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.rd-state-chip {
+  font-size: 10px;
+  color: #787b86;
+  background: #1e222d;
+  border-radius: 4px;
+  padding: 2px 7px;
+}
+.rd-action-chip {
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 2px 7px;
+}
+.rd-action-chip.act-enter { color: #26a69a; background: rgba(38, 166, 154, 0.14); }
+.rd-action-chip.act-wait_trigger,
+.rd-action-chip.act-wait_buyers,
+.rd-action-chip.act-wait_pullback,
+.rd-action-chip.act-wait_event { color: #ffa726; background: rgba(255, 167, 38, 0.12); }
+.rd-action-chip.act-hold { color: #66bb6a; background: rgba(102, 187, 106, 0.12); }
+.rd-action-chip.act-watch { color: #9aa0aa; background: rgba(154, 160, 170, 0.12); }
+.rd-action-chip.act-out,
+.rd-action-chip.act-avoid { color: #ef5350; background: rgba(239, 83, 80, 0.12); }
+
+/* ── Mobile ──────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .rd-scan-dot { display: none; }
+  .rd-scan-emoji { display: inline-block; }
+
+  .rd-header {
+    padding: 12px 14px;
+    flex-wrap: wrap;
+  }
+  .rd-title-text h1 { font-size: 16px; }
+  .rd-sub { display: none; }
+  .rd-back-label { display: none; }
+  .rd-back { padding: 8px 10px; }
+
+  .rd-controls {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+  /* Each control group claims its own row. Rather than guess at wrap widths for
+     Hebrew chip labels (fragile — see git history), the chip strip itself
+     scrolls horizontally within its own bounded box: a swipeable filter bar is
+     normal mobile UX, and it structurally CANNOT drag the page sideways. */
+  .rd-ctrl-group { flex: 1 1 100%; min-width: 0; max-width: 100%; }
+  .rd-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .rd-chip { flex-shrink: 0; }
+  /* Mobile always drills sector-first (see .rd-mobile below) regardless of this
+     toggle's state, so the control itself is meaningless here. */
+  .rd-sector-toggle { display: none; }
+  .rd-scan-btn { flex: 1 1 100%; justify-content: center; }
+  .rd-updated-row { padding: 0 14px 8px; text-align: center; }
+  .rd-nav { flex: 0 0 auto; }
+  .rd-back-alt { padding: 8px 10px; }
+
+  .rd-body { padding: 14px 14px 32px; }
+  .rd-grid { gap: 9px; justify-content: center; }
+  /* A literal pixel width, never a percentage (100%, calc(100% - Npx)) or a
+     vw-based one — this headless browser has a bug where a PERCENTAGE-resolved
+     width in this exact position makes the card's own text invisible, even
+     though the identical resulting pixel width specified literally renders
+     perfectly (see git history for the width_*.html repro sweep). 320px is
+     comfortably inside the proven-safe 230-362px range and fits every common
+     phone width with a small side margin. */
+  .rd-card-wrap { width: 320px; }
+  .rd-card { padding: 10px; }
+
+  input, select, button {
+    font-size: 16px; /* iOS Safari zoom guard, matches the analyzer page */
+  }
+  .rd-chip { font-size: 12.5px; padding: 6px 10px; }
+
+  /* ── Mobile sector tiles → drill-down (replaces the flat/grouped card list on
+     phone widths — the ".rd-results" block carrying that markup isn't even in the
+     DOM here, gated by *ngIf="!isMobileNow" in the template, not just hidden by
+     CSS). Same flex-wrap-with-literal-px-children pattern as .rd-grid/.rd-card-wrap
+     above — never %/vw on a flex-wrap child at these widths (see that comment for
+     the full story). */
+  .rd-m-bucket { margin-bottom: 22px; }
+  .rd-tiles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+  }
+  .rd-tile {
+    width: 160px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    text-align: right;
+    background: #131722;
+    border: 1px solid #2a2e39;
+    border-radius: 8px;
+    padding: 10px;
+    cursor: pointer;
+  }
+  .rd-tile:active { border-color: #2962ff; }
+  .rd-tile-top {
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+  .rd-tile-grade {
+    font-size: 12px;
+    font-weight: 800;
+    color: #0e1117;
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .rd-tile-icon { font-size: 15px; }
+  .rd-tile-sector {
+    font-size: 12px;
+    font-weight: 700;
+    color: #fff;
+    width: 100%;
+  }
+  .rd-tile-count { font-size: 10.5px; color: #787b86; }
+  .rd-tile-best { font-size: 11px; color: #ce93d8; font-weight: 600; }
+
+  .rd-drill-head {
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #1e222d;
+  }
+  .rd-drill-back {
+    background: #131722;
+    border: 1px solid #2a2e39;
+    color: #d1d4dc;
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .rd-drill-title { font-size: 14px; font-weight: 700; color: #fff; }
+}

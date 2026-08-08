@@ -1,0 +1,5 @@
+# Railway (and any other Nixpacks/Heroku-style Python buildpack) looks for
+# requirements.txt at the repo root — the real dependency list lives in
+# backend/requirements.txt, this just points there so both stay a single
+# source of truth instead of two files to keep in sync.
+-r backend/requirements.txt

@@ -1,0 +1,7 @@
+{
+  "buildCommand": "npx ng build",
+  "outputDirectory": "dist/stock-analyzer",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

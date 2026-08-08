@@ -1,0 +1,1385 @@
+:host {
+  display: block;
+  height: 100vh;
+  color: #d1d4dc;
+}
+
+.layout {
+  height: 100vh;
+}
+
+/* ── Top bar: ticker search + Micha toggle, always visible ─────────────── */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #2a2e39;
+  background: #0e1117;
+  flex-shrink: 0;
+}
+.brand {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.search-wrap {
+  position: relative;
+  width: 220px;
+  flex-shrink: 0;
+}
+.search-wrap input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #1e222d;
+  border: 1px solid #2a2e39;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 200;
+}
+.suggestion {
+  padding: 6px 9px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #d1d4dc;
+}
+.suggestion:hover,
+.suggestion.highlighted {
+  background: #2962ff;
+  color: #fff;
+}
+input,
+select,
+button {
+  background: #1e222d;
+  color: #d1d4dc;
+  border: 1px solid #2a2e39;
+  border-radius: 4px;
+  padding: 7px 9px;
+  font-size: 13px;
+}
+button {
+  cursor: pointer;
+  background: #2962ff;
+  border-color: #2962ff;
+  color: #fff;
+  font-weight: 600;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.micha-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #d1d4dc;
+  cursor: pointer;
+  padding: 7px 10px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  background: #131722;
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+}
+.micha-toggle .he {
+  color: #9aa0aa;
+  font-weight: 400;
+  direction: rtl;
+}
+
+/* ── Nav to the Radar page — the one link the shell doesn't carry itself ─── */
+.radar-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #d1d4dc;
+  text-decoration: none;
+  padding: 7px 12px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  background: #131722;
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.radar-link:hover {
+  border-color: #ab47bc;
+  color: #fff;
+}
+.radar-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ab47bc;
+  box-shadow: 0 0 6px rgba(171, 71, 188, 0.9);
+  flex-shrink: 0;
+}
+.portfolio-link:hover { border-color: #66bb6a; }
+.portfolio-dot { background: #66bb6a; box-shadow: 0 0 6px rgba(102, 187, 106, 0.9); }
+
+/* ── Main ────────────────────────────────────────────────────────────── */
+.main {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  min-width: 0;
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #2a2e39;
+}
+.title {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.title .sym {
+  font-size: 22px;
+  font-weight: 700;
+}
+.ticker-icon {
+  align-self: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ticker-icon img {
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  object-fit: contain;
+  background: #fff;
+}
+.ticker-icon .icon-emoji {
+  font-size: 18px;
+  line-height: 1;
+}
+.sector-chip {
+  align-self: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #9aa0aa;
+  background: #1e222d;
+  border: 1px solid #2a2e39;
+  border-radius: 4px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.title .price {
+  font-size: 20px;
+  color: #fff;
+}
+.badge {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+.badge.up {
+  background: rgba(38, 166, 154, 0.2);
+  color: #26a69a;
+}
+.badge.transition {
+  background: rgba(255, 152, 0, 0.2);
+  color: #ff9800;
+}
+.badge.down {
+  background: rgba(239, 83, 80, 0.2);
+  color: #ef5350;
+}
+.atr {
+  font-size: 12px;
+}
+/* ATR% color tiers — mirrors Micha's watermark: green=calm, gray=normal, red=volatile */
+.vol-low    { color: #26a69a; }
+.vol-medium { color: #9aa0aa; }
+.vol-high   { color: #ef5350; }
+.toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.tgl {
+  font-size: 12px;
+  color: #9aa0aa;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+/* The Micha-mode switch duplicated into the indicator row is a phone-only chip
+   (see the ≤768px block) — on desktop the topbar's own switch is still the one. */
+.mode-tgl {
+  display: none;
+}
+.tgl input {
+  padding: 0;
+}
+.error {
+  background: rgba(239, 83, 80, 0.15);
+  color: #ef5350;
+  padding: 8px 16px;
+  font-size: 13px;
+}
+
+/* ── Workspace: chart + optional side panel ──────────────────────────── */
+.workspace {
+  position: relative;   /* anchors .panel-collapse-btn */
+  flex: 1;
+  display: flex;
+  min-height: 0;      /* let children shrink so the chart never overflows */
+  overflow: hidden;
+}
+.workspace .chart-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.workspace.with-panel .micha {
+  width: 380px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-left: 1px solid #2a2e39;
+  border-bottom: none;
+  transition: width 0.15s ease, padding 0.15s ease;
+}
+
+/* Shrink the panel back to the chart without touching michaMode — the
+   analysis keeps running (chart keeps its Micha overlays), only the text
+   column hides. Desktop/tablet only (≥1151px, see media query below): below
+   that the panel already stacks under the chart as a capped "peek", which
+   solves the same space problem its own way.
+
+   `display:none` MUST be unconditional (outside the media query), not just the
+   default inside it — a real bug found live: with both the "hide" and the
+   "show on desktop" rules scoped to the same `@media (min-width:1151px)`
+   block, anything BELOW that width got no hiding rule at all, so the button
+   fell back to a plain unstyled `<button>` (the browser/app default blue,
+   `#2962ff`, full block width) sitting in normal document flow directly under
+   the chart — a glaring blue bar with nothing to do with mobile at all, since
+   the `position:absolute` that makes it a slim desktop-only edge tab is ALSO
+   inside that same media query and never applied. */
+.panel-collapse-btn {
+  display: none;
+}
+.mobile-panel-toggle {
+  display: none;
+}
+@media (min-width: 1151px) {
+  .workspace.with-panel .panel-collapse-btn {
+    display: flex;
+    position: absolute;
+    top: 14px;
+    right: 380px;
+    z-index: 5;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 42px;
+    border: 1px solid #2a2e39;
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    background: #1c2029;
+    color: #9aa0aa;
+    font-size: 12px;
+    cursor: pointer;
+    transition: right 0.15s ease, background 0.15s ease, color 0.15s ease;
+  }
+  .panel-collapse-btn:hover {
+    background: #2a2e39;
+    color: #fff;
+  }
+  .workspace.with-panel.panel-collapsed .micha {
+    width: 0;
+    padding: 0;
+    border-left: none;
+    overflow: hidden;
+  }
+  .workspace.with-panel.panel-collapsed .panel-collapse-btn {
+    right: 0;
+  }
+}
+
+.micha {
+  padding: 10px 14px;
+  background: #0e1117;
+}
+
+/* ── Decision banner: the bottom line, up top ─────────────────────────── */
+.decision {
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid #2a2e39;
+  border-left-width: 4px;
+  background: #131722;
+}
+.decision.act-enter         { border-left-color: #26a69a; }
+.decision.act-wait_breakout { border-left-color: #ffa726; }
+.decision.act-wait_pullback { border-left-color: #ffa726; }
+.decision.act-watch         { border-left-color: #9aa0aa; }
+.decision.act-avoid         { border-left-color: #ef5350; }
+.decision-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.decision-grade {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0e1117;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+}
+.decision-action {
+  font-size: 15px;
+  font-weight: 700;
+  direction: rtl;
+}
+.act-enter .decision-action         { color: #26a69a; }
+.act-wait_trigger .decision-action  { color: #ffa726; }
+.act-wait_buyers .decision-action   { color: #ffa726; }
+.act-wait_pullback .decision-action { color: #ffa726; }
+.act-wait_event .decision-action    { color: #ffa726; }
+.act-hold .decision-action          { color: #66bb6a; }
+.act-watch .decision-action         { color: #c7ccd4; }
+.act-out .decision-action           { color: #ef5350; }
+.act-avoid .decision-action         { color: #ef5350; }
+.decision-state {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: #9aa0aa;
+  background: #1e222d;
+  border-radius: 4px;
+  padding: 1px 7px;
+  direction: rtl;
+}
+
+/* The call is the answer — it gets the weight. The read is one line of context
+   under it, the way he writes: the instruction first, the chart second. */
+.call-line {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #fff;
+  margin: 0 0 4px;
+}
+.read-line {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #9aa0aa;
+  margin: 0;
+}
+
+/* ── "מתקרב להכרעה" — close to becoming relevant, whatever the grade says ─── */
+.alert-band {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px dashed rgba(171, 71, 188, 0.55);
+  background: rgba(171, 71, 188, 0.09);
+}
+.alert-band.tier-imminent {
+  border-style: solid;
+  border-color: rgba(255, 167, 38, 0.75);
+  background: rgba(255, 167, 38, 0.12);
+}
+.alert-band.tier-close {
+  border-color: rgba(255, 167, 38, 0.5);
+  background: rgba(255, 167, 38, 0.08);
+}
+.alert-top {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.alert-bell { font-size: 11px; }
+.alert-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffa726;
+}
+.alert-band.tier-near .alert-title { color: #ce93d8; }
+.alert-price {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+}
+.alert-dist {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: #9aa0aa;
+  white-space: nowrap;
+}
+.alert-txt {
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #c7ccd4;
+}
+
+/* ── "and if it DOES break?" — the grade's projection past the trigger ────── */
+.ifbreak {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px dashed rgba(120, 123, 134, 0.4);
+  background: rgba(120, 123, 134, 0.06);
+}
+.ifbreak.moves {
+  border-style: solid;
+  border-color: rgba(38, 166, 154, 0.5);
+  background: rgba(38, 166, 154, 0.08);
+}
+.ifbreak-top {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.ifbreak-icon { font-size: 12px; }
+.ifbreak-txt { color: #c7ccd4; line-height: 1.5; }
+.ifbreak-from, .ifbreak-to {
+  font-weight: 800;
+  padding: 0 5px;
+  border-radius: 4px;
+}
+.ifbreak-to { color: #0e1117; }
+.ifbreak-score { color: #9aa0aa; font-size: 11px; }
+
+/* ── The argument: grouped, collapsible, for/against side by side ────────── */
+.reasons {
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rg {
+  border: 1px solid #23272f;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.rg-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  background: #161a24;
+  border: 0;
+  color: #d1d4dc;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: right;
+  direction: rtl;
+  cursor: pointer;
+}
+.rg-head:hover { background: #1b202b; }
+.rg-chev { color: #787b86; font-size: 9px; }
+.rg-title { flex: 1; }
+.rg-count { display: flex; gap: 4px; }
+.rc {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.rc.for { color: #26a69a; background: rgba(38, 166, 154, 0.13); }
+.rc.against { color: #ef5350; background: rgba(239, 83, 80, 0.13); }
+.rg-body {
+  padding: 4px 7px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ri {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.ri-mark {
+  flex: 0 0 auto;
+  font-weight: 700;
+  width: 9px;
+  text-align: center;
+}
+.ri.st-for .ri-mark { color: #26a69a; }
+.ri.st-against .ri-mark { color: #ef5350; }
+.ri.st-note .ri-mark { color: #6b7280; }
+.ri.st-for .ri-txt { color: #d1d4dc; }
+.ri.st-against .ri-txt { color: #c9a0a0; }
+.ri.st-note .ri-txt { color: #9aa0aa; }
+
+/* ── Entry options: each way in, with its OWN stop ───────────────────────── */
+.opts {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.opt {
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.015);
+}
+.opt-now      { border-color: rgba(38, 166, 154, 0.5); }
+.opt-breakout { border-color: rgba(255, 167, 38, 0.45); }
+.opt-pullback { border-color: rgba(66, 165, 245, 0.45); }
+.opt-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-bottom: 3px;
+}
+.opt-kind {
+  font-size: 11px;
+  font-weight: 700;
+  color: #d1d4dc;
+}
+.opt-now .opt-kind      { color: #26a69a; }
+.opt-breakout .opt-kind { color: #ffa726; }
+.opt-pullback .opt-kind { color: #42a5f5; }
+.opt-entry {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+}
+.opt-rr {
+  margin-left: auto;
+  font-size: 11px;
+  color: #9aa0aa;
+}
+.opt-rr.rr-good { color: #26a69a; }
+.opt-rr.rr-bad  { color: #ef5350; }
+/* P(target before stop) + expectancy — a LOW p_win here on a high-R option is a
+   home run's shape, not a warning, so this never uses the red/green pair the same
+   way rr does; only expectancy itself (the number that already nets the odds in)
+   gets colored. */
+.opt-exp {
+  font-size: 10.5px;
+  color: #9aa0aa;
+  white-space: nowrap;
+}
+.opt-exp.exp-good { color: #26a69a; }
+.opt-exp.exp-bad  { color: #ef5350; }
+.opt-stop {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11.5px;
+  color: #9aa0aa;
+  flex-wrap: wrap;
+}
+.opt-stop.pos { opacity: 0.62; }
+.opt-stop-k {
+  font-size: 10px;
+  font-weight: 700;
+  color: #ef5350;
+}
+.opt-stop.pos .opt-stop-k { color: #787b86; }
+.opt-stop b { color: #e3e6ea; font-size: 12.5px; }
+.opt-stop-why { color: #787b86; }
+.opt-risk { margin-left: auto; white-space: nowrap; }
+.opt-risk.risk-hi { color: #ffa726; }
+
+/* ── Panel ⇄ chart: pointing at a price here lights up its line ──────────────
+   The entry/stop/target lines carry no price-axis label by default (five of them
+   in one narrow band overlapped into a smear), so this is how the exact level
+   stays discoverable. Hover on desktop, tap on touch. */
+.hl {
+  cursor: pointer;
+  border-radius: 4px;
+  margin: 0 -4px;
+  padding: 0 4px;
+  transition: background 0.12s ease;
+}
+.hl:hover,
+.hl.active {
+  background: rgba(66, 165, 245, 0.14);
+}
+
+/* ── Target ladder ───────────────────────────────────────────────────────── */
+.targets {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tgt-row {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  border-right: 2px solid rgba(38, 166, 154, 0.5);
+  background: rgba(255, 255, 255, 0.015);
+  transition: background 0.12s ease;
+}
+.tgt-row:hover,
+.tgt-row.active {
+  background: rgba(38, 166, 154, 0.14);
+}
+.tgt-k { color: #9aa0aa; flex: 0 0 auto; }
+.tgt-v { color: #fff; font-weight: 700; }
+.tgt-up { color: #26a69a; margin-left: auto; white-space: nowrap; }
+
+/* ── The ✅ list — his actual posting format ─────────────────────────────── */
+/* The case in sentences — see the .case block in the template for why this sits
+   between the ✅ checklist and the collapsed groups. Plain flex column, no grid and
+   no percentage widths (the headless-rendering rules this file lives by). */
+.case {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.015);
+}
+.case-side { display: flex; flex-direction: column; gap: 3px; }
+.case-head {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: #787b86;
+}
+.case-for .case-head { color: #26a69a; }
+.case-against .case-head { color: #ef5350; }
+.case-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #d1d4dc;
+}
+.case-mark { flex-shrink: 0; font-weight: 700; }
+.case-for .case-mark { color: #26a69a; }
+.case-against .case-mark { color: #ef5350; }
+.case-txt { min-width: 0; }
+
+.why {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+.why-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  color: #d1d4dc;
+  line-height: 1.5;
+}
+.why-row.no { color: #787b86; }
+.why-icon { flex: 0 0 auto; font-size: 10px; }
+.why-row.no .why-icon { color: #ef5350; }
+
+/* ── Phone-only expand toggle for the full analysis (hidden ≥769px) ────── */
+.micha-expand-toggle {
+  display: none;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 8px 0 2px;
+  padding: 9px;
+  background: #131722;
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+  color: #9aa0aa;
+  font-size: 12.5px;
+}
+.micha-expand-toggle:active { background: #1e222d; }
+.micha-expand-toggle .chev { font-size: 10px; }
+.micha-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.micha-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0e1117;
+  padding: 3px 10px;
+  border-radius: 4px;
+}
+.micha-score {
+  font-size: 13px;
+  color: #9aa0aa;
+}
+.micha-score b {
+  font-size: 16px;
+}
+.micha-grade {
+  font-size: 20px;
+  font-weight: 800;
+  color: #0e1117;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+.micha-grade-meaning {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.micha-grade-meaning .gm-sub {
+  font-size: 11px;
+  color: #787b86;
+}
+.ifbreak-why {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: #9aa0aa;
+  margin: 6px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid #2a2e39;
+}
+/* The two-sentence "why this letter". Sits directly under the badge and above
+   the axis bars, so the reader gets the argument in words before the numbers.
+   Slightly larger and lighter than the surrounding detail rows because it is the
+   thing most readers will actually read. */
+.grade-why {
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: #d1d4dc;
+  margin: 0 0 9px;
+  padding: 8px 10px;
+  background: #131722;
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+}
+.micha-head.sub { margin-top: 6px; margin-bottom: 8px; }
+.micha-timing {
+  font-size: 11px;
+  font-weight: 600;
+  color: #d1d4dc;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid #2a2e39;
+}
+.micha-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+.mtag {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: #1e222d;
+  color: #9aa0aa;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.mtag.up { color: #26a69a; }
+.mtag.down { color: #ef5350; }
+.mtag.warn { color: #ffa726; background: rgba(255, 167, 38, 0.1); }
+/* "מתוחה ורחוקה" — the band he declines outright, so it reads as a stop sign rather
+   than a caution (see the extension tags in the template). */
+.mtag.danger { color: #ef5350; background: rgba(239, 83, 80, 0.13); font-weight: 700; }
+.mtag.potential { color: #ab47bc; background: rgba(171, 71, 188, 0.12); text-transform: none; letter-spacing: 0; }
+/* How well-defended the trigger price is — display only, never scored (see
+   models.ts MichaWall). A plain touch count by default; `strength:'strong'` gets
+   a brighter tone so a well-tested wall is visually distinct without implying a
+   grade bonus that doesn't exist. */
+.wall-tag { color: #9aa0aa; }
+.wall-tag.wall-strong { color: #ce93d8; font-weight: 700; }
+
+/* Criteria that don't count toward THIS setup type's grade — still shown as facts
+   (a value play isn't judged on lacking an uptrend) but visually de-emphasised. */
+.mc.noncount {
+  opacity: 0.42;
+  border-style: dashed;
+}
+
+/* ── Entry point + expected gain (the two decision facts) ────────────────── */
+.ep {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ep-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  color: #b0b5bf;
+}
+.ep-tag {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #1e222d;
+  color: #9aa0aa;
+  white-space: nowrap;
+}
+.ep-row.ready .ep-tag { background: rgba(38, 166, 154, 0.18); color: #26a69a; }
+.ep-row.ready .ep-txt { color: #d1d4dc; }
+.ep-row.growth.pace-fast .ep-tag { background: rgba(38, 166, 154, 0.14); color: #26a69a; }
+.ep-row.growth.pace-slow .ep-tag { background: rgba(255, 167, 38, 0.12); color: #ffa726; }
+.ep-row.hold .ep-tag { background: rgba(66, 165, 245, 0.14); color: #42a5f5; }
+.ep-row.hold .ep-txt b { color: #42a5f5; }
+.ep-row.warn .ep-tag { background: rgba(255, 167, 38, 0.14); color: #ffa726; }
+.ep-row.warn .ep-txt { color: #c7ccd4; }
+.ep-txt { line-height: 1.45; }
+/* The odds belong next to the number, not in a tooltip — "+30%" at a 17% hit rate
+   and "+8%" at 75% are not the same claim and must not read alike. */
+.ep-hit { color: #9aa0aa; }
+.ep-row.growth.pace-fast .ep-hit { color: #26a69a; }
+.ep-stretch { color: #787b86; font-size: 11.5px; }
+.ep-txt b { color: #26a69a; }
+
+/* ── Grade breakdown: which budget the letter came from ──────────────────── */
+.grade-bd {
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+  padding: 7px 9px;
+  margin-bottom: 8px;
+  background: #131722;
+}
+.gbd-row, .gbd-total {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 3px;
+}
+.gbd-total {
+  margin: 5px 0 0;
+  padding-top: 5px;
+  border-top: 1px solid #2a2e39;
+}
+.gbd-k { font-size: 11px; color: #9aa0aa; flex: 0 0 76px; }
+.gbd-d { font-size: 10px; color: #6b7079; margin: -1px 0 4px 83px; }
+.gbd-bar {
+  flex: 1;
+  height: 6px;
+  background: #1e222d;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.gbd-fill {
+  display: block;
+  height: 100%;
+  background: #26a69a;
+  border-radius: 3px;
+}
+.gbd-fill.mid { background: #ffa726; }
+.gbd-fill.lo { background: #ef5350; }
+
+/* The ± time adjustment: a centre-anchored bar, so "slower than typical" reads as
+   a deduction rather than as a small score on a 0→max scale. */
+.gbd-row.adj { opacity: 0.9; }
+.adj-bar { position: relative; overflow: visible; }
+.adj-zero {
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: #2a2e39;
+}
+.adj-fill {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: #26a69a;
+  border-radius: 3px;
+}
+.adj-fill.neg { background: #ffa726; }
+.gbd-v.pos { color: #26a69a; }
+.gbd-v.neg { color: #ffa726; }
+.gbd-caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #2a2e39;
+}
+.gbd-cap {
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: rgba(255, 167, 38, 0.12);
+  color: #ffa726;
+  line-height: 1.4;
+}
+.gbd-v { font-size: 11px; color: #d1d4dc; flex: 0 0 46px; text-align: left; }
+.gbd-v.strong { font-weight: 700; font-size: 12.5px; }
+.gbd-max { color: #6b7079; font-size: 10px; }
+
+/* ── שינוי כיוון: his four-stage sequence, shown as progress ─────────────── */
+.micha-dc {
+  border: 1px solid #2a2e39;
+  border-right: 3px solid #787b86;
+  border-radius: 6px;
+  padding: 7px 9px;
+  margin-bottom: 8px;
+  background: #131722;
+}
+.micha-dc.turning { border-right-color: #ffa726; }
+.micha-dc.confirmed { border-right-color: #26a69a; }
+.dc-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+}
+.dc-title { font-size: 12px; font-weight: 700; color: #d1d4dc; }
+.dc-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: #9aa0aa;
+  background: #1e222d;
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+.micha-dc.turning .dc-count { color: #ffa726; }
+.micha-dc.confirmed .dc-count { color: #26a69a; }
+.dc-label { font-size: 11.5px; color: #9aa0aa; }
+.dc-stages { display: flex; flex-wrap: wrap; gap: 4px; }
+.dc-stage {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: #1e222d;
+  color: #6b7079;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dc-stage.done { color: #26a69a; background: rgba(38, 166, 154, 0.1); }
+.dc-icon { font-size: 10px; }
+.micha-notes {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #b0b5bf;
+}
+.micha-notes li { margin: 2px 0; }
+.micha-headline {
+  font-size: 13px;
+  color: #d1d4dc;
+  margin: 2px 0 8px;
+}
+.micha-status {
+  background: #131722;
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+.status-line {
+  font-size: 12px;
+  margin: 0 0 6px;
+  color: #9aa0aa;
+}
+.status-bar {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(38,166,154,0.35), rgba(239,83,80,0.35));
+  margin-top: 4px;
+}
+.status-bar-fill {
+  position: absolute;
+  top: -3px;
+  height: 12px;
+  width: 2px;
+  background: #fff;
+  border-radius: 1px;
+  box-shadow: 0 0 4px rgba(255,255,255,0.8);
+}
+.status-bar-label {
+  position: absolute;
+  top: -14px;
+  font-size: 9px;
+  font-weight: 700;
+}
+.status-bar-label.sup { left: 0; color: #26a69a; }
+.status-bar-label.res { right: 0; color: #ef5350; }
+.micha-body {
+  display: flex;
+  flex-direction: column;   /* stack checklist over plan in the narrow side panel */
+  gap: 12px;
+  align-items: stretch;
+}
+.micha-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+.mc {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #2a2e39;
+  cursor: default;
+}
+.mc-icon { font-weight: 700; }
+.mc.pass { color: #26a69a; border-color: rgba(38, 166, 154, 0.4); background: rgba(38, 166, 154, 0.08); }
+.mc.near { color: #ffa726; border-color: rgba(255, 167, 38, 0.4); background: rgba(255, 167, 38, 0.08); }
+.mc.fail { color: #6b7080; }
+.micha-plan {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 3px 10px;
+  font-size: 12px;
+  align-content: start;
+  min-width: 190px;
+}
+.plan-row { display: contents; }
+.plan-k { color: #9aa0aa; }
+.plan-v { color: #fff; font-weight: 600; text-align: right; }
+.plan-v.small { font-size: 10px; font-weight: 400; color: #9aa0aa; }
+.plan-risk { color: #ef5350; font-weight: 400; }
+.plan-up { color: #26a69a; font-weight: 400; }
+.rr-good { color: #26a69a; }
+.rr-bad { color: #ef5350; }
+.earn-soon { color: #ffa726; }
+
+/* ── If-then scenarios ───────────────────────────────────────────────── */
+.micha-scenarios {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+.scenario {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 12px;
+  padding: 5px 9px;
+  border-radius: 5px;
+  background: #131722;
+  border-left: 3px solid #2a2e39;
+}
+.scenario.bull { border-left-color: #26a69a; }
+.scenario.bear { border-left-color: #ef5350; }
+.sc-icon { font-size: 10px; }
+.scenario.bull .sc-icon { color: #26a69a; }
+.scenario.bear .sc-icon { color: #ef5350; }
+.sc-text { color: #d1d4dc; }
+
+.chart-wrap {
+  flex: 1;
+  min-height: 0;   /* let flex shrink it so content never overflows the page */
+  padding: 8px;
+  overflow: hidden;
+}
+
+/* ── Setups panel ────────────────────────────────────────────────────── */
+.setups {
+  border-top: 1px solid #2a2e39;
+  padding: 12px 16px;
+  max-height: 210px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+}
+.setups-empty {
+  color: #9aa0aa;
+  font-size: 13px;
+}
+.setup-card {
+  background: #131722;
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+  padding: 9px 11px;
+}
+.setup-card.dim {
+  opacity: 0.6;
+}
+.setup-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.tag {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(38, 166, 154, 0.25);
+  color: #26a69a;
+}
+.tag.watch {
+  background: rgba(154, 160, 170, 0.2);
+  color: #9aa0aa;
+}
+.setup-detail {
+  font-size: 12px;
+  color: #b0b5bf;
+  line-height: 1.4;
+}
+
+/* ── Responsive: stack the Micha panel below the chart on narrow screens ──
+   Three tiers:
+     ≥1151px (desktop) — side panel, always fully expanded, 380px wide.
+     769–1150px (tablet) — panel stacks below the chart, always fully expanded,
+       capped at 46% of the workspace height.
+     ≤768px (phone — the PRIMARY target) — panel collapses to a "peek" (grade +
+       decision banner only) so the chart is the default view; a tap on the
+       expand toggle reveals the full analysis, capped at 70vh with its own
+       scroll so the chart is still visible above it. ── */
+@media (max-width: 1150px) {
+  .workspace.with-panel {
+    flex-direction: column;
+  }
+  .workspace.with-panel .micha {
+    width: auto;
+    max-height: 46%;
+    border-left: none;
+    border-top: 1px solid #2a2e39;
+  }
+}
+
+@media (max-width: 768px) {
+  .micha-expand-toggle { display: flex; }
+  .micha-details { display: none; }
+  .micha.expanded .micha-details { display: block; }
+
+  /* The peek shows the grade, the bottom-line recommendation, and the "מתקרבת
+     להכרעה" alert (a name worth watching even on a low grade). Everything else
+     moves behind the SAME expand toggle as the rest of the analysis: the redundant
+     one-line chart-context repeat (`read-line` restates what `call-line` already
+     said), the full entry-option cards (multi-line, with stop rationale and a
+     second "long hold" stop row per option — the trigger price they'd otherwise
+     show is already in `call-line`), and the condition/expected-gain rows (`תנאי`
+     / `רווח צפוי`) — real numbers, but a second read on a phone, not a first-glance
+     one. The point is screen space: the chart is what the user opened the app for. */
+  .decision .read-line,
+  .decision .opts,
+  .decision .ep-row.hold,
+  .decision .ep-row.growth {
+    display: none;
+  }
+  .micha.expanded .decision .read-line {
+    display: block;
+  }
+  .micha.expanded .decision .opts,
+  .micha.expanded .decision .ep-row.hold,
+  .micha.expanded .decision .ep-row.growth {
+    display: flex;
+  }
+  /* Same treatment for the if-break rationale: the ⚡ headline earns its place in
+     the peek, the paragraph explaining the projected letter does not. */
+  .ifbreak-why { display: none; }
+  .micha.expanded .ifbreak-why { display: block; }
+
+  /* The "peek" used to be small enough that `max-height:none` (size to content)
+     was fine — but the peek now carries the alert band, entry-option cards and
+     warnings, and unconstrained content was squeezing the chart down to a sliver
+     in a flex column, which read as "the graph is broken" more than "the panel is
+     informative". Both states now cap against the viewport with their own scroll,
+     so the chart is guaranteed real space no matter how much the peek has to say. */
+  .workspace.with-panel .chart-wrap {
+    min-height: 240px;
+  }
+  .workspace.with-panel .micha {
+    max-height: 40vh;
+    overflow-y: auto;
+    /* The classic flexbox trap: a flex item's default `min-height` is `auto`, which
+       means "never shrink below your content's natural size" — NOT 0. Inside a
+       column flex container (`.workspace.with-panel`) that also clips overflow,
+       that made `.micha` try to render at its full, unconstrained content height
+       regardless of `max-height`, and the excess got clipped by `.workspace`'s own
+       `overflow:hidden` instead of becoming reachable through `.micha`'s OWN
+       scrollbar — which is exactly "scrolling doesn't reach the end": the true end
+       of the content was never there to scroll to, it was cut off one level up.
+       `min-height:0` lets the flex algorithm actually honour `max-height`. */
+    min-height: 0;
+  }
+  .workspace.with-panel .micha.expanded {
+    max-height: 72vh;
+    overflow-y: auto;
+  }
+
+  /* "Let me just see the graph" — collapsing the panel on phone hides it
+     ENTIRELY (unlike the peek/expanded states above, which always keep at
+     least the grade+call visible) so the chart can claim the whole workspace
+     height instead of being capped to make room for it. Same `panelCollapsed`
+     flag the desktop edge-tab uses; `min-height:240px` above still applies as
+     a floor, this just removes the ceiling that competes with it. */
+  .workspace.with-panel.panel-collapsed .micha {
+    display: none;
+  }
+  .workspace.with-panel.panel-collapsed .chart-wrap {
+    flex: 1;
+  }
+
+  /* Containing block for the floating toggle button — see the HTML comment
+     for why it must be .chart-wrap and not .workspace. */
+  .chart-wrap {
+    position: relative;
+  }
+  .mobile-panel-toggle {
+    display: block;
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 6;
+    background: rgba(19, 23, 34, 0.92);
+    border: 1px solid #2a2e39;
+    color: #d1d4dc;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 8px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  }
+  .mobile-panel-toggle:active {
+    background: rgba(42, 46, 57, 0.95);
+  }
+
+  /* Top bar: just brand + search + button now — the Micha-mode switch moved down
+     into the indicator-checkbox row (`.mode-tgl`) instead of claiming its own full
+     row here, which is the row this reclaims for the chart. */
+  .topbar {
+    padding: 8px 12px;
+  }
+  .search-wrap {
+    width: auto;
+    flex: 1 1 120px;
+  }
+  .micha-toggle {
+    display: none;
+  }
+  .toggle-en { display: none; }   /* keep the icon + Hebrew, drop the English */
+
+  /* The radar link goes icon-only on a phone topbar — the label would crowd the
+     search box, which has priority. */
+  .radar-link-label { display: none; }
+  .radar-link { padding: 7px 8px; }
+
+  /* The mode switch, relocated: hidden in the topbar (above), shown here as the
+     first chip in the same line as the indicator checkboxes. */
+  .mode-tgl {
+    display: flex;
+    font-weight: 700;
+    color: #fff;
+    border: 1px solid #2962ff;
+    border-radius: 4px;
+    flex: 0 0 auto;
+  }
+
+  /* All the checkboxes genuinely fit on ONE line — if a stock happens to have every
+     optional overlay (200MA/20MA/Fib/Trend/Channel/Triangle) and they don't all fit
+     at once, this scrolls sideways rather than wrapping to a second row, which
+     would give the space right back to the panel instead of the chart. */
+  .header .toggles {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+
+  /* Prevent iOS Safari's auto-zoom-on-focus (triggers below 16px inputs), and
+     give every tappable control a comfortable touch target. */
+  input, select, button {
+    font-size: 16px;
+  }
+  .tgl, .micha-toggle {
+    padding: 8px 6px;
+  }
+  .suggestion {
+    padding: 11px 12px;
+    font-size: 15px;
+  }
+
+  /* The ticker/sector/price/badge/ATR row now floats ON the chart itself
+     (ChartComponent's `.chart-info`, reading the same `analysis.meta`) instead of
+     sitting in its own row here — that row's height goes back to the chart, which
+     is the whole point of a phone layout. `.header` keeps only the indicator
+     toggles. */
+  .title {
+    display: none;
+  }
+  .header {
+    padding: 6px 12px;
+  }
+
+  /* Slightly larger reading text for the primary "explain the stock" content. */
+  .decision-reason { font-size: 13.5px; }
+  .micha-headline { font-size: 13.5px; }
+  .status-line { font-size: 13px; }
+  .mc, .mtag { font-size: 12px; padding: 4px 9px; }
+  .dc-stage { font-size: 12px; padding: 4px 9px; }
+  .dc-title { font-size: 13px; }
+  .ep-row { font-size: 13px; }
+  .ep-tag { font-size: 11px; padding: 2px 7px; }
+  .gbd-k, .gbd-v { font-size: 12px; }
+  .gbd-k { flex: 0 0 104px; }
+  .gbd-bar { height: 8px; }
+
+  .setups {
+    grid-template-columns: 1fr;
+    max-height: 38vh;
+    padding: 10px 12px;
+  }
+}

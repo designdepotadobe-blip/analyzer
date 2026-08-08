@@ -1,0 +1,360 @@
+<div class="layout">
+  <main class="main">
+    <!-- ── Header ──────────────────────────────────────────────────────── -->
+    <header class="rd-header">
+      <div class="rd-title-wrap">
+        <span class="rd-sweep-icon"><span class="rd-sweep-arm"></span></span>
+        <div class="rd-title-text">
+          <h1>רדאר <span class="rd-title-en">Radar</span></h1>
+          <p class="rd-sub">מניות שרלוונטיות להיכנס היום — יושבות על המחיר הנכון, או מוכנות אליו</p>
+        </div>
+      </div>
+      <div class="rd-nav">
+        <a routerLink="/portfolio" class="rd-back rd-back-alt">
+          <span>📊</span>
+          <span class="rd-back-label">בניית תיק</span>
+        </a>
+        <a routerLink="/" class="rd-back">
+          <span>📈</span>
+          <span class="rd-back-label">לניתוח מלא</span>
+        </a>
+      </div>
+    </header>
+
+    <!-- ── Controls ────────────────────────────────────────────────────── -->
+    <div class="rd-controls">
+      <div class="rd-ctrl-group">
+        <span class="rd-ctrl-label">היקף</span>
+        <div class="rd-chips">
+          <button
+            *ngFor="let n of limitOptions"
+            class="rd-chip"
+            [class.active]="limit === n"
+            [disabled]="loading"
+            (click)="setLimit(n)"
+          >{{ n === 517 ? 'הכל' : n }}</button>
+        </div>
+      </div>
+      <div class="rd-ctrl-group">
+        <span class="rd-ctrl-label">ציון מינימלי</span>
+        <div class="rd-chips">
+          <button
+            *ngFor="let g of gradeOptions"
+            class="rd-chip"
+            [class.active]="minGrade === g"
+            [disabled]="loading"
+            (click)="setMinGrade(g)"
+          >{{ g }}</button>
+        </div>
+      </div>
+      <div class="rd-ctrl-group">
+        <span class="rd-ctrl-label">מיון</span>
+        <div class="rd-chips">
+          <button
+            *ngFor="let s of sortOptions"
+            class="rd-chip"
+            [class.active]="sort === s.key"
+            [disabled]="loading"
+            (click)="setSort(s.key)"
+          >{{ s.label }}</button>
+        </div>
+      </div>
+      <!-- Independent from "היקף" (how many tickers get SCANNED) — this only caps
+           how many cards render per bucket, live: as a better hit streams in and
+           gets re-sorted to the top, a weaker one already shown falls off. -->
+      <div class="rd-ctrl-group">
+        <span class="rd-ctrl-label">הצג עד</span>
+        <div class="rd-chips">
+          <button
+            *ngFor="let n of displayCapOptions"
+            class="rd-chip"
+            [class.active]="displayCap === n"
+            (click)="setDisplayCap(n)"
+          >{{ n === INFINITY ? 'הכל' : n }}</button>
+        </div>
+      </div>
+      <button class="rd-chip rd-sector-toggle" [class.active]="bySector" (click)="toggleSector()">
+        🏷 לפי סקטור
+      </button>
+      <button class="rd-scan-btn" [disabled]="loading" (click)="runScan()">
+        <span class="rd-scan-icon" [class.spin]="loading || streaming">🔄</span>
+        {{ loading ? 'סורק…' : (streaming ? 'סורק…' : 'סרוק מחדש') }}
+      </button>
+    </div>
+    <!-- Kept as a separate sibling, not a 4th child of .rd-controls — this headless
+         Edge build has a rendering bug where a specific 4-element combination in
+         that row makes a LATER card's ticker text invisible (see git history for
+         the isolate*.html/testK-P repro). Splitting it out of the flex row avoids
+         the trigger combination entirely. -->
+    <div class="rd-updated-row" *ngIf="results.length">
+      <!-- live, while the scan is still running in the background — the point of
+           streaming: something to look at within a second, not a multi-minute
+           blank wait -->
+      <span class="rd-updated rd-scanning" *ngIf="streaming">
+        <span class="rd-scan-dot"></span><span class="rd-scan-emoji">🔍</span> סורק… {{ results.length }} רלוונטיות נמצאו עד כה
+      </span>
+      <span class="rd-updated" *ngIf="!streaming && lastScan">{{ matched }} מתוך {{ scanned }} רלוונטיות היום · עודכן {{ timeAgo() }}</span>
+    </div>
+
+    <div class="rd-body">
+      <!-- ── Loading: an on-theme radar sweep, not a generic spinner ──────── -->
+      <div class="rd-loading" *ngIf="loading && !results.length">
+        <div class="rd-radar-anim">
+          <div class="rd-ring r1"></div>
+          <div class="rd-ring r2"></div>
+          <div class="rd-ring r3"></div>
+          <div class="rd-sweep"></div>
+          <div class="rd-blip b1"></div>
+          <div class="rd-blip b2"></div>
+          <div class="rd-blip b3"></div>
+        </div>
+        <p class="rd-loading-txt">סורק {{ limit === 517 ? '517' : limit }} מניות…</p>
+        <p class="rd-loading-sub">התוצאות הראשונות יופיעו תוך שניות — הרשימה תתמלא בזמן אמת</p>
+      </div>
+
+      <!-- ── Error ─────────────────────────────────────────────────────── -->
+      <div class="rd-error" *ngIf="error">
+        <span class="rd-error-icon">⚠</span>
+        <p>{{ error }}</p>
+        <button (click)="runScan()">נסה שוב</button>
+      </div>
+
+      <!-- ── Empty ─────────────────────────────────────────────────────── -->
+      <div class="rd-empty" *ngIf="!loading && !error && lastScan && !results.length">
+        <span class="rd-empty-icon">🌙</span>
+        <p>אף מניה לא רלוונטית להיכנס היום בציון {{ minGrade }}+ בטווח שנבחר.</p>
+        <p class="rd-empty-sub">נסו היקף גדול יותר, או הורידו את הציון המינימלי.</p>
+      </div>
+
+      <!-- ── DESKTOP: two buckets, flat grid or sector groups ─────────────── -->
+      <div class="rd-results" *ngIf="results.length && !isMobileNow" [class.rd-refetching]="loading">
+        <section class="rd-bucket" *ngIf="enteringNow.length">
+          <div class="rd-bucket-head">
+            <span class="rd-bucket-dot dot-now"></span>
+            <h2>יושבת על המחיר הנכון</h2>
+            <span class="rd-bucket-sub">כניסה זמינה עכשיו</span>
+            <span class="rd-bucket-count">{{ enteringNow.length }}</span>
+          </div>
+          <div class="rd-warn" *ngIf="sectorWarning(enteringNow) as w">
+            ⚠ {{ w.count }} מתוך {{ enteringNow.length }} מאותו סקטור ({{ w.sector }}) — לא {{ w.count }} הזדמנויות עצמאיות, הימור אחד עם {{ w.count }} כובעים
+          </div>
+
+          <ng-container *ngIf="!bySector">
+            <div class="rd-grid">
+              <ng-container *ngTemplateOutlet="card; context: enteringNowCtx"></ng-container>
+            </div>
+          </ng-container>
+          <ng-container *ngIf="bySector">
+            <div class="rd-sector-group" *ngFor="let sg of enteringNowGroups">
+              <div class="rd-sector-head">
+                <span class="rd-sector-name">{{ sg.sector }}</span>
+                <span class="rd-sector-icon">{{ sg.icon }}</span>
+                <span class="rd-sector-count">{{ sg.rows.length }}</span>
+              </div>
+              <div class="rd-grid">
+                <ng-container *ngTemplateOutlet="card; context: sg.ctx"></ng-container>
+              </div>
+            </div>
+          </ng-container>
+        </section>
+
+        <section class="rd-bucket" *ngIf="ready.length">
+          <div class="rd-bucket-head">
+            <span class="rd-bucket-dot dot-ready"></span>
+            <h2>מוכנה — ממתינה לפריצה</h2>
+            <span class="rd-bucket-sub">ההתראה כבר קרובה או מיידית</span>
+            <span class="rd-bucket-count">{{ ready.length }}</span>
+          </div>
+          <div class="rd-warn" *ngIf="sectorWarning(ready) as w">
+            ⚠ {{ w.count }} מתוך {{ ready.length }} מאותו סקטור ({{ w.sector }}) — לא {{ w.count }} הזדמנויות עצמאיות, הימור אחד עם {{ w.count }} כובעים
+          </div>
+
+          <ng-container *ngIf="!bySector">
+            <div class="rd-grid">
+              <ng-container *ngTemplateOutlet="card; context: readyCtx"></ng-container>
+            </div>
+          </ng-container>
+          <ng-container *ngIf="bySector">
+            <div class="rd-sector-group" *ngFor="let sg of readyGroups">
+              <div class="rd-sector-head">
+                <span class="rd-sector-name">{{ sg.sector }}</span>
+                <span class="rd-sector-icon">{{ sg.icon }}</span>
+                <span class="rd-sector-count">{{ sg.rows.length }}</span>
+              </div>
+              <div class="rd-grid">
+                <ng-container *ngTemplateOutlet="card; context: sg.ctx"></ng-container>
+              </div>
+            </div>
+          </ng-container>
+        </section>
+      </div>
+
+      <!-- ── MOBILE: sector tiles → tap → drill-down list ─────────────────
+           Replaces the flat scrolling card list. A tile shows the sector's best
+           pick at a glance; tapping it opens just that sector's cards, with a
+           back affordance — the "clicking on a sector then jumping to the stock"
+           navigation asked for, phone-only. -->
+      <div class="rd-mobile" *ngIf="results.length && isMobileNow">
+        <ng-container *ngIf="!selectedSectorMobile">
+          <section class="rd-m-bucket" *ngIf="enteringNow.length">
+            <div class="rd-bucket-head">
+              <span class="rd-bucket-emoji">🎯</span>
+              <h2>יושבת על המחיר הנכון</h2>
+              <span class="rd-bucket-count">{{ enteringNow.length }}</span>
+            </div>
+            <div class="rd-warn" *ngIf="sectorWarning(enteringNow) as w">
+              ⚠ {{ w.count }} מאותו סקטור ({{ w.sector }})
+            </div>
+            <div class="rd-tiles">
+              <button type="button" class="rd-tile" *ngFor="let sg of enteringNowGroups"
+                      (click)="openSector('enteringNow', sg.sector)">
+                <span class="rd-tile-top">
+                  <span class="rd-tile-grade" [style.background]="gradeColor(sg.rows[0].grade)">{{ sg.rows[0].grade }}</span>
+                  <span class="rd-tile-icon">{{ sg.icon }}</span>
+                </span>
+                <span class="rd-tile-sector">{{ sg.sector }}</span>
+                <span class="rd-tile-count">{{ sg.rows.length }} מניות</span>
+                <span class="rd-tile-best">{{ sg.rows[0].ticker }}</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="rd-m-bucket" *ngIf="ready.length">
+            <div class="rd-bucket-head">
+              <span class="rd-bucket-emoji">⏳</span>
+              <h2>מוכנה — ממתינה לפריצה</h2>
+              <span class="rd-bucket-count">{{ ready.length }}</span>
+            </div>
+            <div class="rd-warn" *ngIf="sectorWarning(ready) as w">
+              ⚠ {{ w.count }} מאותו סקטור ({{ w.sector }})
+            </div>
+            <div class="rd-tiles">
+              <button type="button" class="rd-tile" *ngFor="let sg of readyGroups"
+                      (click)="openSector('ready', sg.sector)">
+                <span class="rd-tile-top">
+                  <span class="rd-tile-grade" [style.background]="gradeColor(sg.rows[0].grade)">{{ sg.rows[0].grade }}</span>
+                  <span class="rd-tile-icon">{{ sg.icon }}</span>
+                </span>
+                <span class="rd-tile-sector">{{ sg.sector }}</span>
+                <span class="rd-tile-count">{{ sg.rows.length }} מניות</span>
+                <span class="rd-tile-best">{{ sg.rows[0].ticker }}</span>
+              </button>
+            </div>
+          </section>
+        </ng-container>
+
+        <ng-container *ngIf="selectedSectorMobile">
+          <div class="rd-drill-head">
+            <button type="button" class="rd-drill-back" (click)="closeSector()">← לסקטורים</button>
+            <span class="rd-drill-title">{{ selectedSectorMobile }}</span>
+          </div>
+          <div class="rd-grid">
+            <ng-container *ngTemplateOutlet="card; context: selectedSectorCtx"></ng-container>
+          </div>
+        </ng-container>
+      </div>
+    </div>
+  </main>
+
+  <app-stock-quicklook
+    *ngIf="previewTicker"
+    [ticker]="previewTicker"
+    [mode]="previewMode"
+    [anchorRect]="previewAnchor"
+    (closed)="closePreview()"
+    (hoverChange)="onQuicklookHover($event)"
+    (requestFull)="onQuicklookRequestFull()"
+  ></app-stock-quicklook>
+</div>
+
+<!-- ── The card template, shared by every bucket / sector group / mobile drill-down
+     ─ Every row directly inside .rd-card uses PLAIN flex (never
+     flex-direction:row-reverse) with the DOM order manually reversed to read
+     right-to-left — this element repeats dozens of times per page, and
+     row-reverse at that repetition count is what made short text disappear in
+     this headless build (see git history). Multi-item rows list children in
+     REVERSE reading order on purpose; that is not a typo.
+
+     Hover/tap opens the quick-look preview INLINE instead of navigating away —
+     the click that used to be `openStock(h.ticker)` (destroying this whole page's
+     scan state) is now `onCardTap`, and the actual "leave this page" action lives
+     inside the quick-look's own "→ ניתוח מלא" button. -->
+<ng-template #card let-list="list">
+  <div class="rd-card-wrap" *ngFor="let h of list; trackBy: trackByTicker">
+  <button
+    type="button"
+    class="rd-card"
+    [ngClass]="'act-' + h.action"
+    (mouseenter)="onCardEnter(h.ticker, $event)"
+    (mouseleave)="onCardLeave()"
+    (click)="onCardTap(h.ticker)"
+  >
+    <div class="rd-card-top">
+      <span class="rd-card-grade" [style.background]="gradeColor(h.grade)">{{ h.grade }}</span>
+      <span class="rd-card-tk">{{ h.ticker }}</span>
+    </div>
+
+    <div class="rd-card-meta">
+      <span class="rd-card-sector" *ngIf="h.sector">{{ h.sector_icon }} {{ h.sector }}</span>
+      <span class="rd-card-price">{{ h.price | number: '1.2-2' }}</span>
+    </div>
+
+    <!-- proximity gauge — only the "ready" bucket carries an alert at all
+         (verdict._alert returns null whenever action === 'enter') -->
+    <div class="rd-gauge" *ngIf="h.alert as al">
+      <div class="rd-gauge-track">
+        <div class="rd-gauge-fill" [style.width.%]="fillPct(h)"></div>
+      </div>
+      <span class="rd-gauge-txt">{{ al.distance_pct | number: '1.1-1' }}% · {{ al.distance_atr | number: '1.2-2' }} ATR</span>
+    </div>
+
+    <!-- the entry itself — where, and which of the three ways in. DOM order is
+         the REVERSE of the intended right-to-left read order (arrow, price, kind,
+         wall) — with plain flex (no row-reverse) the LAST dom child lands at the
+         physical right edge, which is where reading starts. Get this backwards
+         and the wall tag, not the arrow, ends up in the prominent position (a bug
+         caught and fixed here, not a style choice — see git history). -->
+    <div class="rd-card-entry" *ngIf="h.entry != null">
+      <!-- how well-defended this exact price is — display only, never scored -->
+      <span class="rd-wall-tag" *ngIf="h.trigger_wall as w" [class.wall-strong]="w.strength === 'strong'"
+            [title]="w.touches + ' מגעים'">{{ w.touches }}×</span>
+      <span class="rd-entry-kind" *ngIf="h.option_kind">{{ optionKindHe[h.option_kind] }}</span>
+      <span class="rd-entry-price">{{ h.entry | number: '1.2-2' }}</span>
+      <span class="rd-entry-arrow">→</span>
+    </div>
+
+    <!-- potential gain, priced with its own odds — see micha._growth. `dir="rtl"`
+         directly on a plain text-only element (no flex children of its own) is
+         safe — the invisible-text bug documented elsewhere in this file is about
+         FLEX CONTAINERS distributing space among multiple element children; a
+         single span of interpolated text was never that. Without an explicit
+         direction here, mixing Hebrew words with several separate numbers in one
+         unmarked (default-LTR) node let the bidi algorithm reorder the numbers
+         against each other and, worse, visibly reverse "סטופ" — a real bug
+         caught on screen, not a typo. -->
+    <div class="rd-card-gain" *ngIf="h.gain_pct != null">
+      <span class="rd-gain-txt" dir="rtl">
+        📈 +{{ h.gain_pct | number: '1.0-0' }}% · {{ h.gain_days | number: '1.0-0' }}י׳
+        · {{ (h.gain_hit_rate || 0) * 100 | number: '1.0-0' }}%
+      </span>
+    </div>
+
+    <!-- risk + the number that ranks a home run against a scalp -->
+    <div class="rd-card-risk" *ngIf="h.stop_atr != null">
+      <span class="rd-risk-txt" dir="rtl" [class.exp-good]="expClass(h.expectancy_r) === 'exp-good'"
+            [class.exp-bad]="expClass(h.expectancy_r) === 'exp-bad'">
+        🛡 סטופ {{ h.stop_atr | number: '1.1-1' }}ATR · −{{ h.risk_pct | number: '1.0-0' }}%
+        <ng-container *ngIf="h.expectancy_r != null">
+          · E {{ h.expectancy_r >= 0 ? '+' : '' }}{{ h.expectancy_r | number: '1.2-2' }}R</ng-container>
+      </span>
+    </div>
+
+    <p class="rd-card-call">{{ h.call_he }}</p>
+
+    <div class="rd-card-foot">
+      <span class="rd-action-chip" [ngClass]="'act-' + h.action">{{ actionLabelHe[h.action] }}</span>
+      <span class="rd-state-chip">{{ stateLabelHe[h.state] }}</span>
+    </div>
+  </button>
+  </div>
+</ng-template>

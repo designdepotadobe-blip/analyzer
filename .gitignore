@@ -1,0 +1,16 @@
+.env
+__pycache__/
+venv/
+
+# Angular
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+
+# throwaway debug artifacts from local runs
+scratch_*
+*.stackdump
+
+# IDE / tool-local state — not project code
+.idea/
+.claude/scheduled_tasks.lock
