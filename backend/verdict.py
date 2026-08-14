@@ -1109,19 +1109,19 @@ class Judgement:
                     risk_score = 16.0           # exactly what he wants
                     note('risk', 16, f'a tight stop {d:.1f} ATR under {sw} ({sp:.2f})',
                          f'סטופ צמוד {d:.1f} ATR מתחת ל{swh} ({sp:.2f})')
-                elif d < STOP_IDEAL_ATR[0] and not best.get('stop_anchored'):
-                    # Only NOW is a tight stop a complaint: nothing under it. A stop
-                    # this close to a real wall is his best case, not his worst — the
-                    # 317-call measurement behind STOP_IDEAL_ATR puts sub-0.5-ATR
-                    # stops at a 65.4% win rate, the top bucket. This branch used to
-                    # fire on every stop under 0.5 ATR and dock 6 points for it,
-                    # which penalised exactly the placement his own posts use.
+                elif d < STOP_NOISE_ATR:
+                    # Kept as-is. The tempting change here is to waive the complaint
+                    # when the stop is anchored on a wall, on the grounds that his own
+                    # stops sit a median 0.43 ATR under the line and are plainly not
+                    # "noise". That may well be true, but the outcome evidence offered
+                    # for it did not survive its own control — see STOP_IDEAL_ATR — and
+                    # his practice alone is an argument, not a measurement. Left alone
+                    # until there is one.
                     risk_score, stop_flag = 10.0, 'tight'
                     note('risk', -6,
-                         f'the stop sits inside a single average day ({d:.1f} ATR) with no '
-                         f'structure under it — ordinary noise takes you out',
-                         f'הסטופ בתוך יום ממוצע אחד ({d:.1f} ATR) ובלי מבנה מתחתיו — '
-                         f'רעש רגיל יוציא אותך')
+                         f'the stop sits inside a single average day ({d:.1f} ATR) — ordinary '
+                         f'noise takes you out',
+                         f'הסטופ בתוך יום ממוצע אחד ({d:.1f} ATR) — רעש רגיל יוציא אותך')
                 else:
                     risk_score = 12.0 if d <= 3.0 else 7.0
                     stop_flag = 'loose' if d > 3.0 else None
@@ -1167,9 +1167,9 @@ class Judgement:
                 # to be one the market actually reaches; measured, 9-13 ATR out pays
                 # 24.8% of the time, and full marks for that is the "I don't see the
                 # potential" complaint in one number. CSCO's 16.77 is itself built on
-                # a 0.71 ATR stop, which now sits INSIDE the measured ideal window
-                # rather than under it — the double-count this guard was written for
-                # is gone, and the guard is kept for the genuinely unanchored case.
+                # a 0.71 ATR stop — under STOP_IDEAL_ATR's 0.75 floor — which the stop
+                # bracket above already docked 4 points for, so without this the same
+                # too-tight stop is punished once and paid for twice.
                 odds_ok = thesis_hit is None or thesis_hit >= TARGET_ODDS_FLOOR
                 rr_pts = (11.0 if rr_eff >= 4.0 and odds_ok and d is not None and d <= 2.0 else
                           10.0 if rr_eff >= 3.0 and odds_ok and d is not None and d <= 2.5 else
