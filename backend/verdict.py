@@ -413,6 +413,23 @@ class Judgement:
             he = f'אזור הפריצה {zone_lo:.2f}-{zone_top:.2f}'
             p = zone_top
 
+        # ── The FLOOR of that line — where the stop goes ───────────────────────
+        # His two labelled charts say it outright: OKTA's band is drawn "86.88 -
+        # 88.17" and the post reads "פריצה מעל 88.17. סטופ מתחת 86"; SMCI's is
+        # "34.94 - 35.88" and the post reads "מחיר מעל 35.88. סטופ 34.5". The
+        # trigger is the band's TOP and the stop is just under its BOTTOM — the
+        # width of the wall IS the risk budget, which is why his stops measure a
+        # median 0.43 ATR while a stop hunted from unrelated structure below
+        # measured 1.52 ATR over the same 404 posts.
+        # `zone_lo` already holds the lowest wall of an absorbed cluster; drop to
+        # that wall's own lower edge, so this works for the ordinary single-level
+        # case too and not only for a level wide enough to be DRAWN as a band.
+        floor = zone_lo
+        for r in (s.res_levels or []):
+            b = r.get('bottom')
+            if b and abs(float(r.get('price') or 0) - zone_lo) <= atr * 0.05:
+                floor = min(floor, float(b))
+
         d_atr = (p - price) / atr if atr else 0.0
         d_pct = (p / price - 1) * 100 if price else 0.0
         tier = ('at_hand' if d_atr <= TRIGGER_AT_HAND_ATR else
@@ -420,6 +437,8 @@ class Judgement:
                 'moderate' if d_atr <= TRIGGER_REACH_ATR else 'far')
         return {
             'price': jnum(p), 'kind': kind, 'what': en, 'what_he': he,
+            # the lower edge of the same wall — see above; `_stop` leans on this
+            'floor': jnum(floor),
             # How well-defended this price is, when it is a horizontal level with a
             # touch history (a trendline/flag/average has none, and gets None rather
             # than a fabricated strength). DESCRIPTIVE ONLY — deliberately not fed
@@ -773,6 +792,16 @@ class Judgement:
         if trigger and state == 'breakout_now':
             # once broken, the level itself is the floor ("סטופ מתחת לפריצה")
             cands.append((trigger['price'], 'the breakout level', 'רמת הפריצה'))
+        # The lower edge of the wall being broken. This is the stop his own labelled
+        # charts show (OKTA "86.88 - 88.17" → stop 86, SMCI "34.94 - 35.88" → stop
+        # 34.5) and it applies before the break as well as after: the trade is wrong
+        # the moment price is back UNDER the wall, not when it reaches some unrelated
+        # low further down. Without it the tightest candidate available was typically
+        # a swing low or the 150MA, which put our stop a median 1.52 ATR below the
+        # line against his 0.43 over the same 404 posts.
+        if trigger and trigger.get('floor') and trigger['floor'] < entry:
+            cands.append((float(trigger['floor']), 'the bottom of the line it is breaking',
+                          'תחתית הרמה הנפרצת'))
         if s.break_level and s.break_level < entry:
             cands.append((s.break_level, 'the level it broke', 'הרמה שנפרצה'))
         if hold and hold['price'] < entry:
@@ -798,6 +827,20 @@ class Judgement:
         noise_floor = entry - STOP_NOISE_ATR * atr
         usable = [c for c in cands if c[0] <= noise_floor]
         anchored = bool(usable)
+        # …with one exemption, and it is his: the bottom of the wall being broken is
+        # a stop even when it sits inside a single average day. The noise floor
+        # protects against a stop with no meaning behind it — a round number, a
+        # yesterday's low. This one has the whole wall behind it, so "back under the
+        # wall" is a real answer to "am I wrong", not noise. Without the exemption
+        # the floor candidate was filtered out in exactly the cases it was added
+        # for: his median stop is 0.43 ATR, i.e. BELOW our 0.5 ATR noise floor, so
+        # the rule was vetoing his own placement
+        floor = trigger.get('floor') if trigger else None
+        if floor and float(floor) < entry:
+            fl = float(floor)
+            if not usable or fl > max(c[0] for c in usable):
+                usable = [c for c in cands if c[0] == fl] or usable
+                anchored = True
         if usable:
             anchor, anchor_en, anchor_he = max(usable, key=lambda c: c[0])
         elif cands:

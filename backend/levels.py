@@ -43,6 +43,7 @@ from config import (
     PEAK_DISTANCE_BARS,
     SR_KEEP_TOUCHES,
     SR_MERGE_ATR,
+    SR_SAME_LINE_ATR,
     VOL_BREAKOUT_LOOKBACK,
     VOL_SPIKE_FACTOR,
     ZONE_MIN_SPREAD_ATR,
@@ -433,31 +434,51 @@ class LevelEngine:
                     continue
                 if b['type'] not in ('resistance', 'support') or b['type'] == a['type']:
                     continue
-                if abs(a['price'] - b['price']) / atr > SR_MERGE_ATR:
+                gap = abs(a['price'] - b['price']) / atr
+                if gap > SR_MERGE_ATR:
                     continue
+                # Same line, flipped: merge no matter how well tested. See
+                # SR_SAME_LINE_ATR — the touch-count exemption below was drawing
+                # the identical price twice on 90% of charts.
+                if gap <= SR_SAME_LINE_ATR:
+                    partner = (j, b)
+                    break
                 if (max(a['touches'], b['touches']) < SR_KEEP_TOUCHES
                         and not a.get('is_zone') and not b.get('is_zone')):
                     partner = (j, b)
                     break
             if partner:
                 j, b = partner
-                mid = (a['price'] + b['price']) / 2.0
+                # Span the OUTER edges. Using the two midpoints threw away each
+                # side's own band, so merging a 0.3-ATR zone with a line beside it
+                # produced a band narrower than one of its own inputs.
+                top = max(a.get('zone_top') or a['price'], b.get('zone_top') or b['price'])
+                bot = min(a.get('zone_bottom') or a['price'], b.get('zone_bottom') or b['price'])
+                mid = (top + bot) / 2.0
                 tot = a['touches'] + b['touches']
+                # Below ZONE_MIN_SPREAD_ATR there is no band to draw — this is one
+                # line that acted as both floor and ceiling. Emitting it as a zone
+                # would draw two coincident edges, i.e. the duplicate this merge
+                # exists to remove.
+                wide = (top - bot) >= ZONE_MIN_SPREAD_ATR * atr
                 merged.append({
-                    'type': 'zone',
+                    'type': 'zone' if wide else ('resistance' if a['price'] >= ctx.price
+                                                 else 'support'),
                     'price': jnum(mid),
-                    'zone_top': jnum(max(a['price'], b['price'])),
-                    'zone_bottom': jnum(min(a['price'], b['price'])),
-                    'is_zone': True,
+                    'zone_top': jnum(top) if wide else None,
+                    'zone_bottom': jnum(bot) if wide else None,
+                    'is_zone': wide,
                     'strength':  'strong' if tot >= LEVEL_STRONG_TOUCHES else 'normal',
                     'freshness': a.get('freshness', 'fresh'),
                     'has_pin':   a.get('has_pin', False) or b.get('has_pin', False),
-                    'flipped':   a.get('flipped', False) or b.get('flipped', False),
+                    # a price that clustered as BOTH sides has, by definition, flipped
+                    'flipped':   True,
                     'dist_pct':  a.get('dist_pct'),
                     'dist_atr':  a.get('dist_atr'),
                     'touches': tot,
                     'quality': max(a['quality'], b['quality']),
-                    'label': f"Zone {mid:.2f}",
+                    'label': (f"{bot:.2f} - {top:.2f} · {tot}× (flipped)" if wide
+                              else f"{mid:.2f} · {tot}× (flipped)"),
                 })
                 used.add(i)
                 used.add(j)

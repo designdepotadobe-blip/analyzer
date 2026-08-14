@@ -626,18 +626,10 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
         legend.push({ color: MICHA_LINE, label: trig.label, value: trig.price.toFixed(2) });
       }
 
-      const opt = null as any;   // plan-line ladder intentionally not drawn — see above
-      if (opt) {
-        // Short words only — a long axis-label title ("Breakout") was getting
-        // clipped against the edge of a narrow phone viewport.
-        const entryTitle = opt.kind === 'now' ? 'Entry' : opt.kind === 'breakout' ? 'Break' : 'Pullback';
-        addPlanLine('entry', opt.entry, MICHA_CYAN, 2, LineStyle.Dashed, entryTitle);
-        legend.push({ color: MICHA_CYAN, label: entryTitle, value: opt.entry.toFixed(2) });
-        if (opt.stop != null) {
-          addPlanLine('stop', opt.stop, '#ef5350', 2, LineStyle.Solid, 'Stop');
-          legend.push({ color: '#ef5350', label: 'Stop', value: opt.stop.toFixed(2) });
-        }
-      }
+      // The option's entry/stop ladder is deliberately NOT drawn here: `key_levels`
+      // below already carries the trigger, the stop and the target, and drawing the
+      // option on top of it stacked a second line in the same pixel row.
+
       // the ladder of stations, thinnest first — "3 יעדים על הגרף" (NFLX)
       for (let i = 0; i < m.targets.length; i++) {
         const t = m.targets[i];
@@ -694,20 +686,45 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
       }
     }
 
-    // ── Markers (MA bounce / gaps / pole) ─────────────────────────────────
-    if (tg.markers) {
-      const markers: SeriesMarker<Time>[] = a.overlays.markers
+    // ── Markers (MA bounce / gaps / pole) + the labelled turns ────────────
+    {
+      const markers: SeriesMarker<Time>[] = !tg.markers ? [] : a.overlays.markers
         .map((m) => ({
           time: m.time as Time,
           position: m.position,
           color: m.color,
           shape: m.shape,
           text: m.text,
-        }))
-        .sort((x, y) => (x.time as string) < (y.time as string) ? -1 : 1);
+        }));
+
+      // Price-tag every swing, the way he does. Counted on his own charts: OKE
+      // carries 45 labelled turns, OKTA 25, NOW 7 — the density tracks how much
+      // time is on screen, it is not a fixed budget, and it is the one thing
+      // present on every single chart of his. It is also what makes a drawn level
+      // checkable: the reader can see the 95.30 / 96.07 / 95.88 the band was
+      // fitted to instead of taking the band on faith.
+      //
+      // Muted grey, not white: the numbers sit UNDER the levels in the visual
+      // hierarchy — his are annotation, the bands are the statement.
+      // Gated on Micha mode, NOT on the Markers toggle: that toggle switches the
+      // breakout arrows, which are an event, while these are the chart's labels
+      // and are on every one of his. Behind the (default-off) Markers checkbox
+      // they simply never appeared.
+      if (this.michaMode) {
+        for (const s of (a.overlays.swings || [])) {
+          if (s.price == null) { continue; }
+          markers.push({
+            time: s.time as Time,
+            position: s.kind === 'high' ? 'aboveBar' : 'belowBar',
+            color: '#8b96a5',
+            shape: 'circle',
+            text: s.price.toFixed(2),
+          });
+        }
+      }
+
+      markers.sort((x, y) => (x.time as string) < (y.time as string) ? -1 : 1);
       this.candle.setMarkers(markers);
-    } else {
-      this.candle.setMarkers([]);
     }
 
     this.legend = legend;

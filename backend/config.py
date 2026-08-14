@@ -26,16 +26,27 @@ PEAK_DISTANCE_BARS = 5      # min bar gap between swing pivots
 SWING_PROMINENCE_ATR = 0.5  # a pivot must stand out by ≥ this many ATRs
 
 # ── Horizontal support / resistance ───────────────────────────────────────────
-CLUSTER_ATR_FACTOR = 0.6    # merge horizontal pivots within this many ATRs
+# Measured against his own drawn bands, not chosen: OKTA "86.88 - 88.17" is 0.35
+# ATR wide, SMCI "34.94 - 35.88" 0.43, OKE's two 0.30 and 0.23, MRNA's
+# "59.37 - 59.54" 0.05. A single linkage step of 0.6 ATR was as wide as his
+# WIDEST finished band, so one step could already overshoot him; 0.35 keeps a
+# two-pivot cluster inside the range he actually draws.
+CLUSTER_ATR_FACTOR = 0.35   # merge horizontal pivots within this many ATRs
 # …but a cluster may never grow WIDER than this in total. Clustering is single-linkage
 # (each pivot is compared to the last one admitted), so without a span cap a run of
 # pivots each 0.59 ATR apart chains into one "level" of unlimited width: GTLB carried
 # a level whose zone ran 28.33-37.83, i.e. 4.86 ATR, swallowing every real wall in
 # between. Since `_edge()` quotes `zone_top` as the breakout price, a bloated zone
 # both hides nearer resistance and overshoots the line. His own drawn bands measure
-# 0.1 ATR (CRWD "553.93 - 555.81") to 0.6 ATR (GTLB "32.99 - 33.97"), so 1.0 is a
-# generous ceiling rather than a tight one.
-LEVEL_MAX_SPAN_ATR = 1.0
+# 0.1 ATR (CRWD "553.93 - 555.81") to 0.6 ATR (GTLB "32.99 - 33.97").
+#
+# 1.0 was called "a generous ceiling"; measured over 404 of his posts run as of the
+# day he posted, it was the binding constraint far too often — our bands came out a
+# median 1.34 ATR wide against the 0.23-0.43 ATR of his four labelled ones. Since
+# the stop is anchored under the band, a band 4x too wide is a stop 4x too wide,
+# which is most of why our stop sat 1.50 ATR under the trigger where his sits 0.43.
+# 0.6 is his measured MAXIMUM, so this is still a ceiling and not a target.
+LEVEL_MAX_SPAN_ATR = 0.6
 LEVEL_NEAR_ATR = 4          # only show levels within this many ATRs of price
 LEVEL_STRONG_TOUCHES = 4    # always show levels with this many touches, even if far away
 LEVEL_MAX_SHOW = 2          # max levels shown per side (resistance / support)
@@ -44,6 +55,13 @@ MIN_LEVEL_TOUCHES = 2
 
 SR_MERGE_ATR = 0.35         # merge a R+S pair into a zone if they are within this many ATRs
 SR_KEEP_TOUCHES = 4         # but keep both lines if EITHER has this many touches (well-tested)
+# …except when they are the SAME line. A price that clustered as both resistance and
+# support is a flipped level, and a flipped level is the single thing he draws with
+# most conviction — as ONE band. Keeping both because it is well-tested drew it
+# twice: measured over 404 posts, 90% of charts carried a byte-identical duplicate
+# and 31% of all horizontals were a redraw of a line already on the chart. That is
+# most of the "too many S/R levels" complaint, and none of it was information.
+SR_SAME_LINE_ATR = 0.15     # closer than this ⇒ one wall, merge whatever the touch count
 
 ZONE_MIN_SPREAD_ATR = 0.18  # min cluster spread (ATRs) to draw as a two-line zone instead of one line
 CONSOL_MIN_BARS = 8         # min consecutive bars to qualify as a consolidation zone

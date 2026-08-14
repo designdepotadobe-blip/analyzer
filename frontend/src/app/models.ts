@@ -79,6 +79,14 @@ export interface Overlays {
   fib: Fib | null;
   markers: Marker[];
   gaps: Gap[];
+  /** every swing pivot, price-tagged — the labelled turns his charts always carry */
+  swings?: Swing[];
+}
+
+export interface Swing {
+  time: string;
+  price: number;
+  kind: 'high' | 'low';
 }
 
 export interface Setup {

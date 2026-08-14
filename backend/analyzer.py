@@ -70,8 +70,16 @@ class StockAnalyzer:
             'levels': [], 'trendlines': [], 'channels': [],
             'triangles': [], 'fib': None, 'markers': [], 'gaps': [],
             'flag_top': None, 'flag_breaking': False,
+            # every swing pivot, price-tagged. This is the most consistent thing on
+            # his charts and the thing ours had none of: OKE carries 45 labelled
+            # turns, OKTA 25, NOW 7 — the count tracks the timeframe, not a cap. The
+            # levels are drawn ON TOP of the labels, so a reader can see which turns
+            # a line was fitted to instead of taking the line on faith.
+            'swings': [],
         }
         setups: list[dict] = []
+
+        overlays['swings'] = self._swings(ctx)
 
         # ── Support / resistance ───────────────────────────────────────────────
         res_levels, sup_levels = self.levels.build(ctx)
@@ -96,6 +104,24 @@ class StockAnalyzer:
         }
 
     # ── JSON serialization ────────────────────────────────────────────────────
+
+    @staticmethod
+    def _swings(ctx) -> list:
+        """
+        The labelled turns. `sh_idx`/`sl_idx` are already computed for the level
+        engine and the geometry fits — this only serialises them, so nothing about
+        the analysis changes, the chart just stops hiding what it was reading.
+        """
+        out = []
+        for idx, kind, series in ((ctx.sh_idx, 'high', ctx.highs),
+                                  (ctx.sl_idx, 'low', ctx.lows)):
+            for i in idx:
+                i = int(i)
+                if 0 <= i < ctx.M:
+                    out.append({'time': ctx.times[i], 'price': jnum(series[i]),
+                                'kind': kind})
+        out.sort(key=lambda s: s['time'])
+        return out
 
     @staticmethod
     def _bars(ctx) -> list:
