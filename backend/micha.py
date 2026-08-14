@@ -369,7 +369,18 @@ class MichaAnalyzer:
             # 232.28-234.41" — and the level renderer already draws a zone as two
             # edges. The cap was mine, not his; what he omits is CLUTTER (a Fib
             # ladder, arrow markers, four averages), not a second real level.
-            'levels': True, 'fib': False, 'trendlines': False,
+            'levels': True, 'fib': False,
+            # Trendlines are ON, and the "MRNA has exactly two objects" reasoning
+            # below was wrong — MRNA is the exception, not the rule. Counted on
+            # every chart of his read since: OKE (2026-08-12) carries a descending
+            # line from the 118.07 high running all the way down past 76.85, OKTA
+            # (2026-05-19) one from 127.57, SMCI (2026-05-27) one from 66.44, NOW
+            # (2026-07-26) a RISING one along 81.24 → 85.44 → 89.39. Four of four,
+            # every one of them extended to the right edge. It is also his second
+            # strongest signal by measurement (+14.0 praise-vs-warning lift). A
+            # breakout band with no line showing what is being broken out OF is
+            # half the picture — which is what the chart was showing.
+            'trendlines': True,
             'channels': False, 'triangles': False,
         }
         # Every one of his screenshots shows ONE moving average — the 150. The 200
@@ -385,19 +396,14 @@ class MichaAnalyzer:
         fib_relevant = bool(fib and off_high >= 10 and 0.30 <= fib['retracement'] <= 0.95
                             and 'fibonacci' in codes)
 
-        # Nothing else is on by default. Settled by counting objects on his actual
-        # charts rather than by argument: MRNA (2026-08-05) carries EXACTLY TWO
-        # drawn things — one white horizontal zone at 59.37-59.54 and the pink
-        # 150MA. No entry line, no stop line, no target, no diagonal, no gap box.
-        # Two colours on the whole chart. MMM is the same picture plus a cup
-        # outline. An intermediate version of this method turned all of these on
-        # "whenever they exist", which put ~10 lines in 5 colours on one chart —
-        # further from him than what we started with, and the thing that reads as
-        # noise rather than analysis.
-        #
-        # The vocabulary below is still real (a trend line IS his second strongest
-        # signal) — it is just not something he puts on the chart at the same time
-        # as everything else. Each stays one toggle away in the toolbar.
+        # Channels and triangles stay off, and this is now a narrow claim rather
+        # than a general "keep the chart empty" rule: none of the four charts above
+        # carries either, and triangles appear in 0.3% of his posts. What he omits
+        # is CLUTTER — a Fib ladder, arrow markers, four averages — not structure.
+        # For reference, the object counts on his own charts: OKE 4 (line + 2 bands
+        # + cup arc), SMCI 5 (line + entry band + gap band + measured move + arc),
+        # NOW 3, OKTA 2 — plus 7 to 45 price-tagged swings on every one. The
+        # earlier "two objects, no exceptions" reading was drawn from MRNA alone.
         _ = (has_tl, has_ch, has_tri, fib_relevant)   # kept: the readings are real
         return focus
 

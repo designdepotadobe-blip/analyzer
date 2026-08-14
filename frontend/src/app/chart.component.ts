@@ -54,7 +54,11 @@ interface LegendItem {
  *             the stop is the one line that means "you are wrong". */
 const LEVEL_COLOR_STRONG = '#ffffff';
 const LEVEL_COLOR_WEAK = '#ffffff88';
+// His yellow marks the GAP he is trading toward, nothing else — SMCI's target
+// band at ~48.5-50.5 is yellow and the post reads "טרייד עד הגאפ". Structure
+// (horizontals AND diagonals alike) is white.
 const MICHA_YELLOW = '#ffd54f';
+const MICHA_LINE_WHITE = '#ffffff';
 const MICHA_CYAN = '#22d3ee';
 const MICHA_PINK = '#ff4081';
 
@@ -260,7 +264,9 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
   private candle?: ISeriesApi<'Candlestick'>;
   private volume?: ISeriesApi<'Histogram'>;
   private smaSeries: { [k: string]: ISeriesApi<'Line'> } = {};
-  private overlaySeries: ISeriesApi<'Line'>[] = [];
+  // 'Baseline' as well as 'Line': a filled S/R band is a baseline series whose
+  // fill runs between its value and a price baseline (see `drawBand`).
+  private overlaySeries: (ISeriesApi<'Line'> | ISeriesApi<'Baseline'>)[] = [];
   private priceLines: IPriceLine[] = [];
   /** The entry/stop/target lines, kept addressable so the panel can emphasise one
    *  without a full re-render (which would also reset zoom on a ticker change). */
@@ -494,18 +500,22 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
         const labeled = strong || lvl.type === 'breakout';
 
         if (lvl.is_zone && lvl.zone_top != null && lvl.zone_bottom != null) {
-          this.priceLines.push(
-            this.candle.createPriceLine({
-              price: lvl.zone_top, color, lineWidth: lw,
-              lineStyle: LineStyle.Solid, axisLabelVisible: labeled, title: '',
-            })
-          );
-          this.priceLines.push(
-            this.candle.createPriceLine({
-              price: lvl.zone_bottom, color, lineWidth: lw,
-              lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '',
-            })
-          );
+          // A zone is a BLOCK, not a pair of hairlines. Every S/R he draws is a
+          // filled band — OKE's 95.30-96.07 and 83.08-83.66, OKTA's 86.88-88.17,
+          // SMCI's 34.94-35.88 — and drawing the two edges instead read as two
+          // separate levels, which is exactly what quoting a range is meant to
+          // avoid. The axis tag still goes on the top edge, the price that has
+          // to give.
+          this.drawBand(lvl.zone_top, lvl.zone_bottom, '255,255,255',
+                        strong ? 0.16 : 0.09, strong ? 0.85 : 0.5);
+          if (labeled) {
+            this.priceLines.push(
+              this.candle.createPriceLine({
+                price: lvl.zone_top, color, lineWidth: lw,
+                lineStyle: LineStyle.Solid, axisLabelVisible: true, title: '',
+              })
+            );
+          }
         } else {
           this.priceLines.push(
             this.candle.createPriceLine({
@@ -520,9 +530,13 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
     // ── Sloped trendlines (segments — drawn only over their own leg) ──────
     if (tg.trendlines) {
       for (const t of a.overlays.trendlines) {
-        // Yellow and thick — this is "קו המגמה", the line he draws along the
-        // lows/highs and the second strongest feature in his own posts.
-        this.drawSloped(t, 2, LineStyle.Solid, MICHA_YELLOW);
+        // WHITE, not yellow. Every trendline on every chart of his read so far is
+        // white, the same colour as his horizontals: OKE's descending line off
+        // 118.07, OKTA's off 127.57, SMCI's off 66.44, NOW's rising one along
+        // 81.24 → 89.39. Yellow was my invention. He reserves it for the GAP he is
+        // trading toward — SMCI's target band at ~48.5-50.5 is yellow, and its
+        // post reads "טרייד עד הגאפ".
+        this.drawSloped(t, 2, LineStyle.Solid, MICHA_LINE_WHITE);
       }
     }
 
@@ -641,7 +655,7 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
         const floor = m.trigger?.floor;
         const minBand = Math.max(1e-6, (a.meta.atr || 0) * 0.08);
         if (floor != null && trig.price - floor >= minBand) {
-          addPlanLine('triggerFloor', floor, MICHA_LINE + '99', 1, LineStyle.Solid, '');
+          this.drawBand(trig.price, floor, '255,255,255');
           legend.push({
             color: MICHA_LINE + '99',
             label: 'אזור הפריצה',
@@ -701,12 +715,14 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
       // Two thin lines rather than a filled box: lightweight-charts v4 has no box
       // primitive, and faking one with a translucent area series would sit under
       // the candles and fight the volume histogram for the same pixels.
+      // Drawn as a filled YELLOW band, which is exactly how his SMCI chart carries
+      // the gap it is trading toward ("טרייד עד הגאפ", target band ~48.5-50.5 in
+      // yellow above a white entry band). One colour for "the wall", another for
+      // "the destination" — that is the whole legend his charts need.
       for (const g of (a.overlays.gaps || [])) {
         if (g.near == null || g.far == null) { continue; }
-        const up = g.dir === 'up';
-        const col = up ? '#26a69a66' : '#ef535066';
-        addPlanLine('gapNear', g.near, col, 1, LineStyle.Dotted, 'Gap');
-        addPlanLine('gapFar', g.far, col, 1, LineStyle.Dotted, '');
+        this.drawBand(Math.max(g.near, g.far), Math.min(g.near, g.far),
+                      '255,213,79', 0.14, 0.7);
       }
     }
 
@@ -791,6 +807,41 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
     // Safe to do on every render (not just isNewSeries): it only affects the PRICE
     // axis, so it doesn't fight the time-axis zoom/pan preservation above.
     this.chart.priceScale('right').applyOptions({ autoScale: true });
+  }
+
+  /**
+   * A filled horizontal band between two prices — the shape his S/R actually
+   * takes. OKE's two, OKTA's "86.88 - 88.17" and SMCI's "34.94 - 35.88" are all
+   * drawn as solid blocks, not as a pair of hairlines: the block says "this whole
+   * area is the wall", which is the entire point of quoting a range instead of a
+   * price. Two thin edges read as two separate levels, which is the opposite.
+   *
+   * lightweight-charts v4 has no rectangle primitive, but a baseline series fills
+   * between its line and a price baseline — set every point to the band's top and
+   * the baseline to its bottom and the fill IS the band. Cheaper and better
+   * behaved than faking a box with a stack of price lines, and it sits under the
+   * candles rather than over them.
+   */
+  private drawBand(top: number, bottom: number, rgb: string, alpha = 0.16,
+                   edge = 0.85): void {
+    if (!this.chart || !this.analysis || top <= bottom) {
+      return;
+    }
+    const s = this.chart.addBaselineSeries({
+      baseValue: { type: 'price', price: bottom },
+      topFillColor1: `rgba(${rgb},${alpha})`,
+      topFillColor2: `rgba(${rgb},${alpha})`,
+      topLineColor: `rgba(${rgb},${edge})`,
+      bottomFillColor1: 'rgba(0,0,0,0)',
+      bottomFillColor2: 'rgba(0,0,0,0)',
+      bottomLineColor: 'rgba(0,0,0,0)',
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    s.setData(this.analysis.bars.map((b) => ({ time: b.time as Time, value: top })));
+    this.overlaySeries.push(s);
   }
 
   /** Draw a 2-point sloped line (trendline / channel rail / triangle side). */
