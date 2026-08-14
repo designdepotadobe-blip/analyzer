@@ -361,12 +361,15 @@ class MichaAnalyzer:
         """
         focus = {
             'sma150': True, 'sma200': False, 'sma20': False,
-            # The S/R MAP stays off. He draws the ONE horizontal that is the
-            # decision (MRNA: a single white 59.37-59.54 band, the price his post
-            # calls "הטרייד מתחיל מעל $60"), never a map of every level near price.
-            # `key_levels` carries that one line; this toggle re-enables the full
-            # map for anyone who wants to audit it.
-            'levels': False, 'fib': False, 'trendlines': False,
+            # Horizontals are ON. Not "one line" — as many as are real, and as
+            # BANDS where the level is a band. His own labels are ranges, not
+            # prices ("59.37 - 59.54" on MRNA), his targets are ranges ("בדרך ל
+            # 190-200" on NOW), and OKE/LYV carry several horizontals at once.
+            # Our own trigger already knows this — it reports "אזור הפריצה
+            # 232.28-234.41" — and the level renderer already draws a zone as two
+            # edges. The cap was mine, not his; what he omits is CLUTTER (a Fib
+            # ladder, arrow markers, four averages), not a second real level.
+            'levels': True, 'fib': False, 'trendlines': False,
             'channels': False, 'triangles': False,
         }
         # Every one of his screenshots shows ONE moving average — the 150. The 200
