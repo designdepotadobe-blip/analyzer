@@ -549,6 +549,9 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
       // overlap into an unreadable smear. The numbers live in the corner legend
       // and in the side panel; the axis label appears for whichever line the panel
       // is pointing at (see `applyPlanEmphasis`).
+      // Prices already committed to the chart this render, so the key-level pass
+      // below can skip a line that is physically already there (see its comment).
+      const planPrices: number[] = [];
       const addPlanLine = (
         key: string, price: number, color: string, width: 1 | 2,
         style: LineStyle, title: string
@@ -559,6 +562,7 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
         });
         this.priceLines.push(line);
         this.planLines.push({ key, line, color, width, title });
+        planPrices.push(price);
       };
 
       const opt = m.options.find((o) => o.kind === want[m.action]) || m.options[0];
@@ -580,6 +584,33 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
         const title = i === 0 ? 'Target' : `T${i + 1}`;
         addPlanLine(`t${i}`, t.price, i === 0 ? '#26a69a' : '#26a69a88', 1,
                     LineStyle.Dotted, title);
+      }
+
+      // ── The trigger: the line the stock has to CROSS ────────────────────
+      // `key_levels` (micha._key_levels) is the backend's statement of which
+      // horizontals ARE the decision. The entry/stop/target lines above already
+      // cover most of them, but NOT the trigger in an "enter now" state: there
+      // the option's entry is spot, so the level the whole thesis turns on
+      // (AAPL: 309.29, "קו הפריצה") was listed in the panel and drawn nowhere —
+      // the panel naming a price the chart doesn't show is exactly the
+      // never-claim-an-undrawn-line rule this codebase already fixed once.
+      //
+      // Deduped by PRICE, not by role: in a `wait_trigger` state the breakout
+      // option's entry IS the trigger price, and drawing both stacked two lines
+      // in the same pixel row.
+      const EPS = Math.max(1e-6, (a.meta.atr || 0) * 0.05);
+      for (const k of (m.key_levels || [])) {
+        if (k.price == null) { continue; }
+        if (planPrices.some((p) => Math.abs(p - k.price) <= EPS)) { continue; }
+        const style = k.role === 'trigger' ? LineStyle.Dashed : LineStyle.Dotted;
+        const color = k.role === 'trigger' ? '#ffca28'
+          : k.role === 'stop'              ? '#ef5350'
+          : k.role === 'target'            ? '#26a69a'
+          :                                  '#42a5f5';
+        // Amber, the colour his own breakout lines carry, and deliberately not
+        // the S/R grey — this is the decision line, not one of the map's rungs.
+        addPlanLine(k.role, k.price, color, 2, style, k.label);
+        legend.push({ color, label: k.label, value: k.price.toFixed(2) });
       }
     }
 
