@@ -429,7 +429,15 @@ STOP_BUFFER = 0.005          # "המחירים שאני כותב — אלו גם
 #   • too TIGHT vs ATR — will be stopped out by ordinary daily noise regardless of
 #     how good the R/R looks on paper (ORCL: a 1.0% stop on an 8.4%-ATR name is
 #     0.15 ATR, i.e. inside a single average day's range)
-STOP_IDEAL_ATR = (0.75, 2.5)   # stop distance in ATR that is neither noise nor reckless
+# Measured, not assumed. Forward-labelled 317 of his own calls (arm on the trigger,
+# then whichever comes first: a close under the stop, or +2R within 60 bars) and
+# bucketed by our stop distance:
+#     <=0.5 ATR  n=52  win 65.4%      1.0-1.5 ATR  n=81  win 38.3%
+#     0.5-1.0    n=81  win 50.6%      1.5-2.5      n=76  win 47.4%
+# The old (0.75, 2.5) awarded full marks across the two WORST buckets and docked
+# the best one as "noise". Tight is not reckless when there is a wall under it —
+# it is the whole reason his stops sit a median 0.43 ATR below the line.
+STOP_IDEAL_ATR = (0.15, 1.0)   # stop distance in ATR that pays, measured on his calls
 STOP_NOISE_ATR = 0.5           # tighter than this ⇒ likely stopped by noise
 # Two widths, because he names both: "מעל 288 עם סטופ קרוב יחסית למי שבטרייד. מי
 # שמחזיק לטווח ארוך - סטופ רחב יותר" (AAPL). A swing position gets more room —
