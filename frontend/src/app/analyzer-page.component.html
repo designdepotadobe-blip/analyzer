@@ -182,8 +182,37 @@
           <span class="decision-state">{{ a.micha.state_label_he }}</span>
         </div>
 
+        <!-- The status card his own 2026 charts carry above the price action:
+             "ATR (14): 9.51 (3.06%) 🟡 / Above 150 MA 🟢 / Earnings: 85 days".
+             Three facts that qualify every setup he posts — how violent the stock
+             is, which side of the one moving average he uses it sits on, and
+             whether a report is about to invalidate the read. Coloured server-side
+             (micha._badges) because the cut-offs are his method, not styling. -->
+        <div class="badges" *ngIf="a.micha.badges?.length">
+          <span class="badge" *ngFor="let b of a.micha.badges" [ngClass]="'tone-' + b.tone"
+                [title]="b.note_he">
+            <span class="badge-dot"></span>
+            <span class="badge-txt">{{ b.label_he }}</span>
+          </span>
+        </div>
+
         <p class="call-line">{{ a.micha.report.call_he }}</p>
         <p class="read-line">{{ a.micha.report.read_he }}</p>
+
+        <!-- The two numbers the whole post is about. Measured across 2,500 of his
+             posts, the recurring shape is exactly this: one line to cross and one
+             line to hold ("פריצה מעל 21.45", "סטופ מתחת ל 40") — the prices are the
+             recommendation, everything else is commentary. Same values the chart
+             draws, so the two can never disagree. -->
+        <div class="keylv" *ngIf="a.micha.key_levels?.length">
+          <div class="keylv-row" *ngFor="let k of a.micha.key_levels" [ngClass]="'role-' + k.role">
+            <span class="keylv-label">{{ k.label_he }}</span>
+            <span class="keylv-price">{{ k.price | number: '1.2-2' }}</span>
+            <span class="keylv-dist" *ngIf="k.dist_pct != null">
+              {{ k.dist_pct > 0 ? '+' : '' }}{{ k.dist_pct | number: '1.1-1' }}%</span>
+            <span class="keylv-what" *ngIf="k.what_he">{{ k.what_he }}</span>
+          </div>
+        </div>
 
         <!-- "מתקרב להכרעה. שימו התראה" — a low grade and a nearby trigger are two
              different facts, and the second one is the reason to keep watching a

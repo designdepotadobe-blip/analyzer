@@ -528,7 +528,34 @@ export interface Micha {
   scenarios: MichaScenario[];
   notes: MichaNote[];
   chart_focus: MichaChartFocus;
+  /** The 1-3 horizontals that ARE the decision — the line to cross and the line
+   *  that must hold, named. See micha._key_levels for why the full S/R map is no
+   *  longer the default drawing. */
+  key_levels: MichaKeyLevel[];
+  /** The ATR / 150MA / earnings status card his own charts carry, pre-coloured
+   *  server-side because the thresholds are his, not presentation. */
+  badges: MichaBadge[];
   level_context: MichaLevelContext;
+}
+
+export interface MichaKeyLevel {
+  price: number;
+  role: 'trigger' | 'entry' | 'stop' | 'target';
+  label: string;
+  label_he: string;
+  /** His own description of the level — "אזור הפריצה 232.28-234.41". */
+  what: string;
+  what_he: string;
+  dist_pct: number | null;
+}
+
+export interface MichaBadge {
+  key: 'volatility' | 'ma150' | 'earnings';
+  tone: 'good' | 'warn' | 'bad' | 'neutral';
+  label: string;
+  label_he: string;
+  note: string;
+  note_he: string;
 }
 
 export interface Analysis {

@@ -122,6 +122,7 @@ class MichaAnalyzer:
         best = Judgement._best_option(j['options'], j['action'])
         growth = self._growth(ctx, targets, best)
         focus = self._chart_focus(ctx, j['state'], codes, fib, off_high, ext, overlays)
+        key_levels = self._key_levels(ctx, j, target)
         notes = self._notes(ext, golden, base, capitulation, momentum, small_cap,
                             ctx, price, dir_change, channel, overlays)
         scenarios = self._scenarios(ctx, res_levels, sup_levels, targets, ath)
@@ -166,6 +167,12 @@ class MichaAnalyzer:
             'channel': channel,
             'notes': notes,
             'chart_focus': focus,
+            # the 1-3 horizontals that ARE the decision (trigger / entry / stop /
+            # target) — the chart draws these, not the whole level map. See
+            # `_key_levels` for the measurement behind that.
+            'key_levels': key_levels,
+            # the ATR / 150MA / earnings status card his own charts carry
+            'badges': self._badges(ctx),
             # raw readings, for the detail rows
             'trend': trend,
             'off_high_pct': jnum(off_high),
@@ -191,6 +198,145 @@ class MichaAnalyzer:
             'earnings_days': ctx.earnings_days,
         }
 
+    # ── The header card he puts on every 2026 chart ────────────────────────────
+
+    @staticmethod
+    def _badges(ctx):
+        """
+        The three-line status block his own charts carry above the price action:
+
+            ATR (14): 9.51 (3.06%) 🟡
+            Above 150 MA 🟢
+            Earnings: 85 days remaining
+
+        Every input already existed (`vol_tier` is literally commented in context.py
+        as "Micha's green/yellow/red watermark"); this just states them as one ordered,
+        pre-coloured list so the client renders instead of re-deriving thresholds.
+        Kept server-side because the cut-offs are his, not presentation.
+        """
+        out = []
+
+        tier = ctx.vol_tier or 'medium'
+        tone = {'low': 'good', 'medium': 'warn', 'high': 'bad'}.get(tier, 'warn')
+        pct = f' ({ctx.atr_pct:.1f}%)' if ctx.atr_pct is not None else ''
+        out.append({
+            'key': 'volatility', 'tone': tone,
+            'label': f'ATR{pct}',
+            'label_he': f'תנודתיות{pct}',
+            # his own framing of a red watermark — a size/suitability warning, not a
+            # reason to skip: "לא לבעלי לב חלש", "ממש לא לחדשים בשוק"
+            'note': {'low': 'calm', 'medium': 'normal', 'high': 'very volatile'}[tier],
+            'note_he': {'low': 'רגועה', 'medium': 'רגילה',
+                        'high': 'תנודתית מאוד — לא למתחילים'}[tier],
+        })
+
+        if ctx.sma150:
+            d = (ctx.price / ctx.sma150 - 1) * 100
+            above = bool(ctx.above_150)
+            out.append({
+                'key': 'ma150', 'tone': 'good' if above else 'bad',
+                'label': f"{'Above' if above else 'Below'} 150 MA ({d:+.1f}%)",
+                'label_he': f"{'מעל ממוצע 150' if above else 'מתחת לממוצע 150'} ({d:+.1f}%)",
+                'note': '', 'note_he': '',
+            })
+
+        d = ctx.earnings_days
+        if d is not None:
+            # "מדווחת שבוע הבא. אז זהירות!!!!!" — a report this close is a real flag on
+            # any setup; beyond it, context rather than warning. Deliberately the SAME
+            # constant the action logic defers entries on, so the badge can never say
+            # "fine" while the recommendation is deferring for exactly this reason.
+            soon = d <= EARNINGS_SOON_DAYS
+            out.append({
+                'key': 'earnings', 'tone': 'bad' if soon else 'neutral',
+                'label': f'Earnings in {int(d)}d',
+                'label_he': f'דוח בעוד {int(d)} ימים',
+                'note': 'report is close — size accordingly' if soon else '',
+                'note_he': 'הדוח קרוב — להיזהר עם הגודל' if soon else '',
+            })
+        return out
+
+    # ── The lines that ARE the thesis ──────────────────────────────────────────
+
+    def _key_levels(self, ctx, j, target):
+        """
+        The 1-3 horizontals worth drawing, and nothing else.
+
+        Measured against 2,500 of his own posts: a chart of his carries ONE or TWO
+        hand-drawn horizontals — the line the stock has to cross, and the line it has
+        to hold — each price-tagged. Never a "level map". Our `overlays['levels']`
+        emits 5-6 (LEVEL_MAX_SHOW per side, both sides), which is the single biggest
+        source of the "too complex" reading: five equally-weighted lines force the
+        reader to work out which one is the decision, when the analyzer already knows.
+
+        Nothing new is computed here. The trigger, the stop and the target are the
+        SAME numbers the verdict already decided and the text already quotes — this
+        just marks which of them are lines, so the chart and the sentence can never
+        disagree. `role` is what the frontend styles on; `what_he` is his own
+        description of the level ("קו הפריצה", "תמיכה שנבדקה 6 פעמים").
+        """
+        out: list[dict] = []
+        seen: list[float] = []
+        price = float(ctx.price)
+
+        def add(value, role, label, label_he, what='', what_he=''):
+            if value is None:
+                return
+            try:
+                p = float(value)
+            except (TypeError, ValueError):
+                return
+            if p <= 0 or not np.isfinite(p):
+                return
+            # Two roles landing on the same price (a trigger that is also the target
+            # of a tiny move) would draw two lines on top of each other — keep the
+            # first, which is the more decision-relevant one by insertion order.
+            if any(abs(p - q) <= max(1e-6, ctx.atr * 0.05) for q in seen):
+                return
+            seen.append(p)
+            out.append({
+                'price': jnum(p), 'role': role,
+                'label': label, 'label_he': label_he,
+                'what': what or '', 'what_he': what_he or '',
+                'dist_pct': jnum((p / price - 1) * 100) if price else None,
+            })
+
+        trig = j.get('trigger') or {}
+        add(trig.get('price'), 'trigger', 'Trigger', 'קו הפריצה',
+            trig.get('what'), trig.get('what_he'))
+
+        best = Judgement._best_option(j.get('options') or [], j.get('action'))
+        if best:
+            # The entry earns its own line only when it is somewhere the price is NOT.
+            # An "enter now" entry equals today's close, and drawing a line on top of
+            # the price candle says nothing the price axis doesn't already say — on
+            # AAPL that produced a 4th line at -0.0% from spot. A pullback entry sits
+            # somewhere real, and he does draw that one.
+            entry = best.get('entry')
+            if entry is not None and abs(float(entry) - price) > ctx.atr * 0.25:
+                add(entry, 'entry', 'Entry', 'כניסה')
+            add(best.get('stop'), 'stop', 'Stop', 'סטופ',
+                best.get('stop_what'), best.get('stop_what_he'))
+
+        # "the line it has to hold" when there is no option to carry a stop — his
+        # "צריכה לשמור מעל X" post shape.
+        hold = j.get('hold_level') or {}
+        if not any(o['role'] == 'stop' for o in out):
+            add(hold.get('price'), 'stop', 'Must hold', 'חייבת לשמור מעל',
+                hold.get('what'), hold.get('what_he'))
+
+        # Room above, and only if there IS room. The ladder's first station can sit
+        # below the trigger (AAPL: target 308.26 under a 309.29 trigger) or a single
+        # percent from spot — drawing that as "יעד" tells the reader to expect a move
+        # that is inside the noise, and contradicts the trigger line right above it.
+        # His targets are always real room: "פריצה של 141 ... בדרך ל 190-200".
+        tp = target.get('price') if isinstance(target, dict) else target
+        if tp is not None:
+            floor = max([price] + [o['price'] for o in out if o['role'] == 'trigger'])
+            if float(tp) > floor + ctx.atr * 0.5:
+                add(tp, 'target', 'Target', 'יעד')
+        return out
+
     # ── Chart focus: only the overlays that fit THIS stock ─────────────────────
 
     def _chart_focus(self, ctx, state, codes, fib, off_high, ext, overlays):
@@ -205,7 +351,12 @@ class MichaAnalyzer:
         """
         focus = {
             'sma150': True, 'sma200': False, 'sma20': False,
-            'levels': True, 'fib': False, 'trendlines': False,
+            # The full S/R map is OFF by default now. `key_levels` carries the one or
+            # two horizontals that are actually the decision; this toggle re-enables
+            # the complete 5-6-line map for anyone who wants to audit it. Measured
+            # against his own charts: he draws 1-2 horizontals, never a map — five
+            # equally-weighted lines make the reader hunt for which one is the trade.
+            'levels': False, 'fib': False, 'trendlines': False,
             'channels': False, 'triangles': False,
         }
         # Every one of his screenshots shows ONE moving average — the 150. The 200
@@ -234,11 +385,13 @@ class MichaAnalyzer:
             elif has_tl:
                 focus['trendlines'] = True
 
-        if not any((focus['fib'], focus['trendlines'], focus['channels'], focus['triangles'])):
-            if fib_relevant:
-                focus['fib'] = True
-            elif has_tl:
-                focus['trendlines'] = True
+        # NO "if nothing else matched, draw something anyway" fallback. That used to
+        # guarantee every chart carried a diagonal or a Fib whether or not it was the
+        # thesis, which is precisely the padding this rewrite removes: measured over
+        # 2,323 of his posts, Fibonacci is invoked in 1.3% and triangles in 0.3%, and
+        # plenty of his charts carry NO drawn object beyond the 150MA and one
+        # horizontal. An otherwise-clean chart is the correct output, not a failure to
+        # find something to draw.
         return focus
 
     # ── "שינוי כיוון" — the four stages he dictates ────────────────────────────

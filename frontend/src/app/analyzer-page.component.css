@@ -720,9 +720,99 @@ button:disabled {
 .why-icon { flex: 0 0 auto; font-size: 10px; }
 .why-row.no .why-icon { color: #ef5350; }
 
-/* ── Phone-only expand toggle for the full analysis (hidden ≥769px) ────── */
+/* ── His chart header card: ATR / 150MA / earnings ─────────────────────────
+   `row-reverse` + `text-align:right` rather than dir="rtl" on the flex container,
+   and literal px everywhere — this codebase has three confirmed headless-Chromium
+   invisible-text bugs triggered by dir="rtl" on a flex ancestor, a CSS Grid
+   ancestor, and percentage widths on flex-wrap children. */
+.badges {
+  display: flex;
+  flex-direction: row-reverse;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.badge {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid #2a2e39;
+  background: #0e1117;
+  color: #d1d4dc;
+  white-space: nowrap;
+}
+.badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+/* His own traffic light — a red ATR watermark is a size warning, not a veto
+   ("לא לבעלי לב חלש"), so it colours the dot, never hides the setup. */
+.badge.tone-good .badge-dot { background: #26a69a; }
+.badge.tone-warn .badge-dot { background: #ffa726; }
+.badge.tone-bad  .badge-dot { background: #ef5350; }
+.badge.tone-neutral .badge-dot { background: #787b86; }
+.badge.tone-bad { border-color: rgba(239, 83, 80, 0.5); }
+
+/* ── The two numbers: the line to cross, the line to hold ────────────────── */
+.keylv {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: #0e1117;
+  border: 1px solid #1e222d;
+}
+.keylv-row {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 12px;
+  text-align: right;
+}
+.keylv-label {
+  font-weight: 700;
+  flex-shrink: 0;
+  min-width: 62px;
+}
+.keylv-price {
+  font-weight: 800;
+  color: #fff;
+  font-size: 13px;
+}
+.keylv-dist { color: #9aa0aa; font-size: 11px; }
+/* His own description of the level, kept last and quiet — the price is the
+   decision, this only says which line it is. */
+.keylv-what {
+  color: #787b86;
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.keylv-row.role-trigger .keylv-label { color: #42a5f5; }
+.keylv-row.role-entry   .keylv-label { color: #42a5f5; }
+.keylv-row.role-stop    .keylv-label { color: #ef5350; }
+.keylv-row.role-target  .keylv-label { color: #26a69a; }
+
+/* ── Expand toggle for the full analysis — EVERY width, not just phone ────
+   Was phone-only, which meant desktop rendered all 7 reason groups / 22-25 lines
+   unconditionally: measured at 1,253-1,491 Hebrew characters on screen for a
+   single stock, against a median of 70 characters in Micha's own posts. The
+   detailed argument is still worth having (it is the audit trail behind the
+   letter) — it just isn't the default view any more. Same toggle, same markup,
+   now simply not scoped to a breakpoint. */
 .micha-expand-toggle {
-  display: none;
+  display: flex;
   width: 100%;
   align-items: center;
   justify-content: center;
@@ -737,6 +827,17 @@ button:disabled {
 }
 .micha-expand-toggle:active { background: #1e222d; }
 .micha-expand-toggle .chev { font-size: 10px; }
+/* Collapsed by default at every width; the toggle above opens it. */
+.micha-details { display: none; }
+.micha.expanded .micha-details { display: block; }
+
+/* The per-scenario option cards (entry / stop / R-R / expectancy for "now" vs
+   "on the breakout") are detail too. The call line and the key-level rows above
+   already state the entry and the stop, so keeping these in the peek printed the
+   same stop price twice within three rows. Was already hidden on phone; now
+   hidden at every width and restored by the same toggle. */
+.decision .opts { display: none; }
+.micha.expanded .decision .opts { display: flex; }
 .micha-head {
   display: flex;
   align-items: center;
@@ -1208,9 +1309,9 @@ button:disabled {
 }
 
 @media (max-width: 768px) {
-  .micha-expand-toggle { display: flex; }
-  .micha-details { display: none; }
-  .micha.expanded .micha-details { display: block; }
+  /* `.micha-expand-toggle` / `.micha-details` visibility now lives in the base
+     rules (collapsed at every width) — only the phone-specific trimming of the
+     PEEK itself remains here. */
 
   /* The peek shows the grade, the bottom-line recommendation, and the "מתקרבת
      להכרעה" alert (a name worth watching even on a low grade). Everything else
@@ -1221,14 +1322,12 @@ button:disabled {
      show is already in `call-line`), and the condition/expected-gain rows (`תנאי`
      / `רווח צפוי`) — real numbers, but a second read on a phone, not a first-glance
      one. The point is screen space: the chart is what the user opened the app for. */
-  .decision .read-line,
-  .decision .opts,
+  /* `.read-line` is no longer hidden on phone: it is the "why" half of his
+     why / when / stop shape, and the space it needs was just freed by collapsing
+     the 7 reason groups behind the toggle at every width. */
   .decision .ep-row.hold,
   .decision .ep-row.growth {
     display: none;
-  }
-  .micha.expanded .decision .read-line {
-    display: block;
   }
   .micha.expanded .decision .opts,
   .micha.expanded .decision .ep-row.hold,
