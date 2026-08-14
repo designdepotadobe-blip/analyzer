@@ -608,7 +608,25 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
         planPrices.push(price);
       };
 
-      const opt = m.options.find((o) => o.kind === want[m.action]) || m.options[0];
+      // ── ONE line: the price the decision turns on ───────────────────────
+      // His MRNA (2026-08-05) is the reference: a single white horizontal zone
+      // and the pink 150MA, and nothing else on the chart. Not an entry line,
+      // not a stop line, not a target ladder — those numbers live in his TEXT
+      // ("סטופ מתחת ל 40"), which is where ours now live too, on the card and in
+      // the panel. Drawing all of them put ~10 lines in 5 colours on one chart.
+      //
+      // White, because that is the colour his horizontals are, and using one
+      // colour for the one drawn line is the point — the chart should not need
+      // a legend to be read.
+      const MICHA_LINE = '#ffffff';
+      const trig = (m.key_levels || []).find((k) => k.role === 'trigger')
+        || (m.key_levels || []).find((k) => k.role === 'entry');
+      if (trig && trig.price != null) {
+        addPlanLine('trigger', trig.price, MICHA_LINE, 2, LineStyle.Solid, trig.label);
+        legend.push({ color: MICHA_LINE, label: trig.label, value: trig.price.toFixed(2) });
+      }
+
+      const opt = null as any;   // plan-line ladder intentionally not drawn — see above
       if (opt) {
         // Short words only — a long axis-label title ("Breakout") was getting
         // clipped against the edge of a narrow phone viewport.

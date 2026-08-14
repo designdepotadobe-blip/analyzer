@@ -361,12 +361,12 @@ class MichaAnalyzer:
         """
         focus = {
             'sma150': True, 'sma200': False, 'sma20': False,
-            # He does draw horizontal S/R — "תמיכה/סטופ ב 27.8. התנגדות ב 31.47".
-            # The level engine is already capped at LEVEL_MAX_SHOW=2 per side, and
-            # `key_levels` separately promotes the trigger/stop to their own bold,
-            # labelled lines, so the map reads as context underneath the decision
-            # rather than competing with it.
-            'levels': True, 'fib': False, 'trendlines': False,
+            # The S/R MAP stays off. He draws the ONE horizontal that is the
+            # decision (MRNA: a single white 59.37-59.54 band, the price his post
+            # calls "הטרייד מתחיל מעל $60"), never a map of every level near price.
+            # `key_levels` carries that one line; this toggle re-enables the full
+            # map for anyone who wants to audit it.
+            'levels': False, 'fib': False, 'trendlines': False,
             'channels': False, 'triangles': False,
         }
         # Every one of his screenshots shows ONE moving average — the 150. The 200
@@ -382,19 +382,20 @@ class MichaAnalyzer:
         fib_relevant = bool(fib and off_high >= 10 and 0.30 <= fib['retracement'] <= 0.95
                             and 'fibonacci' in codes)
 
-        # A real diagonal is drawn whenever one exists — it is "קו המגמה", the line
-        # he says the stock is sitting on. Not state-gated: a trend line under a
-        # stock in `needs_buyers` is exactly as real as one under a breakout.
-        focus['trendlines'] = has_tl
-        # A channel is a stronger statement than a lone diagonal, so when the setup
-        # engine actually recognised one it supersedes the single line.
-        if has_ch and ('rising_channel' in codes or 'descending_channel' in codes):
-            focus['channels'] = True
-        # Both of these have to BE the thesis, per the frequencies above.
-        if has_tri and 'triangle' in codes:
-            focus['triangles'] = True
-        if fib_relevant:
-            focus['fib'] = True
+        # Nothing else is on by default. Settled by counting objects on his actual
+        # charts rather than by argument: MRNA (2026-08-05) carries EXACTLY TWO
+        # drawn things — one white horizontal zone at 59.37-59.54 and the pink
+        # 150MA. No entry line, no stop line, no target, no diagonal, no gap box.
+        # Two colours on the whole chart. MMM is the same picture plus a cup
+        # outline. An intermediate version of this method turned all of these on
+        # "whenever they exist", which put ~10 lines in 5 colours on one chart —
+        # further from him than what we started with, and the thing that reads as
+        # noise rather than analysis.
+        #
+        # The vocabulary below is still real (a trend line IS his second strongest
+        # signal) — it is just not something he puts on the chart at the same time
+        # as everything else. Each stays one toggle away in the toolbar.
+        _ = (has_tl, has_ch, has_tri, fib_relevant)   # kept: the readings are real
         return focus
 
     # ── "שינוי כיוון" — the four stages he dictates ────────────────────────────
