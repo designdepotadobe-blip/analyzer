@@ -440,6 +440,19 @@ STOP_BUFFER = 0.005          # "המחירים שאני כותב — אלו גם
 # and the number measures arithmetic, not trading. Any future change here needs a
 # stop-independent outcome metric, and needs to survive both.
 STOP_IDEAL_ATR = (0.75, 2.5)   # stop distance in ATR that is neither noise nor reckless
+
+# Reference only — NOT a grade input, and tried as one. The thickness of the wall
+# being broken (`trigger['floor']`) is a property of the chart, not of our plan, so
+# unlike stop distance it CAN be measured cleanly. On forward 20-day return over 395
+# of his posts:
+#     <=0.15 ATR  n=209  +1.06%  win 44%      0.35-0.60  n=42  -0.34%  win 48%
+#     0.15-0.35   n= 60  +5.82%  win 65%      >0.60      n=82  +2.22%  win 54%
+# A real standalone signal, and 0.15-0.35 is exactly the width he draws. But scoring
+# it in the risk axis made the LETTER worse — the A bucket's forward return fell from
+# +4.88% to +3.65% and A/B/C became indistinguishable — because the information is
+# already inside what that axis scores. It is drawn on the chart instead.
+GRADE_BAND_IDEAL_ATR = (0.15, 0.35)
+GRADE_BAND_HAIRLINE_ATR = 0.15
 STOP_NOISE_ATR = 0.5           # tighter than this ⇒ likely stopped by noise
 # Two widths, because he names both: "מעל 288 עם סטופ קרוב יחסית למי שבטרייד. מי
 # שמחזיק לטווח ארוך - סטופ רחב יותר" (AAPL). A swing position gets more room —

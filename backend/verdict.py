@@ -1133,6 +1133,19 @@ class Judgement:
             else:
                 note('risk', -6, 'nothing structural below — the stop is an ATR guess',
                      'אין מבנה מתחת — הסטופ הוא הערכת ATR')
+
+            # NOT graded here: the thickness of the wall being broken
+            # (`trigger['floor']` gives it). It is a genuine standalone signal —
+            # measured on forward 20-day return over 395 of his posts, a band of
+            # 0.15-0.35 ATR returns +5.82% / 65% win against +1.06% / 44% for a
+            # sub-0.15 ATR hairline — and it is drawn on the chart for that reason.
+            # But adding it to this axis made the LETTER worse, not better:
+            #     A bucket's forward return   +4.88%  ->  +3.59% (bonus + penalty)
+            #                                          ->  +3.65% (penalty only)
+            #     A-vs-D spread                6.92pp ->   5.07pp
+            # i.e. the information is already inside what the axis scores, and
+            # paying for it twice flattens the top of the scale. See
+            # GRADE_BAND_IDEAL_ATR for the full bucket table.
             rr = best.get('risk_reward')
             if rr is not None:
                 # Below 1 the trade risks more than the whole thesis is worth — that is
