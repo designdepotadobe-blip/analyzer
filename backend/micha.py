@@ -341,22 +341,32 @@ class MichaAnalyzer:
 
     def _chart_focus(self, ctx, state, codes, fib, off_high, ext, overlays):
         """
-        Micha wipes the chart and draws only what fits. The 150MA and the horizontal
-        S/R lines are universal; the one extra overlay is chosen by what is actually
-        happening:
-            value / needs buyers → the Fibonacci retracement he measures
-            breakout / at trigger → the diagonal line being broken or tested
-            holding              → a real channel, else the rising-lows line
-            triangle             → the converging triangle, whatever the state
+        Draw everything that is REAL on this chart, and nothing that isn't.
+
+        The distinction matters and cost a round trip to get right. An earlier pass
+        gated almost everything behind narrow states, which read as "the analyzer
+        found nothing" on charts that genuinely had a trend line under them. The
+        measurement says the opposite: across 2,323 of his posts the support /
+        trend-line vocabulary is his SECOND strongest signal (+14.0 lift between
+        praise and warnings, behind only breakout at +18.5), he marks gaps
+        explicitly ("גאפ מעל הראש", "סגירת הגאפ"), and he uses channels when the
+        stock is in one ("אפל נעה בתעלה ללא הפרעה"). Those are drawn whenever they
+        exist.
+
+        What stays rare stays rare because HE is rare with it, not to keep the chart
+        empty: Fibonacci appears in 1.3% of his posts and triangles in 0.3%, so both
+        still have to be the actual thesis (`fibonacci` / `triangle` in `codes`) and
+        not merely detectable. Breakout arrow markers stay off entirely — he never
+        annotates past breakouts, he draws the line they broke.
         """
         focus = {
             'sma150': True, 'sma200': False, 'sma20': False,
-            # The full S/R map is OFF by default now. `key_levels` carries the one or
-            # two horizontals that are actually the decision; this toggle re-enables
-            # the complete 5-6-line map for anyone who wants to audit it. Measured
-            # against his own charts: he draws 1-2 horizontals, never a map — five
-            # equally-weighted lines make the reader hunt for which one is the trade.
-            'levels': False, 'fib': False, 'trendlines': False,
+            # He does draw horizontal S/R — "תמיכה/סטופ ב 27.8. התנגדות ב 31.47".
+            # The level engine is already capped at LEVEL_MAX_SHOW=2 per side, and
+            # `key_levels` separately promotes the trigger/stop to their own bold,
+            # labelled lines, so the map reads as context underneath the decision
+            # rather than competing with it.
+            'levels': True, 'fib': False, 'trendlines': False,
             'channels': False, 'triangles': False,
         }
         # Every one of his screenshots shows ONE moving average — the 150. The 200
@@ -372,26 +382,19 @@ class MichaAnalyzer:
         fib_relevant = bool(fib and off_high >= 10 and 0.30 <= fib['retracement'] <= 0.95
                             and 'fibonacci' in codes)
 
+        # A real diagonal is drawn whenever one exists — it is "קו המגמה", the line
+        # he says the stock is sitting on. Not state-gated: a trend line under a
+        # stock in `needs_buyers` is exactly as real as one under a breakout.
+        focus['trendlines'] = has_tl
+        # A channel is a stronger statement than a lone diagonal, so when the setup
+        # engine actually recognised one it supersedes the single line.
+        if has_ch and ('rising_channel' in codes or 'descending_channel' in codes):
+            focus['channels'] = True
+        # Both of these have to BE the thesis, per the frequencies above.
         if has_tri and 'triangle' in codes:
             focus['triangles'] = True
-        elif state in ('value_pullback', 'needs_buyers'):
-            focus['fib'] = fib_relevant
-            focus['trendlines'] = has_tl and not fib_relevant
-        elif state in ('breakout_now', 'at_trigger'):
-            focus['trendlines'] = has_tl
-        elif state in ('holding', 'buyers_at_level'):
-            if has_ch and 'rising_channel' in codes:
-                focus['channels'] = True
-            elif has_tl:
-                focus['trendlines'] = True
-
-        # NO "if nothing else matched, draw something anyway" fallback. That used to
-        # guarantee every chart carried a diagonal or a Fib whether or not it was the
-        # thesis, which is precisely the padding this rewrite removes: measured over
-        # 2,323 of his posts, Fibonacci is invoked in 1.3% and triangles in 0.3%, and
-        # plenty of his charts carry NO drawn object beyond the 150MA and one
-        # horizontal. An otherwise-clean chart is the correct output, not a failure to
-        # find something to draw.
+        if fib_relevant:
+            focus['fib'] = True
         return focus
 
     # ── "שינוי כיוון" — the four stages he dictates ────────────────────────────

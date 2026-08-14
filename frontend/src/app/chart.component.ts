@@ -34,8 +34,29 @@ interface LegendItem {
  *  back down ("חוזרת לזירת הפשע"), so colouring one red and the other teal states a
  *  bias the line itself does not carry. Strength is expressed through opacity and
  *  line style instead, leaving red/teal to mean bullish/bearish everywhere else. */
+/* His own palette, read off his published charts:
+ *   WHITE   — his hand-drawn horizontal S/R, and the freehand cup outlines. MMM
+ *             (2026-08-09) is unambiguous: the S/R band at 174.93-177.41 is a
+ *             white zone with a white label, and both cup curves are white.
+ *             This is also what this file already used before I briefly changed
+ *             it to yellow on a misread of the older NNE/MARA charts — the
+ *             original rationale (strength via opacity and line style, leaving
+ *             red/teal to mean bullish/bearish) was right and is restored.
+ *   YELLOW  — kept for DIAGONALS only (trend line, channel rails, triangle), so
+ *             a sloped structural line stays distinguishable from a horizontal
+ *             one. NNE's rising trend line is drawn exactly this colour.
+ *   CYAN    — the actionable prices: trigger, entry, target (MARA price-tags its
+ *             14.69 trigger and its target above it in cyan).
+ *   PINK    — the 150MA, on every chart he posts (NNE "MA 21.93", AAPL "281.12",
+ *             MMM "157.67").
+ *   RED     — the stop. He uses red for his measured-move arrows rather than for
+ *             stops, but red already means risk everywhere else in this app and
+ *             the stop is the one line that means "you are wrong". */
 const LEVEL_COLOR_STRONG = '#ffffff';
 const LEVEL_COLOR_WEAK = '#ffffff88';
+const MICHA_YELLOW = '#ffd54f';
+const MICHA_CYAN = '#22d3ee';
+const MICHA_PINK = '#ff4081';
 
 // Default zoom: enough bars to read the recent trend clearly without cramming two
 // years of candles into one screen. Adapts to the container width so a phone gets
@@ -255,7 +276,9 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
   private readonly smaColors: { [k: string]: string } = {
     sma20: '#b0bec5',
     sma50: '#ffa726',
-    sma150: '#2196f3',
+    // Pink, because that is the colour the 150 carries on every chart he posts —
+    // it is the one average in his method and it reads instantly as "his" line.
+    sma150: MICHA_PINK,
     sma200: '#ba68c8',
   };
 
@@ -438,8 +461,20 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
     }
 
     // ── Horizontal S/R + broken-level price lines ─────────────────────────
+    // The key levels get their own bold, cyan, labelled lines further down. A
+    // trigger is usually ALSO one of the S/R levels (it is "ההתנגדות"), so
+    // drawing both put a yellow structural line under the cyan decision line at
+    // the same price and stacked two tags on the axis — AAPL rendered 309.29
+    // twice. The decision line wins; the map keeps everything else.
+    const keyPrices: number[] = (this.michaMode && a.micha?.key_levels)
+      ? (a.micha.key_levels.map((k) => k.price).filter((p) => p != null) as number[])
+      : [];
+    const keyEps = Math.max(1e-6, (a.meta.atr || 0) * 0.05);
+    const isKeyPrice = (p: number) => keyPrices.some((q) => Math.abs(q - p) <= keyEps);
+
     if (tg.levels) {
       for (const lvl of a.overlays.levels) {
+        if (isKeyPrice(lvl.price)) { continue; }
         const strong = lvl.strength === 'strong';
         const lw: 1 | 2 = strong ? 2 : 1;
         const color = strong ? LEVEL_COLOR_STRONG : LEVEL_COLOR_WEAK;
@@ -485,7 +520,9 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
     // ── Sloped trendlines (segments — drawn only over their own leg) ──────
     if (tg.trendlines) {
       for (const t of a.overlays.trendlines) {
-        this.drawSloped(t, 2);
+        // Yellow and thick — this is "קו המגמה", the line he draws along the
+        // lows/highs and the second strongest feature in his own posts.
+        this.drawSloped(t, 2, LineStyle.Solid, MICHA_YELLOW);
       }
     }
 
@@ -495,16 +532,22 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
     // compete with them for attention.
     if (tg.channels) {
       for (const c of a.overlays.channels) {
-        this.drawSloped(c.upper, 1, LineStyle.Solid);
-        this.drawSloped(c.lower, 1, LineStyle.Solid);
+        // Same yellow family as the trend line — his channel rails are the same
+        // kind of object, just two of them (MARA's descending channel, AAPL's
+        // rising one).
+        this.drawSloped(c.upper, 1, LineStyle.Solid, MICHA_YELLOW);
+        this.drawSloped(c.lower, 1, LineStyle.Solid, MICHA_YELLOW);
       }
     }
 
     // ── Triangles (converging) ─────────────────────────────────────────────
     if (tg.triangles) {
       for (const tri of a.overlays.triangles) {
-        this.drawSloped(tri.upper, 1, LineStyle.Solid);
-        this.drawSloped(tri.lower, 1, LineStyle.Solid);
+        // Yellow like every other structural diagonal. Left on the per-setup
+        // backend colours this drew a salmon converging line a few pixels from
+        // the pink 150MA on NVDA — two different objects reading as the same one.
+        this.drawSloped(tri.upper, 1, LineStyle.Solid, MICHA_YELLOW);
+        this.drawSloped(tri.lower, 1, LineStyle.Solid, MICHA_YELLOW);
       }
     }
 
@@ -570,8 +613,8 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
         // Short words only — a long axis-label title ("Breakout") was getting
         // clipped against the edge of a narrow phone viewport.
         const entryTitle = opt.kind === 'now' ? 'Entry' : opt.kind === 'breakout' ? 'Break' : 'Pullback';
-        addPlanLine('entry', opt.entry, '#42a5f5', 2, LineStyle.Dashed, entryTitle);
-        legend.push({ color: '#42a5f5', label: entryTitle, value: opt.entry.toFixed(2) });
+        addPlanLine('entry', opt.entry, MICHA_CYAN, 2, LineStyle.Dashed, entryTitle);
+        legend.push({ color: MICHA_CYAN, label: entryTitle, value: opt.entry.toFixed(2) });
         if (opt.stop != null) {
           addPlanLine('stop', opt.stop, '#ef5350', 2, LineStyle.Solid, 'Stop');
           legend.push({ color: '#ef5350', label: 'Stop', value: opt.stop.toFixed(2) });
@@ -582,7 +625,9 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
         const t = m.targets[i];
         if (t.price == null) { continue; }
         const title = i === 0 ? 'Target' : `T${i + 1}`;
-        addPlanLine(`t${i}`, t.price, i === 0 ? '#26a69a' : '#26a69a88', 1,
+        // Cyan, like his target line on MARA — the same family as the trigger,
+        // because both are prices the trade is aiming AT.
+        addPlanLine(`t${i}`, t.price, i === 0 ? MICHA_CYAN : MICHA_CYAN + '88', 1,
                     LineStyle.Dotted, title);
       }
 
@@ -603,14 +648,31 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
         if (k.price == null) { continue; }
         if (planPrices.some((p) => Math.abs(p - k.price) <= EPS)) { continue; }
         const style = k.role === 'trigger' ? LineStyle.Dashed : LineStyle.Dotted;
-        const color = k.role === 'trigger' ? '#ffca28'
-          : k.role === 'stop'              ? '#ef5350'
-          : k.role === 'target'            ? '#26a69a'
-          :                                  '#42a5f5';
-        // Amber, the colour his own breakout lines carry, and deliberately not
-        // the S/R grey — this is the decision line, not one of the map's rungs.
+        const color = k.role === 'stop' ? '#ef5350' : MICHA_CYAN;
+        // Cyan for trigger / entry / target — the colour he price-tags his
+        // actionable levels in (MARA: cyan 14.69 trigger, cyan target above it),
+        // against the yellow he uses for structural S/R underneath.
         addPlanLine(k.role, k.price, color, 2, style, k.label);
         legend.push({ color, label: k.label, value: k.price.toFixed(2) });
+      }
+
+      // ── Unfilled gaps ──────────────────────────────────────────────────
+      // Computed all along (`overlays.gaps`) and never drawn until now, even
+      // though he calls them out by name constantly — "גאפ מעל הראש", "סגירת
+      // הגאפ זה פלוס 7%", "אני מודע לגאפ מתחת, בגלל זה יש סטופ". Overhead a gap
+      // is where the move is going; below price it is what the stop is protecting
+      // against, so both edges earn a line: `near` is the edge price reaches
+      // first ("פתח הגאפ"), `far` is a full fill ("סגירת הגאפ").
+      //
+      // Two thin lines rather than a filled box: lightweight-charts v4 has no box
+      // primitive, and faking one with a translucent area series would sit under
+      // the candles and fight the volume histogram for the same pixels.
+      for (const g of (a.overlays.gaps || [])) {
+        if (g.near == null || g.far == null) { continue; }
+        const up = g.dir === 'up';
+        const col = up ? '#26a69a66' : '#ef535066';
+        addPlanLine('gapNear', g.near, col, 1, LineStyle.Dotted, 'Gap');
+        addPlanLine('gapFar', g.far, col, 1, LineStyle.Dotted, '');
       }
     }
 
@@ -673,12 +735,16 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
   }
 
   /** Draw a 2-point sloped line (trendline / channel rail / triangle side). */
-  private drawSloped(p: LinePrimitive, width: 1 | 2 | 3, style: LineStyle = LineStyle.Solid): void {
+  private drawSloped(p: LinePrimitive, width: 1 | 2 | 3, style: LineStyle = LineStyle.Solid,
+                     color?: string): void {
     if (!this.chart) {
       return;
     }
     const s = this.chart.addLineSeries({
-      color: p.color,
+      // `color` overrides the per-primitive colour the backend assigns, so the
+      // diagonals can carry his yellow as a family instead of one hue per setup
+      // code. Falls back to the backend colour when no override is given.
+      color: color || p.color,
       lineWidth: width,
       lineStyle: style,
       priceLineVisible: false,
