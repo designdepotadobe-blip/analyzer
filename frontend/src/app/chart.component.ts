@@ -624,6 +624,30 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
       if (trig && trig.price != null) {
         addPlanLine('trigger', trig.price, MICHA_LINE, 2, LineStyle.Solid, trig.label);
         legend.push({ color: MICHA_LINE, label: trig.label, value: trig.price.toFixed(2) });
+
+        // ── …and its FLOOR, so the breakout reads as a BAND ─────────────────
+        // This is the shape his charts are built on, and both of his labelled
+        // ones name the band rather than a price: OKTA's axis reads
+        // "86.88 - 88.17" and SMCI's "34.94 - 35.88". The top is the price that
+        // has to give; the bottom is where the trade is wrong. Measured over 404
+        // of his posts, that band is 0.23-0.43 ATR wide and its lower edge is his
+        // stop (median 0.43 ATR under the line) -- so drawing only the top edge
+        // was drawing half the statement.
+        //
+        // Dimmer and thinner than the top edge on purpose: one of them is the
+        // trigger, the other is the wall behind it, and they are not equals.
+        // Skipped when the wall has no measurable thickness -- two lines in the
+        // same pixel row is the duplicate the backend work just removed.
+        const floor = m.trigger?.floor;
+        const minBand = Math.max(1e-6, (a.meta.atr || 0) * 0.08);
+        if (floor != null && trig.price - floor >= minBand) {
+          addPlanLine('triggerFloor', floor, MICHA_LINE + '99', 1, LineStyle.Solid, '');
+          legend.push({
+            color: MICHA_LINE + '99',
+            label: 'אזור הפריצה',
+            value: `${floor.toFixed(2)} - ${trig.price.toFixed(2)}`,
+          });
+        }
       }
 
       // The option's entry/stop ladder is deliberately NOT drawn here: `key_levels`

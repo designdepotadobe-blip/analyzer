@@ -194,6 +194,10 @@ export interface MichaTrigger {
       | 'cup_rim' | 'base';
   what: string;
   what_he: string;
+  /** The lower edge of the same wall — the breakout is a BAND, and both of his
+   *  labelled charts name it as one ("86.88 - 88.17" OKTA, "34.94 - 35.88" SMCI).
+   *  The top is the price that has to give, this is where the trade is wrong. */
+  floor: number | null;
   /** null unless `kind === 'level'` — see MichaWall */
   wall: MichaWall | null;
   distance_atr: number;
