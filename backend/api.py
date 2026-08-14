@@ -218,6 +218,11 @@ def scan(
                 'grade': m['grade'],
                 'grade_score': m['grade_score'],
                 'call_he': m['report']['call_he'],
+                # The WHY. `call_he` restates the entry and the stop, which the row
+                # already prints as prices — on a card the two together said the
+                # same number three times. `read_he` is the half of his post that
+                # is not a number ("נכנסו קונים על הרמה, ממוצע 150 מתחת").
+                'read_he': m['report']['read_he'],
                 # "close to becoming relevant", independent of the grade
                 'alert': al,
                 'setup_count': len(r['setups']),
@@ -249,6 +254,13 @@ def scan(
                 # horizontal level carries a touch history, a trendline or an
                 # average does not
                 'trigger_wall': (m.get('trigger') or {}).get('wall'),
+                # The line the stock has to CROSS, and his own name for it. This is
+                # the headline of essentially every post he writes ("פריצה מעל
+                # 21.45$", "מעל 552. אם לא עוברת מעל אין טרייד") and the scan row
+                # was ranking on expectancy while never showing it — the reader got
+                # "E +0.53R" where he would have written a price.
+                'trigger': (m.get('trigger') or {}).get('price'),
+                'trigger_what_he': (m.get('trigger') or {}).get('what_he'),
             }
         except Exception:
             return None

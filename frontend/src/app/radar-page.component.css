@@ -569,6 +569,32 @@
 .rd-risk-txt.exp-good { color: #26a69a; }
 .rd-risk-txt.exp-bad { color: #ef5350; }
 
+/* The two prices the card is actually about. Flat rows, literal px, `row-reverse`
+   never needed because each row is one label + one number and `dir="rtl"` sits on
+   the text-only row itself (see the template comment for why that is safe here
+   but not on a multi-child flex container). */
+.rd-card-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px 7px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.rd-plan-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.rd-plan-k { color: #9aa0aa; }
+.rd-plan-v { font-size: 13px; font-weight: 800; }
+/* Same colour language as the chart: cyan is the price you are aiming AT, red is
+   the one that means you were wrong. */
+.rd-plan-v.trig { color: #22d3ee; }
+.rd-plan-v.stop { color: #ef5350; }
+
 .rd-card-call {
   margin: 0;
   font-size: 12px;

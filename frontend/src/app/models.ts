@@ -578,6 +578,9 @@ export interface ScanHit {
   grade: 'A' | 'B' | 'C' | 'D' | 'F';
   grade_score: number;
   call_he: string;
+  /** The WHY — the half of his post that isn't a price. `call_he` restates the
+   *  entry and stop, which a card already prints as numbers. */
+  read_he: string;
   /** Set when the name is close to its trigger — `?alerting=true&sort=alert` returns
    *  only these, nearest first. */
   alert: MichaAlert | null;
@@ -604,6 +607,10 @@ export interface ScanHit {
   pct_per_day: number | null;
   /** display-only — see MichaWall. Never a ranking input. */
   trigger_wall: MichaWall | null;
+  /** The line the stock has to CROSS, and his name for it — the headline of
+   *  almost every post he writes ("פריצה מעל 21.45$"). */
+  trigger: number | null;
+  trigger_what_he: string | null;
 }
 
 export interface ScanResponse {

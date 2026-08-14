@@ -308,48 +308,41 @@
       <span class="rd-gauge-txt">{{ al.distance_pct | number: '1.1-1' }}% · {{ al.distance_atr | number: '1.2-2' }} ATR</span>
     </div>
 
-    <!-- the entry itself — where, and which of the three ways in. DOM order is
-         the REVERSE of the intended right-to-left read order (arrow, price, kind,
-         wall) — with plain flex (no row-reverse) the LAST dom child lands at the
-         physical right edge, which is where reading starts. Get this backwards
-         and the wall tag, not the arrow, ends up in the prominent position (a bug
-         caught and fixed here, not a style choice — see git history). -->
-    <div class="rd-card-entry" *ngIf="h.entry != null">
-      <!-- how well-defended this exact price is — display only, never scored -->
-      <span class="rd-wall-tag" *ngIf="h.trigger_wall as w" [class.wall-strong]="w.strength === 'strong'"
-            [title]="w.touches + ' מגעים'">{{ w.touches }}×</span>
-      <span class="rd-entry-kind" *ngIf="h.option_kind">{{ optionKindHe[h.option_kind] }}</span>
-      <span class="rd-entry-price">{{ h.entry | number: '1.2-2' }}</span>
-      <span class="rd-entry-arrow">→</span>
+
+    <!-- THE two numbers, in his words. Measured across 2,500 of his posts the
+         recurring shape is "פריצה מעל 21.45$" + "סטופ מתחת ל 40" — a price to
+         cross and a price to hold. The card used to lead with `+21% · 65י׳ ·
+         31%` and `סטופ 1.0ATR · −2% · E +0.53R`: real numbers, but expectancy,
+         R-multiples and ATR counts are quant-desk vocabulary he never uses, and
+         they pushed his actual sentence to the bottom of the card.
+
+         Those metrics still exist and still drive the SORT chips — they just
+         aren't what a scan row says out loud any more. `dir="rtl"` on a
+         text-only leaf is safe here (the documented invisible-text bug is about
+         flex containers with multiple element children), and it is required:
+         Hebrew mixed with several separate numbers in one unmarked node lets
+         bidi reorder them and visibly reverse "סטופ". -->
+    <div class="rd-card-plan">
+      <div class="rd-plan-row" *ngIf="h.trigger != null" dir="rtl">
+        <span class="rd-plan-k">פריצה מעל</span>
+        <b class="rd-plan-v trig">{{ h.trigger | number: '1.2-2' }}</b>
+      </div>
+      <div class="rd-plan-row" *ngIf="h.trigger == null && h.entry != null" dir="rtl">
+        <span class="rd-plan-k">כניסה</span>
+        <b class="rd-plan-v trig">{{ h.entry | number: '1.2-2' }}</b>
+      </div>
+      <div class="rd-plan-row" *ngIf="h.stop != null" dir="rtl">
+        <span class="rd-plan-k">סטופ</span>
+        <b class="rd-plan-v stop">{{ h.stop | number: '1.2-2' }}</b>
+        <!-- how well-defended the trigger is — display only, never scored -->
+        <span class="rd-wall-tag" *ngIf="h.trigger_wall as w"
+              [class.wall-strong]="w.strength === 'strong'"
+              [title]="w.touches + ' מגעים'">{{ w.touches }}×</span>
+      </div>
     </div>
 
-    <!-- potential gain, priced with its own odds — see micha._growth. `dir="rtl"`
-         directly on a plain text-only element (no flex children of its own) is
-         safe — the invisible-text bug documented elsewhere in this file is about
-         FLEX CONTAINERS distributing space among multiple element children; a
-         single span of interpolated text was never that. Without an explicit
-         direction here, mixing Hebrew words with several separate numbers in one
-         unmarked (default-LTR) node let the bidi algorithm reorder the numbers
-         against each other and, worse, visibly reverse "סטופ" — a real bug
-         caught on screen, not a typo. -->
-    <div class="rd-card-gain" *ngIf="h.gain_pct != null">
-      <span class="rd-gain-txt" dir="rtl">
-        📈 +{{ h.gain_pct | number: '1.0-0' }}% · {{ h.gain_days | number: '1.0-0' }}י׳
-        · {{ (h.gain_hit_rate || 0) * 100 | number: '1.0-0' }}%
-      </span>
-    </div>
-
-    <!-- risk + the number that ranks a home run against a scalp -->
-    <div class="rd-card-risk" *ngIf="h.stop_atr != null">
-      <span class="rd-risk-txt" dir="rtl" [class.exp-good]="expClass(h.expectancy_r) === 'exp-good'"
-            [class.exp-bad]="expClass(h.expectancy_r) === 'exp-bad'">
-        🛡 סטופ {{ h.stop_atr | number: '1.1-1' }}ATR · −{{ h.risk_pct | number: '1.0-0' }}%
-        <ng-container *ngIf="h.expectancy_r != null">
-          · E {{ h.expectancy_r >= 0 ? '+' : '' }}{{ h.expectancy_r | number: '1.2-2' }}R</ng-container>
-      </span>
-    </div>
-
-    <p class="rd-card-call">{{ h.call_he }}</p>
+    <!-- the WHY, not a third restatement of the two prices above it -->
+    <p class="rd-card-call">{{ h.read_he }}</p>
 
     <div class="rd-card-foot">
       <span class="rd-action-chip" [ngClass]="'act-' + h.action">{{ actionLabelHe[h.action] }}</span>
