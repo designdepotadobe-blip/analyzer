@@ -42,6 +42,14 @@ from typing import Optional
 
 from config import (
     ALERT_CLOSE_ATR,
+    BREAK_HARD_BONUS,
+    BREAK_SOFT_BONUS,
+    HEADROOM_CLEAR_ATR,
+    HEADROOM_CLOSE_ATR,
+    HEADROOM_HARD_TOUCHES,
+    HEADROOM_MAX,
+    HEADROOM_OK_ATR,
+    HEADROOM_TIGHT_ATR,
     ALERT_IMMINENT_ATR,
     ALERT_MAX_PCT,
     ALERT_MIN_ATR,
@@ -73,6 +81,7 @@ from config import (
     TIME_SLOW_DAYS,
     TRIGGER_AT_HAND_ATR,
     TRIGGER_NEAR_ATR,
+    TRIGGER_MAX_SPAN_ATR,
     TRIGGER_REACH_ATR,
     TRIGGER_ZONE_ATR,
     VALUE_NEAR_150_ATR,
@@ -400,7 +409,12 @@ class Judgement:
             rp = r.get('price')
             if rp <= p:
                 continue
-            if (rp - zone_top) / atr <= TRIGGER_ZONE_ATR:
+            # Two conditions, not one: the gap to the last admitted wall (a cluster
+            # is walls sitting on top of each other), AND the total width of what
+            # has been merged (see TRIGGER_MAX_SPAN_ATR — without it the first
+            # condition chains, and three distinct walls become one 10%-wide "zone").
+            if ((rp - zone_top) / atr <= TRIGGER_ZONE_ATR
+                    and (rp - zone_lo) / atr <= TRIGGER_MAX_SPAN_ATR):
                 zone_top, absorbed = float(rp), absorbed + 1
                 # the strongest wall in the zone is the one being described
                 if (r.get('touches') or 0) > ((wall or {}).get('touches') or 0):
@@ -617,6 +631,22 @@ class Judgement:
             if not turning:
                 return 'avoid'
 
+        # ── A hard wall right overhead is not an entry, whatever else is true ──
+        # The chart can be excellent and the answer still be "not here": "פריצה מעל
+        # 88.17" (OKTA) is said ABOUT a chart he likes. When a well-defended wall sits
+        # inside HEADROOM_TIGHT_ATR of where the entry would be, the honest call is
+        # the one he writes — wait for that price to give — because everything above
+        # the entry between here and there is someone else's supply.
+        #
+        # This deliberately does NOT touch the grade (the structure is still the
+        # structure; see HEADROOM_MAX) and only fires when there is a concrete line to
+        # name, so the reader is never told to wait for something unspecified.
+        if trigger and trigger.get('tier') in ('at_hand', 'near'):
+            entry_ref = price
+            hr = self._headroom(ctx, s, entry_ref)
+            if hr.get('level') == 'tight' and float(trigger['price']) > price:
+                return 'at_trigger'
+
         # BREAKOUT NOW — a fresh break of a real level with volume behind it, AND
         # price still at that level. Once you are several ATR above the level you
         # broke, the entry is gone and buying here is the chase he refuses:
@@ -634,13 +664,38 @@ class Judgement:
             return 'buyers_at_level'
 
         # VALUE — the deep pullback back to the average. "מה זה מחיר טוב? קרוב לממוצע."
+        # A confirmed buyers' candle is still an entry in its own right. Without one
+        # this used to return `needs_buyers`, which has the same problem as the branch
+        # below: with a line waiting overhead the thing to wait for is that line.
         if self._is_value(ctx, s):
-            return 'value_pullback' if s.candle.get('found') else 'needs_buyers'
+            if s.candle.get('found'):
+                return 'value_pullback'
+            if trigger and trigger.get('tier') == 'at_hand':
+                return 'at_trigger'
+            return 'needs_buyers'
 
         # A turn candle ON the level is his "חכו לקונים" — interesting, not yet an
         # entry. It is the difference between "there's a doji here, why does that
         # matter?" and "buyers came in".
-        if at_floor and s.candle.get('turn'):
+        #
+        # …but only when the trade is a BOUNCE. "חכו לקונים" is what he says at a
+        # support with nothing overhead to cross ("נר דוג'י על קו תמיכה … חכו לקונים"
+        # OPEN, ASTS); when a line is waiting above, his sentence is "פריצה מעל X".
+        # `_at_floor` is true within 1.4 ATR of the 150, which on a coiled chart is
+        # true at the same moment the trigger is one tick away — so this branch was
+        # firing on breakout setups and telling the reader to wait for the wrong
+        # thing. Measured before the fix: 21 of 21 `wait_buyers` names had a breakout
+        # as their ONLY entry option, i.e. the instruction contradicted the plan the
+        # engine had itself produced, and 15 of the 21 were B-grade.
+        #
+        # `at_hand` ONLY, not `near`. Deferring on `near` as well emptied this state
+        # completely (0 of 119 names) — with two levels shown per side there is nearly
+        # always SOME resistance within 2.5 ATR, so "wait for buyers" stopped existing,
+        # and it is a call he genuinely makes. Inside 1 ATR the line is the event you
+        # are waiting for; at 1-2.5 ATR a bounce off the floor underfoot is the nearer
+        # one.
+        if at_floor and s.candle.get('turn') and not (
+                trigger and trigger.get('tier') == 'at_hand'):
             return 'needs_buyers'
 
         # AT THE TRIGGER — coiled right under the named price. This is not limited to
@@ -655,7 +710,108 @@ class Judgement:
         if ctx.above_150 and hold and s.trend != 'downtrend':
             return 'holding'
 
+        # Above the 150 with the trigger in hand is never "hasn't done anything yet".
+        # `_trend` is a polyfit through two years of pivots, so a name that crashed and
+        # has since reclaimed the average still reads `downtrend` and used to fall
+        # through BOTH branches above into this one — the bearish→bullish setup, which
+        # is one of the shapes the method is built for, scored as "watch". Above the
+        # 150 the 150 IS the trend filter; a two-year regression does not get to veto
+        # it. (A genuine sub-150 downtrend is already caught by `avoid` further up, so
+        # nothing that belongs there reaches here.)
+        if (ctx.above_150 and trigger
+                and trigger.get('tier') in ('at_hand', 'near')):
+            return 'at_trigger'
+
         return 'nothing_yet'
+
+    @staticmethod
+    def _headroom(ctx, s: Signals, from_price: Optional[float] = None) -> dict:
+        """
+        How far the trade can run before it meets the next HARD wall.
+
+        Measured from where you would actually be long — the entry, or the trigger
+        when the entry is a breakout — not from spot, because for a `wait_trigger`
+        name the trigger itself would otherwise register as the ceiling and every
+        such chart would read "no room".
+
+        Only well-defended levels close the road (`HEADROOM_HARD_TOUCHES`). A
+        2-touch high is not "התנגדות מעל הראש"; it still draws on the chart, it just
+        does not count as the wall. No hard wall above at all is blue sky — the case
+        he calls "יש לה מקום לרוץ".
+
+        Deliberately reports the FIRST wall only. Counting how many walls sit above
+        is the congestion metric that was measured and removed (see `_grade`), and
+        re-deriving it here through the back door would repeat that mistake.
+        """
+        price, atr = ctx.price, ctx.atr
+        base = float(from_price) if from_price else float(price)
+        if not atr:
+            return {'atr': None, 'pct': None, 'price': None, 'touches': None,
+                    'strength': None, 'level': 'unknown', 'from': base}
+
+        hard = []
+        for r in (s.res_levels or []):
+            rp = r.get('price')
+            if not rp or float(rp) <= base + atr * 0.05:
+                continue
+            strong = (r.get('strength') == 'strong'
+                      or (r.get('touches') or 0) >= HEADROOM_HARD_TOUCHES)
+            if strong:
+                hard.append(r)
+        hard.sort(key=lambda r: r['price'])
+
+        if not hard:
+            return {'atr': None, 'pct': None, 'price': None, 'touches': None,
+                    'strength': None, 'level': 'open', 'from': base}
+
+        w = hard[0]
+        wp = float(w['price'])
+        d = (wp - base) / atr
+        level = ('tight' if d < HEADROOM_TIGHT_ATR else
+                 'close' if d < HEADROOM_CLOSE_ATR else
+                 'some' if d < HEADROOM_OK_ATR else
+                 'clear' if d < HEADROOM_CLEAR_ATR else 'open')
+        return {'atr': jnum(d), 'pct': jnum((wp / base - 1) * 100), 'price': jnum(wp),
+                'touches': w.get('touches'), 'strength': w.get('strength'),
+                'level': level, 'from': jnum(base)}
+
+    @staticmethod
+    def _headroom_detail(hr: Optional[dict], he: bool) -> str:
+        """One phrase for the headroom row, worded to match the sign of what it scored."""
+        if not hr or not hr.get('price'):
+            return 'אין התנגדות משמעותית מעל' if he else 'no hard resistance overhead'
+        a, p, t = hr['atr'], hr['price'], hr.get('touches') or 0
+        lvl = hr.get('level')
+        if lvl == 'tight':
+            return (f"רמה עם {t} נגיעות רק {a:.1f} ATR מעל ({p:.2f})" if he
+                    else f"a {t}-touch wall only {a:.1f} ATR above ({p:.2f})")
+        if lvl == 'close':
+            return (f"רק {a:.1f} ATR עד הרמה הבאה ({p:.2f})" if he
+                    else f"only {a:.1f} ATR to the next wall ({p:.2f})")
+        return (f"פנוי {a:.1f} ATR עד {p:.2f}" if he
+                else f"clear for {a:.1f} ATR to {p:.2f}")
+
+    @staticmethod
+    def _break_strength(s: Signals, atr: float) -> Optional[dict]:
+        """
+        The wall that was just broken, and how well defended it was. `break_level` is
+        only a price; the touch history lives on the level it came from — and after a
+        break that level has usually flipped, so both sides have to be searched.
+        """
+        bl = s.break_level
+        if not bl or not atr:
+            return None
+        best = None
+        for r in list(s.res_levels or []) + list(s.sup_levels or []):
+            rp = r.get('price')
+            if rp and abs(float(rp) - float(bl)) <= atr * 0.15:
+                if best is None or (r.get('touches') or 0) > (best.get('touches') or 0):
+                    best = r
+        if best is None:
+            return {'price': jnum(bl), 'touches': None, 'hard': False}
+        t = best.get('touches') or 0
+        return {'price': jnum(bl), 'touches': t,
+                'hard': bool(best.get('strength') == 'strong' or t >= HEADROOM_HARD_TOUCHES)}
 
     @staticmethod
     def _at_floor(ctx, s: Signals) -> bool:
@@ -1048,7 +1204,75 @@ class Judgement:
         gap_atr = self._gap_below_atr(s.overlays, price, atr)
         if gap_atr is not None and gap_atr < 5:
             setup += 2.0 if gap_atr < 2 else 1.0
-        setup = min(setup, B['setup'])
+
+        # ── The break that just happened, weighted by what it broke ────────────
+        # "פריצה משמעותית מעל 21.45$" — the adjective is his. Clearing a wall the
+        # price has been rejected from four or more times is the event the method is
+        # organised around; clearing a two-touch high is not the same event and used
+        # to score identically, because `break_level` is only a price and the touch
+        # history lives on the level it came from.
+        brk = self._break_strength(s, atr)
+        if brk and state in ('breakout_now', 'holding'):
+            if brk['hard']:
+                setup += BREAK_HARD_BONUS
+                note('setup', BREAK_HARD_BONUS,
+                     f"broke a well-defended level at {brk['price']:.2f} "
+                     f"({brk['touches']} touches)",
+                     f"פרצה רמה חזקה ב-{brk['price']:.2f} ({brk['touches']} נגיעות)")
+            else:
+                setup += BREAK_SOFT_BONUS
+
+        # ── HEADROOM: is there anywhere to go? ─────────────────────────────────
+        # "יש לה מקום לרוץ" against "הבעיה זה ההתנגדויות מעל הראש" (CRWD). Bounded
+        # small on purpose — see HEADROOM_MAX: a hard wall overhead is mostly a
+        # statement about WHEN, not about whether the chart is any good, and `_state`
+        # already carries the "when" by routing these to "wait for the break".
+        #
+        # Two guards, both copied from the time adjustment because the same traps
+        # apply. Skipped entirely for the dead states: a broken setup in a downtrend
+        # has "room above" only because it already fell, and paying for that is how
+        # the time term once lifted META/ADP/ZS out of F. And the BONUS half is paid
+        # only where there is a live thesis, so blue sky on a chart doing nothing
+        # cannot manufacture a letter.
+        headroom = None
+        hr = None
+        if state not in ('broken', 'avoid', 'nothing_yet'):
+            entry_ref = price
+            bo = self._best_option(options, action)
+            if bo and bo.get('entry'):
+                entry_ref = max(float(price), float(bo['entry']))
+            hr = self._headroom(ctx, s, entry_ref)
+            lvl = hr.get('level')
+            live = state in ('breakout_now', 'buyers_at_level', 'value_pullback',
+                             'at_trigger', 'holding')
+            if lvl == 'tight':
+                headroom = -HEADROOM_MAX
+                note('setup', -HEADROOM_MAX,
+                     f"a {hr['touches']}-touch wall at {hr['price']:.2f} is only "
+                     f"{hr['atr']:.1f} ATR overhead — no room to run",
+                     f"רמה עם {hr['touches']} נגיעות ב-{hr['price']:.2f} רק "
+                     f"{hr['atr']:.1f} ATR מעל — אין מקום לרוץ")
+            elif lvl == 'close':
+                headroom = -HEADROOM_MAX / 2
+                note('setup', -HEADROOM_MAX / 2,
+                     f"the next wall at {hr['price']:.2f} is {hr['atr']:.1f} ATR up — "
+                     f"the move is cramped",
+                     f"הרמה הבאה ב-{hr['price']:.2f} במרחק {hr['atr']:.1f} ATR — "
+                     f"מעט מקום למהלך")
+            elif lvl == 'clear' and live:
+                headroom = HEADROOM_MAX / 2
+                note('setup', HEADROOM_MAX / 2,
+                     f"clear to {hr['price']:.2f} — {hr['atr']:.1f} ATR of room",
+                     f"פנוי עד {hr['price']:.2f} — {hr['atr']:.1f} ATR של מקום")
+            elif lvl == 'open' and live:
+                headroom = HEADROOM_MAX
+                note('setup', HEADROOM_MAX,
+                     'no hard resistance overhead — room to run',
+                     'אין התנגדות משמעותית מעל — יש מקום לרוץ')
+            if headroom:
+                setup += headroom
+
+        setup = max(0.0, min(setup, B['setup']))
 
         # ── TRIGGER: how close is the thing that starts the trade? ─────────────
         if state in ('breakout_now', 'buyers_at_level', 'value_pullback'):
@@ -1353,6 +1577,16 @@ class Judgement:
                  'detail_he': (f"סטופ {best['risk_pct']:.1f}% / {best['stop_atr']:.1f} ATR"
                                if best and best.get('risk_pct') is not None else 'אין סטופ מוגדר')},
             ] + ([
+                # same contract as `time` below — a bounded adjustment already counted
+                # inside `setup`, surfaced so the reader can see what the wall cost
+                # The wording has to follow the SIGN. An earlier version read
+                # "clear for 0.8 ATR" beside a -2.0, i.e. it described a penalty as
+                # though it were room.
+                {'key': 'headroom', 'label': 'Room above', 'label_he': 'מקום מעל',
+                 'got': jnum(headroom), 'max': HEADROOM_MAX, 'adjustment': True,
+                 'detail': self._headroom_detail(hr, False),
+                 'detail_he': self._headroom_detail(hr, True)},
+            ] if headroom else []) + ([
                 # not a fourth axis — a named, bounded adjustment already counted
                 # inside `risk`, shown separately so the letter stays auditable
                 {'key': 'time', 'label': 'Time to target',
@@ -1550,8 +1784,18 @@ class Judgement:
             call = f"Enter around {best['entry']:.2f}, stop {best['stop']:.2f}."
             call_he = f"כניסה סביב {best['entry']:.2f}, סטופ {best['stop']:.2f}."
         elif action == 'wait_trigger' and trigger:
-            call = f"No entry yet — alert at {trigger['price']:.2f}, enter on a close above it with volume."
-            call_he = f"אין כניסה עדיין — התראה על {trigger['price']:.2f}, כניסה בסגירה מעליו עם ווליום."
+            _stop_en = (f" Stop {best['stop']:.2f}." if best and best.get('stop') else "")
+            call = (f"Break above {trigger['price']:.2f} — no trade before that."
+                    f"{_stop_en}")
+            # His own shape, and his own order: the price FIRST, then the refusal to
+            # act before it, then the stop — "פריצה משמעותית מעל 21.45$", "מעל 552. אם
+            # לא עוברת מעל אין טרייד", "אין מה להיכנס לפני" (FLY), "חכו לפריצה שלא סתם
+            # תעופו בסטופ" (SEDG). The previous wording opened with "אין כניסה עדיין —
+            # התראה על…", which is alert-console language: it buries the one number he
+            # always leads with and describes the mechanism instead of the trade.
+            _stop_he = (f" סטופ {best['stop']:.2f}." if best and best.get('stop') else "")
+            call_he = (f"פריצה מעל {trigger['price']:.2f} — לפני זה אין טרייד."
+                       f"{_stop_he}")
         elif action == 'wait_buyers':
             call = "It reached the zone — wait for a buyers' candle before entering."
             call_he = "הגיעה לאזור — להמתין לנר קונים לפני כניסה."

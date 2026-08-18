@@ -14,3 +14,7 @@ scratch_*
 # IDE / tool-local state — not project code
 .idea/
 .claude/scheduled_tasks.lock
+
+# harvested Discord corpus — raw messages + chart images, pulled by
+# discord_harvest.py. Large, and it is someone else's content: keep it local.
+corpus/

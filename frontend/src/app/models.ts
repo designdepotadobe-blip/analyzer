@@ -376,8 +376,9 @@ export interface MichaGradeComponent {
   label_he: string;
   got: number;
   max: number;
-  /** True for `time`: a signed ± adjustment ALREADY counted inside `risk`, listed
-   *  separately so the letter stays auditable. Not a fourth axis — do not add it to
+  /** True for `time` (counted inside `risk`) and `headroom` (counted inside
+   *  `setup`): a signed ± adjustment ALREADY included in its axis, listed separately
+   *  so the letter stays auditable. Neither is a fourth axis — do not add them to
    *  the others or the total will double-count. */
   adjustment?: boolean;
   detail?: string;

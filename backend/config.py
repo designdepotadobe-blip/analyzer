@@ -315,6 +315,55 @@ DC_RECENT_WEEKS = 3         # stages 1-2 must have happened within this many wee
 # לבקש" (GEV). Risk carries as much weight as structure because what separates an
 # excellent setup from a merely good one, in every post he writes, is that the
 # invalidation sits close enough to be obvious.
+# ── Headroom: how much room the trade has before the next hard wall ───────────
+# PROVENANCE, stated plainly because everything else in this file carries a
+# measurement and this does not: these numbers are REASONED FROM THE METHOD, not
+# fitted to an outcome. "Room above" is one of the six features that separate his
+# praise from his warnings (+7.4 lift, eee7b7a), and he states it constantly —
+# "יש לה מקום לרוץ", "הבעיה זה ההתנגדויות מעל הראש" (CRWD). The owner asked for it
+# explicitly and will validate it by hand against past charts. Until that happens
+# these are a considered default, not a result. DO NOT cite them as measured.
+#
+# An attempt WAS made to measure this (2,591 as-of observations, 72 tickers,
+# 2024-06..2026-07, forward 20-day return). It failed its own control: the
+# existing grade did not reproduce its known A +4.88% → F -5.06% separation on
+# that sample (it came out flat, C best), so the sample could not certify any
+# term. Room looked cleanly monotone on RAW return and went to noise once SPY was
+# subtracted — it was beta, not skill. The likely reason the sample is unfit: it
+# is a mechanical grid over large caps every 15 bars, whereas the grade is built
+# to rank the setups he actually posts about. Redo it against the Discord corpus
+# (discord_harvest.py) before treating any of this as validated.
+#
+# This is NOT the "overhead congestion" penalty that was built, measured and
+# removed at verdict.py's `_grade` (see the NOTE there). That one counted the
+# WALLS BETWEEN entry and thesis, which charges a stock for having a target
+# ladder at all — it took TEAM from A90 to B83 while F escaped. This counts the
+# DISTANCE TO THE FIRST hard wall only. A healthy three-station ladder keeps its
+# grade as long as station one is not sitting on top of the entry; the count of
+# stations above it is deliberately never read.
+# Kept deliberately SMALL. A wall overhead changes what you should DO far more than
+# it changes how good the chart is: a well-built base with a hard wall 0.4 ATR above
+# is still a well-built base, and grading it down to F would say the structure is
+# bad when the structure is fine and only the timing is wrong. So the letter moves
+# by about one band at most, and the whole weight of "not yet" is carried by the
+# ACTION instead — `_state` routes these to `at_trigger`, i.e. his own "פריצה מעל X /
+# להמתין לפריצה", rather than "enter". Owner's instruction, and it matches how he
+# writes: he keeps praising the chart and still says wait.
+HEADROOM_MAX = 4.0           # bounded ±, same size as the time adjustment. Never an axis.
+HEADROOM_TIGHT_ATR = 0.5     # a hard wall this close ⇒ the move has nowhere to go
+HEADROOM_CLOSE_ATR = 1.0     # still cramped
+HEADROOM_OK_ATR = 2.0        # neutral above this
+HEADROOM_CLEAR_ATR = 3.5     # real room to run; at/above this, or blue sky, pays full
+# Only a WELL-DEFENDED level counts as a ceiling. A 2-touch high is not what he
+# means by "התנגדות מעל הראש" — he names walls the price has been rejected from
+# repeatedly. Weak levels still draw on the chart; they just do not close the road.
+HEADROOM_HARD_TOUCHES = 4    # matches LEVEL_STRONG_TOUCHES — a "hard" wall
+# Breaking a hard wall is the event his whole method is organised around
+# ("פריצה משמעותית מעל"), and breaking a 2-touch high is not the same event.
+# Paid on the setup axis, small, and only while the break is still fresh.
+BREAK_HARD_BONUS = 4.0
+BREAK_SOFT_BONUS = 1.5
+
 GRADE_BUDGET = {'setup': 40, 'trigger': 30, 'risk': 30}
 GRADE_BANDS = [(4, 85.0), (3, 70.0), (2, 55.0), (1, 40.0), (0, 0.0)]
 GRADE_BAND_RANGE = {4: (85.0, 99.0), 3: (70.0, 84.9), 2: (55.0, 69.9),
@@ -336,6 +385,23 @@ TRIGGER_REACH_ATR = 5.0
 # matches CLUSTER_ATR_FACTOR rather than exceeding it — an earlier 1.0 here was a
 # guess made before the charts were read, and merged walls he keeps separate.
 TRIGGER_ZONE_ATR = 0.6
+
+# …and the TOTAL width may never exceed it either. The line above is a per-step gap:
+# absorption compares each wall to the last one ADMITTED, so walls 0.59 ATR apart
+# chain indefinitely and the finished "band" is unbounded — the exact single-linkage
+# failure LEVEL_MAX_SPAN_ATR was added to stop in `_cluster`, which the trigger path
+# never got. The comment above already states the intent ("his bands run 0.1 ATR to
+# 0.6 ATR"): 0.6 is a WIDTH read off his charts, not a step size.
+#
+# Measured over 124 names: 23% of trigger bands were wider than the 0.6 ATR cap the
+# DISPLAY levels obey (p90 0.91, max 3.38), 16% quoted a trigger above a real
+# intervening wall and 11% above a wall at least as strong as the one they named.
+# Worst case IONQ: walls at 47.90 (20 touches), 49.03 (18) and 50.87 (13) chained
+# into "the breakout zone 46.82-50.87", quoting a price 10.0% overhead — described
+# with 47.90's touch count while naming 50.87's price, and skipping the two
+# strongest walls on the way. Clearing the first wall of a cluster is not a
+# breakout; declaring three separate walls one cluster is not a wall.
+TRIGGER_MAX_SPAN_ATR = 0.6
 
 # "קרוב לממוצע" is a clause of his A-grade sentence, and distance from it is a
 # spectrum he grades explicitly: RDDT — "where it was last time: close to the
