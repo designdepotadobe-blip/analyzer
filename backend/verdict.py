@@ -1318,33 +1318,36 @@ class Judgement:
             if reduced is not None:
                 trig = float(reduced)
                 tp, tpc = trigger['price'], trigger['distance_pct']
-                note('trigger', reduced - float(B['trigger']),
-                     f"it broke a level, but the wall that caps this move — "
-                     f"{tp:.2f} — is still {tpc:+.0f}% overhead",
-                     f"פרצה רמה, אבל הרמה שחוסמת את המהלך — {tp:.2f} — עדיין "
-                     f"{tpc:+.0f}% מעל")
+                trig_detail_en = (f"it broke a level, but the wall that caps this move — "
+                                  f"{tp:.2f} — is still {tpc:+.0f}% overhead")
+                trig_detail_he = (f"פרצה רמה, אבל הרמה שחוסמת את המהלך — {tp:.2f} — עדיין "
+                                  f"{tpc:+.0f}% מעל")
+                note('trigger', reduced - float(B['trigger']), trig_detail_en, trig_detail_he)
             else:
                 trig = float(B['trigger'])      # it is happening now
-                note('trigger', 30, 'the trigger is happening right now',
-                     'הטריגר קורה ממש עכשיו')
+                trig_detail_en, trig_detail_he = 'the trigger is happening right now', 'הטריגר קורה ממש עכשיו'
+                note('trigger', 30, trig_detail_en, trig_detail_he)
         elif trigger:
             trig = {'at_hand': 24.0, 'near': 17.0, 'moderate': 9.0, 'far': 3.0}[trigger['tier']]
             tp, td, tpc = trigger['price'], trigger['distance_atr'], trigger['distance_pct']
             if trigger['tier'] == 'at_hand':
-                note('trigger', 24, f"{trigger['what']} at {tp:.2f} is right overhead ({td:.1f} ATR)",
-                     f"{trigger['what_he']} ב-{tp:.2f} ממש מעל הראש ({td:.1f} ATR)")
+                trig_detail_en = f"{trigger['what']} at {tp:.2f} is right overhead ({td:.1f} ATR)"
+                trig_detail_he = f"{trigger['what_he']} ב-{tp:.2f} ממש מעל הראש ({td:.1f} ATR)"
+                note('trigger', 24, trig_detail_en, trig_detail_he)
             elif trigger['tier'] == 'near':
-                note('trigger', 17, f"the trigger {tp:.2f} is {tpc:+.0f}% away",
-                     f"הטריגר {tp:.2f} במרחק {tpc:+.0f}%")
+                trig_detail_en, trig_detail_he = f"the trigger {tp:.2f} is {tpc:+.0f}% away", f"הטריגר {tp:.2f} במרחק {tpc:+.0f}%"
+                note('trigger', 17, trig_detail_en, trig_detail_he)
             elif trigger['tier'] == 'moderate':
-                note('trigger', -8, f"the trigger {tp:.2f} is still {tpc:+.0f}% away",
-                     f"הטריגר {tp:.2f} עוד {tpc:+.0f}% מכאן")
+                trig_detail_en = f"the trigger {tp:.2f} is still {tpc:+.0f}% away"
+                trig_detail_he = f"הטריגר {tp:.2f} עוד {tpc:+.0f}% מכאן"
+                note('trigger', -8, trig_detail_en, trig_detail_he)
             else:
-                note('trigger', -14, f"the breakout is far off — {tpc:+.0f}% from here",
-                     f"הפריצה רחוקה — {tpc:+.0f}% מכאן")
+                trig_detail_en, trig_detail_he = f"the breakout is far off — {tpc:+.0f}% from here", f"הפריצה רחוקה — {tpc:+.0f}% מכאן"
+                note('trigger', -14, trig_detail_en, trig_detail_he)
         else:
             trig = 6.0                          # blue sky: nothing overhead to clear
-            note('trigger', 6, 'nothing overhead left to clear', 'אין מעל הראש מה לפרוץ')
+            trig_detail_en, trig_detail_he = 'nothing overhead left to clear', 'אין מעל הראש מה לפרוץ'
+            note('trigger', 6, trig_detail_en, trig_detail_he)
         if state in ('broken', 'avoid'):
             trig = min(trig, 5.0)
 
@@ -1610,10 +1613,20 @@ class Judgement:
                          'מתחת ל-1 מיליארד — מחוץ לשיטה, ספקולטיבי', idx > 0))
             idx = max(0, idx - 1)
 
-        # The letter must not contradict the recommendation. An unconditional "enter"
-        # with no ceiling cannot read as a failing chart.
+        # The letter must not contradict the recommendation. GRADE_MEANING defines
+        # C as "on the watchlist — not ripe" — the literal opposite of an unconditional
+        # "enter" — so a floor of C (idx=2) let the two keep contradicting each other.
+        # AMZN was the case that surfaced it: a genuine fresh break (state=breakout_now,
+        # itself gated on a real level + volume, not a low bar) with a further wall at
+        # 'moderate' tier and an unremarkable stop combined their penalties down to a
+        # raw 65 — "Enter around 259.45" sitting under a badge whose own dictionary
+        # calls a C "not ripe." B's meaning ("a real setup with one caveat") is the
+        # lowest letter compatible with a genuine, gated entry, so idx=3 is the floor,
+        # not idx=2. No cap present means nothing DISQUALIFIED the entry — the low raw
+        # score here is components stacking, not a structural problem the letter should
+        # still be allowed to reflect.
         if action == 'enter' and not caps:
-            idx = max(idx, 2)
+            idx = max(idx, 3)
 
         lo, hi = GRADE_BAND_RANGE[idx]
         score = max(lo, min(score, hi))
@@ -1628,14 +1641,15 @@ class Judgement:
                 {'key': 'setup', 'label': 'Setup', 'label_he': 'מבנה',
                  'got': jnum(setup), 'max': B['setup'],
                  'detail': 'structure on the chart', 'detail_he': 'המבנה על הגרף'},
+                # Reuses the SAME string the matching `note()` call above filed, rather
+                # than re-deriving it from `state` alone. That re-derivation was the
+                # bug: it said "the trigger is happening now" whenever state was an
+                # entering one, even on the branch that had just SCORED a reduced 15/30
+                # for "it broke a level, but the wall that caps this move is still
+                # overhead" — the row's own number and its own caption disagreed.
                 {'key': 'trigger', 'label': 'Trigger', 'label_he': 'טריגר',
                  'got': jnum(trig), 'max': B['trigger'],
-                 'detail': ('the trigger is happening now'
-                            if state in ('breakout_now', 'buyers_at_level', 'value_pullback')
-                            else trigger['label'] if trigger else 'nothing overhead to clear'),
-                 'detail_he': ('הטריגר קורה עכשיו'
-                               if state in ('breakout_now', 'buyers_at_level', 'value_pullback')
-                               else trigger['label_he'] if trigger else 'אין מה לפרוץ מעל')},
+                 'detail': trig_detail_en, 'detail_he': trig_detail_he},
                 {'key': 'risk', 'label': 'Risk / stop', 'label_he': 'סיכון / סטופ',
                  'got': jnum(risk_score), 'max': B['risk'],
                  'detail': (f"stop {best['risk_pct']:.1f}% / {best['stop_atr']:.1f} ATR"
