@@ -99,11 +99,24 @@ Verified — 18 of the first 25 Dow names were within two daily ranges of a trig
 Build, serve the build statically, screenshot with headless Edge:
 
 ```bash
-cd frontend && npx ng build && cd ..
+cd frontend && npx ng build --configuration development && cd ..
 cd frontend/dist/stock-analyzer && "d:/pythonProject7/venv/Scripts/python.exe" -m http.server 8123
 # ...in another shell, with the API also running on 10000:
 ./venv/Scripts/python.exe .claude/skills/run-stock-analyzer/driver.py shot --out shot.png
 ```
+
+**`--configuration development` is not optional when verifying a local backend
+change.** Plain `ng build` uses `angular.json`'s `defaultConfiguration:
+"production"`, which does a `fileReplacements` swap to `environment.prod.ts` —
+pointing the built app at the DEPLOYED Railway backend, not `localhost:10000`.
+The resulting screenshot renders real data with a correct-looking chart, so
+nothing about it LOOKS wrong; it is just silently answering from the wrong
+server. Restarting the local API, clearing the browser cache, or using a fresh
+incognito profile all leave the symptom unchanged, because none of them is the
+cause — confirmed by `curl localhost:10000/api/analyze/…` returning the correct
+payload the whole time a `production`-built screenshot kept showing stale
+results. Only use the plain/production build when the screenshot's actual
+target is the deployed backend.
 
 Then **actually Read the PNG.** A blank page or an error page still writes a valid
 131 KB file. A correct shot shows: candles zoomed to a RECENT window (not the full
