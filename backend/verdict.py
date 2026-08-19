@@ -81,6 +81,7 @@ from config import (
     TIME_SLOW_DAYS,
     TRIGGER_AT_HAND_ATR,
     TRIGGER_NEAR_ATR,
+    TRIGGER_ENTERING_OVERHEAD,
     TRIGGER_MAX_SPAN_ATR,
     TRIGGER_REACH_ATR,
     TRIGGER_ZONE_ATR,
@@ -752,7 +753,15 @@ class Judgement:
         hard = []
         for r in (s.res_levels or []):
             rp = r.get('price')
-            if not rp or float(rp) <= base + atr * 0.05:
+            # Only skip a wall that IS the entry — i.e. the one being bought or
+            # broken. The epsilon was 0.05 ATR, which silently discarded walls
+            # sitting essentially on top of spot and handed the name a clean bill:
+            # APH graded A 98 with an 8-touch wall 0.05 ATR overhead and no penalty
+            # at all, because that wall fell inside the skip. Tie it to the entry
+            # instead, so it only excludes what the plan has actually accounted for.
+            if not rp:
+                continue
+            if float(rp) <= base + atr * 0.01:
                 continue
             strong = (r.get('strength') == 'strong'
                       or (r.get('touches') or 0) >= HEADROOM_HARD_TOUCHES)
@@ -1276,8 +1285,27 @@ class Judgement:
 
         # ── TRIGGER: how close is the thing that starts the trade? ─────────────
         if state in ('breakout_now', 'buyers_at_level', 'value_pullback'):
-            trig = float(B['trigger'])          # it is happening now
-            note('trigger', 30, 'the trigger is happening right now', 'הטריגר קורה ממש עכשיו')
+            # "Happening right now" is only true if the decisive line is behind us.
+            # When the engine has itself named a wall overhead — and named it beyond
+            # arm's reach — this axis may not also claim the road is open. Paying the
+            # full 30 regardless is what let TXN grade A 92 while a 10-touch wall sat
+            # 6.1% above it. `at_hand` keeps the full award: inside 1 ATR the break
+            # genuinely is in progress. See TRIGGER_ENTERING_OVERHEAD.
+            over = (trigger and trigger.get('price') and float(trigger['price']) > price
+                    and (trigger.get('wall') or {}).get('touches'))
+            reduced = TRIGGER_ENTERING_OVERHEAD.get(trigger['tier']) if over else None
+            if reduced is not None:
+                trig = float(reduced)
+                tp, tpc = trigger['price'], trigger['distance_pct']
+                note('trigger', reduced - float(B['trigger']),
+                     f"it broke a level, but the wall that caps this move — "
+                     f"{tp:.2f} — is still {tpc:+.0f}% overhead",
+                     f"פרצה רמה, אבל הרמה שחוסמת את המהלך — {tp:.2f} — עדיין "
+                     f"{tpc:+.0f}% מעל")
+            else:
+                trig = float(B['trigger'])      # it is happening now
+                note('trigger', 30, 'the trigger is happening right now',
+                     'הטריגר קורה ממש עכשיו')
         elif trigger:
             trig = {'at_hand': 24.0, 'near': 17.0, 'moderate': 9.0, 'far': 3.0}[trigger['tier']]
             tp, td, tpc = trigger['price'], trigger['distance_atr'], trigger['distance_pct']
@@ -1525,6 +1553,23 @@ class Judgement:
         if stop_flag == 'wide':
             cap('stop_wide', 'no sane stop from here — that is not a stop in this method',
                 'אין סטופ הגיוני מכאן — זה לא סטופ בשיטה הזו', 1)
+        if hr is not None and hr.get('level') == 'tight':
+            # An A means "everything lines up — מה עוד נותר לבקש". A well-defended wall
+            # sitting inside HEADROOM_TIGHT_ATR of the entry is something left to ask
+            # for, so this is a CEILING rather than a penalty.
+            #
+            # A ceiling because a points deduction cannot do this job: at ±4 on a
+            # ~100-point scale the adjustment left A and B statistically identical on
+            # room (median headroom 0.99 vs 0.98 ATR, 53% vs 59% of them cramped), so
+            # "graded A while under a hard wall" survived it. Making the term big
+            # enough to separate them would have pushed well-built charts toward F,
+            # which is exactly what the owner asked not to happen. A cap does both:
+            # the letter stops at B, and a good structure is still a good B.
+            cap('no_room',
+                f"a {hr['touches']}-touch wall {hr['atr']:.1f} ATR above the entry "
+                f"({hr['price']:.2f}) — no room to run yet",
+                f"רמה עם {hr['touches']} נגיעות {hr['atr']:.1f} ATR מעל הכניסה "
+                f"({hr['price']:.2f}) — אין עדיין מקום לרוץ", 3)
         if s.ext.get('severe'):
             # Clear of BOTH the 150 and the 200 — "מהממוצעים", plural. This is the
             # one he declines rather than merely flags: "מתוחה ורחוקה מהממוצע. האם זו

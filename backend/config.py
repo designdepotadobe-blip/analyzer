@@ -350,10 +350,16 @@ DC_RECENT_WEEKS = 3         # stages 1-2 must have happened within this many wee
 # להמתין לפריצה", rather than "enter". Owner's instruction, and it matches how he
 # writes: he keeps praising the chart and still says wait.
 HEADROOM_MAX = 4.0           # bounded ±, same size as the time adjustment. Never an axis.
-HEADROOM_TIGHT_ATR = 0.5     # a hard wall this close ⇒ the move has nowhere to go
-HEADROOM_CLOSE_ATR = 1.0     # still cramped
-HEADROOM_OK_ATR = 2.0        # neutral above this
-HEADROOM_CLEAR_ATR = 3.5     # real room to run; at/above this, or blue sky, pays full
+# Calibrated against where the THESIS sits, which is the only thing that makes a
+# distance mean anything: the target-odds measurement in `_grade` puts a reachable
+# thesis at 4-6 ATR (72.7% hit) and the ladder's own stations run 2-6 ATR out. So a
+# hard wall 1.5 ATR above the entry is not "room", it is the ceiling on most of the
+# move — the first bands were set a full ATR too low and scored TXN's 10-touch wall
+# at 1.49 ATR as neutral while the chart graded A 92.
+HEADROOM_TIGHT_ATR = 0.75    # a hard wall this close ⇒ the move has nowhere to go
+HEADROOM_CLOSE_ATR = 1.5     # still cramped — most of the thesis sits behind it
+HEADROOM_OK_ATR = 2.5        # neutral above this
+HEADROOM_CLEAR_ATR = 4.0     # real room to run; at/above this, or blue sky, pays full
 # Only a WELL-DEFENDED level counts as a ceiling. A 2-touch high is not what he
 # means by "התנגדות מעל הראש" — he names walls the price has been rejected from
 # repeatedly. Weak levels still draw on the chart; they just do not close the road.
@@ -363,6 +369,18 @@ HEADROOM_HARD_TOUCHES = 4    # matches LEVEL_STRONG_TOUCHES — a "hard" wall
 # Paid on the setup axis, small, and only while the break is still fresh.
 BREAK_HARD_BONUS = 4.0
 BREAK_SOFT_BONUS = 1.5
+
+# What the trigger axis may pay in an ENTERING state when the engine has ALSO named
+# a price overhead — i.e. it says "the trigger is happening right now" while its own
+# `trigger` dict points at a wall that has not given yet. Both cannot be true, and
+# the axis used to pay the full 30 regardless: measured, 42 of 42 entering states had
+# an unbroken named trigger overhead while collecting full marks, and in 22 of them
+# the FIRST target was that same wall. TXN is the case the owner caught — broke a
+# level 0.05 ATR under spot, graded A 92 with a 10-touch wall 6.1% overhead.
+#
+# `at_hand` is NOT reduced: inside 1 ATR the break genuinely is in progress. Beyond
+# that the decisive line is still ahead and the axis says so.
+TRIGGER_ENTERING_OVERHEAD = {'near': 22.0, 'moderate': 15.0, 'far': 10.0}
 
 GRADE_BUDGET = {'setup': 40, 'trigger': 30, 'risk': 30}
 GRADE_BANDS = [(4, 85.0), (3, 70.0), (2, 55.0), (1, 40.0), (0, 0.0)]
