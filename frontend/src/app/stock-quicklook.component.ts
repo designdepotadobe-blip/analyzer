@@ -61,7 +61,7 @@ export class StockQuicklookComponent implements OnChanges, OnDestroy {
   toggles: Toggles = {
     sma20: false, sma50: false, sma150: true, sma200: false,
     levels: true, trendlines: false, channels: false, triangles: false,
-    fib: false, markers: false,
+    fib: false, markers: false, gaps: false,
   };
 
   posLeft = 0;
@@ -212,7 +212,7 @@ export class StockQuicklookComponent implements OnChanges, OnDestroy {
     return {
       sma20: f.sma20, sma50: false, sma150: f.sma150, sma200: f.sma200,
       levels: f.levels, trendlines: f.trendlines, channels: f.channels,
-      triangles: f.triangles, fib: f.fib, markers: false,
+      triangles: f.triangles, fib: f.fib, markers: false, gaps: f.gaps,
     };
   }
 

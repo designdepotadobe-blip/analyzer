@@ -719,10 +719,12 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
       // the gap it is trading toward ("טרייד עד הגאפ", target band ~48.5-50.5 in
       // yellow above a white entry band). One colour for "the wall", another for
       // "the destination" — that is the whole legend his charts need.
-      for (const g of (a.overlays.gaps || [])) {
-        if (g.near == null || g.far == null) { continue; }
-        this.drawBand(Math.max(g.near, g.far), Math.min(g.near, g.far),
-                      '255,213,79', 0.14, 0.7);
+      if (tg.gaps) {
+        for (const g of (a.overlays.gaps || [])) {
+          if (g.near == null || g.far == null) { continue; }
+          this.drawBand(Math.max(g.near, g.far), Math.min(g.near, g.far),
+                        '255,213,79', 0.14, 0.7);
+        }
       }
     }
 

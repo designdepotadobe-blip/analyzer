@@ -382,6 +382,13 @@ class MichaAnalyzer:
             # half the picture — which is what the chart was showing.
             'trendlines': True,
             'channels': False, 'triangles': False,
+            # The yellow band. On by default WHEN ONE EXISTS — he names gaps
+            # constantly ("גאפ מעל הראש", "סגירת הגאפ זה פלוס 7%") and an unfilled
+            # gap is either where the move is going or what the stop is guarding
+            # against, so it is never noise when it is there. Given its own
+            # toggle rather than riding inside Micha mode, because it is the one
+            # overlay that answers a question the reader asks directly.
+            'gaps': bool(overlays.get('gaps')),
         }
         # Every one of his screenshots shows ONE moving average — the 150. The 200
         # appears only when it is itself the decision line.

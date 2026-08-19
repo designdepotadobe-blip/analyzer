@@ -120,6 +120,7 @@ export class AnalyzerPageComponent implements OnInit {
     triangles: true,
     fib: true,
     markers: false,
+    gaps: true,
   };
 
   // Micha mode has its own independent toggle set, defaulted each load from the
@@ -128,7 +129,7 @@ export class AnalyzerPageComponent implements OnInit {
   michaToggles: Toggles = {
     sma20: false, sma50: false, sma150: true, sma200: false,
     levels: true, trendlines: false, channels: false, triangles: false,
-    fib: false, markers: false,
+    fib: false, markers: false, gaps: false,
   };
 
   readonly toggleKeys: { key: keyof Toggles; label: string }[] = [
@@ -142,6 +143,10 @@ export class AnalyzerPageComponent implements OnInit {
     { key: 'triangles', label: 'Triangles' },
     { key: 'fib', label: 'Fibonacci' },
     { key: 'markers', label: 'Markers' },
+    // The yellow band. Its own control because it answers a question of its own —
+    // "what is that yellow range?" — and `hasOverlay` hides the checkbox entirely
+    // on a chart with no unfilled gap, so it only appears when there is one.
+    { key: 'gaps', label: 'Gap' },
   ];
 
   /** True only when the current analysis actually has data for this overlay. */
@@ -159,6 +164,7 @@ export class AnalyzerPageComponent implements OnInit {
       case 'triangles':  return a.overlays.triangles.length > 0;
       case 'fib':        return a.overlays.fib != null;
       case 'markers':    return a.overlays.markers.length > 0;
+      case 'gaps':       return (a.overlays.gaps?.length ?? 0) > 0;
       default:           return true;
     }
   }
@@ -341,7 +347,7 @@ export class AnalyzerPageComponent implements OnInit {
     this.michaToggles = {
       sma20: f.sma20, sma50: false, sma150: f.sma150, sma200: f.sma200,
       levels: f.levels, trendlines: f.trendlines, channels: f.channels,
-      triangles: f.triangles, fib: f.fib, markers: false,
+      triangles: f.triangles, fib: f.fib, markers: false, gaps: f.gaps,
     };
   }
 

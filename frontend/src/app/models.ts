@@ -460,6 +460,7 @@ export interface MichaChartFocus {
   trendlines: boolean;
   channels: boolean;
   triangles: boolean;
+  gaps: boolean;
 }
 
 export interface MichaLevelDesc {
@@ -644,4 +645,5 @@ export interface Toggles {
   triangles: boolean;
   fib: boolean;
   markers: boolean;
+  gaps: boolean;
 }
