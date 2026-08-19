@@ -1386,18 +1386,35 @@ class Judgement:
                     note('risk', 16, f'a tight stop {d:.1f} ATR under {sw} ({sp:.2f})',
                          f'סטופ צמוד {d:.1f} ATR מתחת ל{swh} ({sp:.2f})')
                 elif d < STOP_NOISE_ATR:
-                    # Kept as-is. The tempting change here is to waive the complaint
-                    # when the stop is anchored on a wall, on the grounds that his own
-                    # stops sit a median 0.43 ATR under the line and are plainly not
-                    # "noise". That may well be true, but the outcome evidence offered
-                    # for it did not survive its own control — see STOP_IDEAL_ATR — and
-                    # his practice alone is an argument, not a measurement. Left alone
-                    # until there is one.
+                    # The NUMBER here is kept as-is — this was tried as (0.15, 1.0)
+                    # on his own stop-placement practice, reverted the same hour
+                    # because the +2R evidence for it was an artifact (see
+                    # STOP_IDEAL_ATR), and touching the number again without a
+                    # measurement that survives its own control would repeat that
+                    # mistake.
+                    #
+                    # The NOTE is a different question, and it had its own bug: the
+                    # anchored-stop bonus a few lines below (`stop_anchored` -> +6)
+                    # already brings this branch's total to 10+6=16 — numerically
+                    # IDENTICAL to the 'ideal' branch above — but this complaint was
+                    # filed regardless and unconditionally, so `_grade_sentence`
+                    # picked it as "what holds the grade back" even on a fully
+                    # neutralized score. MRNA (owner's report): risk graded a plain
+                    # 20/30 with no penalty in the number, while its own why-sentence
+                    # said "the stop sits inside a single average day — ordinary
+                    # noise takes you out" as THE reason for the grade. Numerically
+                    # honest, narratively false — an anchored stop this tight is his
+                    # best case ("tight against a real wall"), not a caveat, and the
+                    # sentence should say so rather than contradict its own score.
                     risk_score, stop_flag = 10.0, 'tight'
-                    note('risk', -6,
-                         f'the stop sits inside a single average day ({d:.1f} ATR) — ordinary '
-                         f'noise takes you out',
-                         f'הסטופ בתוך יום ממוצע אחד ({d:.1f} ATR) — רעש רגיל יוציא אותך')
+                    if best.get('stop_anchored'):
+                        note('risk', 16, f'a tight stop {d:.1f} ATR under {sw} ({sp:.2f})',
+                             f'סטופ צמוד {d:.1f} ATR מתחת ל{swh} ({sp:.2f})')
+                    else:
+                        note('risk', -6,
+                             f'the stop sits inside a single average day ({d:.1f} ATR) — ordinary '
+                             f'noise takes you out',
+                             f'הסטופ בתוך יום ממוצע אחד ({d:.1f} ATR) — רעש רגיל יוציא אותך')
                 else:
                     risk_score = 12.0 if d <= 3.0 else 7.0
                     stop_flag = 'loose' if d > 3.0 else None
