@@ -52,6 +52,7 @@ from config import (
     PACE_NORMAL_DAYS,
     ROUND_NEAR_ATR,
     STATION_MERGE_ATR,
+    TREND_RECENT_BARS,
     VOL_SPIKE_FACTOR,
     jnum,
     time_to_target,
@@ -996,19 +997,51 @@ class MichaAnalyzer:
                 'ran_hot': ran_hot}
 
     def _trend(self, ctx):
-        """Uptrend requires rising swing highs AND rising swing lows."""
+        """
+        Uptrend requires rising swing highs AND rising swing lows.
+
+        Weighted toward the RECENT structure, not just the full ~2yr display
+        window. A straight-line fit through a severe decline followed by a
+        strong recovery (a V) reads close to flat regardless of how strong the
+        recovery leg actually is — MRNA's -73% then +150% off the low reads
+        'sideways' under a pure full-window fit, even 8 months into a genuine
+        uptrend. Owner's report: "if the trend lately is good we need to give
+        it more weight" — while still wanting the 2-year picture kept, not
+        thrown away.
+
+        So: a clear RECENT read (its own two-sided pivot slope, past the same
+        threshold, with enough of its own pivots to mean something) wins
+        outright. An ambiguous recent read — too few recent pivots, or
+        genuinely flat over the last year too — falls back to the full-window
+        picture, so the 2-year context still governs whenever the last year
+        hasn't made up its mind either way. Symmetric: a recent breakdown can
+        equally override a placid full-window read, not only a recovery.
+        """
         def slope(idx, arr):
             if len(idx) < 2:
                 return 0.0
             s = np.polyfit(idx.astype(float), arr[idx], 1)[0]
             return s / ctx.mean_price * 100 if ctx.mean_price else 0.0
-        sh, sl = slope(ctx.sh_idx, ctx.highs), slope(ctx.sl_idx, ctx.lows)
-        thr = 0.02
-        if sh > thr and sl > thr:
-            return 'uptrend'
-        if sh < -thr and sl < -thr:
-            return 'downtrend'
-        return 'sideways'
+        def classify(sh_idx, sl_idx):
+            sh, sl = slope(sh_idx, ctx.highs), slope(sl_idx, ctx.lows)
+            thr = 0.02
+            if sh > thr and sl > thr:
+                return 'uptrend'
+            if sh < -thr and sl < -thr:
+                return 'downtrend'
+            return 'sideways'
+
+        full = classify(ctx.sh_idx, ctx.sl_idx)
+
+        cutoff = len(ctx.highs) - TREND_RECENT_BARS
+        if cutoff > 0:
+            recent_sh = ctx.sh_idx[ctx.sh_idx >= cutoff]
+            recent_sl = ctx.sl_idx[ctx.sl_idx >= cutoff]
+            if len(recent_sh) >= 2 and len(recent_sl) >= 2:
+                recent = classify(recent_sh, recent_sl)
+                if recent != 'sideways':
+                    return recent
+        return full
 
     def _momentum_days(self, ctx):
         c = ctx.closes

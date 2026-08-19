@@ -68,6 +68,11 @@ from config import (
     MIN_MARKET_CAP,
     NEAR_ATR,
     OFF_HIGH_VALUE_PCT,
+    POTENTIAL_BIG_ATR,
+    POTENTIAL_HUGE_ATR,
+    POTENTIAL_MAX,
+    POTENTIAL_MIN_ATR_PCT,
+    POTENTIAL_REAL_ATR,
     STOP_BUFFER,
     STOP_IDEAL_ATR,
     STOP_MAX_RISK_PCT,
@@ -1122,6 +1127,34 @@ class Judgement:
 
         d150 = ((price / ctx.sma150 - 1) * 100) if ctx.sma150 else 0.0
 
+        # Computed early (normally a risk-axis concern, see below) because SETUP
+        # needs it too, for POTENTIAL — see that block for why.
+        best_early = self._best_option(options, action)
+        thesis_atr_early = None
+        if best_early and state not in ('broken', 'avoid', 'nothing_yet'):
+            _e0 = best_early.get('entry') or price
+            _ups0 = [t['price'] for t in (s.targets or [])
+                    if t.get('price') and t['price'] > _e0]
+            # The DISPLAY ladder (`s.targets`) is capped at MAX_TARGET_STATIONS=3 by
+            # design — the panel shows "next station → next → ATH", not an exhaustive
+            # list. But that means a genuinely far target can be silently truncated
+            # off before POTENTIAL ever sees it whenever 3+ nearer candidates crowd it
+            # out: ROP/IBM-style charts with several intermediate resistance levels
+            # between spot and the real ceiling. Owner's report: gap-closes and the
+            # ATH specifically — his own recurring targets ("סגירת הגאפ", the prior
+            # high) — should count toward potential even when they didn't make the
+            # panel's top 3. So POTENTIAL reads its own, uncapped candidate set
+            # directly: the ATH, and the far edge of any unfilled DOWN gap (the one
+            # his "סגירת הגאפ" language means — a gap price fell through, sitting
+            # overhead, closed by rallying back up to fill it).
+            if s.ath and s.ath > _e0:
+                _ups0.append(float(s.ath))
+            for g in (s.overlays or {}).get('gaps') or []:
+                if g.get('dir') == 'down' and g.get('far') and g['far'] > _e0:
+                    _ups0.append(float(g['far']))
+            if _ups0 and ctx.atr_pct:
+                thesis_atr_early = (max(_ups0) / _e0 - 1) * 100 / ctx.atr_pct
+
         # ── SETUP: is there a real structure here? ─────────────────────────────
         setup = 0.0
         # Being above the 150 is the anchor — but "קרוב לממוצע" is a separate clause of
@@ -1302,6 +1335,61 @@ class Judgement:
             if headroom:
                 setup += headroom
 
+        # ── POTENTIAL: how big is the move if the thesis plays out? ────────────
+        # Owner's directive, stated as the priority correction to this whole grade:
+        # a stock still far below its own highs, breaking out with room ahead, was
+        # graded WORSE than a mature name a few percent from its ATH with nowhere
+        # left to run — MRNA (target ladder reaching +167%, 29 ATR out) sat at a
+        # bare C while GILD (ladder tops out +10%, ~2-4 ATR — its only target IS
+        # its ATH, there being no resistance above one by definition) sat at A.
+        # HEADROOM already answers "is the row directly ahead clear" (and correctly
+        # gave GILD full marks there — blue sky is blue sky). It does NOT answer
+        # "how big is the room past that," which is a different question and
+        # exactly the gap the owner is naming: two stocks can both have open road
+        # in front of them while one road is 3 ATR long and the other is 30.
+        #
+        # Uses `thesis_atr_early` — the SAME farthest-upward-target distance the
+        # risk axis's time-adjustment already computes (see below), reused rather
+        # than re-derived so this can never disagree with what the time term is
+        # separately penalizing for being distant/unlikely soon. ATR-normalized,
+        # not raw %, so this rewards genuine structural distance rather than just
+        # picking out volatile names (the same reason nothing else in this file
+        # scores in raw %) — measured against the SAME quantile bands the time
+        # adjustment's own study establishes (target-odds: 4-6 ATR reached 72.7%
+        # of the time, 6-9 ATR 53.0%, 9-13 ATR 24.8%, 13-20 ATR 6.2%): the bands
+        # below start paying only once a move is BIGGER than what "normal and
+        # likely" already covers, so this is deliberately not a reward for an
+        # ordinary target — the time term already pays for that.
+        #
+        # PROVENANCE: reasoned from the owner's explicit instruction, not measured
+        # — an attempted measurement of a related idea (room-to-first-wall) failed
+        # its own control earlier the same day (see HEADROOM_MAX). This is a
+        # different question (magnitude of the prize, not odds of collecting it
+        # soon) and the owner has directed it be reflected regardless; flagged
+        # here exactly as HEADROOM_MAX was, so a future pass knows what this
+        # rests on.
+        potential = 0.0
+        if (thesis_atr_early is not None and state not in ('broken', 'avoid', 'nothing_yet')
+                and ctx.atr_pct and ctx.atr_pct >= POTENTIAL_MIN_ATR_PCT):
+            ta = thesis_atr_early
+            if ta >= POTENTIAL_HUGE_ATR:
+                potential = POTENTIAL_MAX
+                note('setup', potential,
+                     f"the thesis reaches {ta:.0f} ATR out — an exceptional amount of room",
+                     f"התזה מגיעה ל-{ta:.0f} ATR מכאן — כמות עצומה של מקום")
+            elif ta >= POTENTIAL_BIG_ATR:
+                potential = POTENTIAL_MAX * 0.6
+                note('setup', potential,
+                     f"the thesis reaches {ta:.0f} ATR out — real room beyond the near target",
+                     f"התזה מגיעה ל-{ta:.0f} ATR מכאן — מקום ממשי מעבר ליעד הקרוב")
+            elif ta >= POTENTIAL_REAL_ATR:
+                potential = POTENTIAL_MAX * 0.3
+                note('setup', potential,
+                     f"the thesis reaches {ta:.0f} ATR out — more than the ordinary target",
+                     f"התזה מגיעה ל-{ta:.0f} ATR מכאן — יותר מיעד רגיל")
+            if potential:
+                setup += potential
+
         setup = max(0.0, min(setup, B['setup']))
 
         # ── TRIGGER: how close is the thing that starts the trade? ─────────────
@@ -1359,13 +1447,13 @@ class Judgement:
         # reached 72.7% of the time, 6-9 ATR 53.0%, 9-13 ATR only 24.8%, 13-20 ATR
         # 6.2%. Hoisted above both the R/R term and the time term because both need
         # it — R/R states the size of the prize, this states the odds of collecting.
+        # Reuses `thesis_atr_early` (computed at the top of `_grade`, for POTENTIAL)
+        # rather than re-deriving it — the two can never quietly disagree about
+        # what "the thesis target" is.
         thesis_atr = thesis_hit = None
-        if best and s.targets and state not in ('broken', 'avoid', 'nothing_yet'):
-            _e = best.get('entry') or price
-            _ups = [t['price'] for t in s.targets if t.get('price') and t['price'] > _e]
-            if _ups and ctx.atr_pct:
-                thesis_atr = (max(_ups) / _e - 1) * 100 / ctx.atr_pct
-                _d, thesis_hit = time_to_target(thesis_atr, ctx.atr_pct)
+        if thesis_atr_early is not None and ctx.atr_pct:
+            thesis_atr = thesis_atr_early
+            _d, thesis_hit = time_to_target(thesis_atr, ctx.atr_pct)
 
         risk_score, stop_flag = 6.0, None       # no plan yet = unknown, not condemned
         if best:
@@ -1684,6 +1772,14 @@ class Judgement:
                  'detail': self._headroom_detail(hr, False),
                  'detail_he': self._headroom_detail(hr, True)},
             ] if headroom else []) + ([
+                # same contract as `headroom` above — a bounded adjustment already
+                # counted inside `setup`, surfaced so the size of the prize is
+                # visible on its own line rather than buried inside the setup total
+                {'key': 'potential', 'label': 'Potential', 'label_he': 'פוטנציאל',
+                 'got': jnum(potential), 'max': POTENTIAL_MAX, 'adjustment': True,
+                 'detail': f"the thesis target is {thesis_atr_early:.0f} ATR out",
+                 'detail_he': f"יעד התזה במרחק {thesis_atr_early:.0f} ATR"},
+            ] if potential else []) + ([
                 # not a fourth axis — a named, bounded adjustment already counted
                 # inside `risk`, shown separately so the letter stays auditable
                 {'key': 'time', 'label': 'Time to target',

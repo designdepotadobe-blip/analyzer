@@ -74,6 +74,21 @@ NEAR_ATR = 0.7              # "close to a level" tolerance, in ATRs
 EXTENDED_ATR = 2.0          # > this many ATRs above a broken level ⇒ extended
 MIN_TREND_SLOPE_PCT = 0.03  # min |slope| (% of price per bar) to call a line "sloped"
 
+# `_trend()`'s recent-window override. A pure full-window regression reads a
+# severe-decline-then-strong-recovery chart as 'sideways' no matter how strong
+# the recovery leg is — a straight line through a V is close to flat. MRNA:
+# -73% then +150% off the low over the ~2yr display window reads 'sideways'
+# under the full-window fit alone, even 8 months into a real uptrend. A clear
+# recent read (its own two-sided pivot slope, past the same 0.02 threshold)
+# now overrides the full-window one; an AMBIGUOUS recent read (too few pivots,
+# or genuinely flat lately) still falls back to it — so the 2-year picture
+# still governs whenever the last year hasn't made up its mind either way.
+# Same window Fibonacci already uses for its rally base search (RALLY_LOOKBACK_
+# BARS, defined below) — "how far back counts as the current story" is the same
+# question there. Not a direct reference: that constant is defined later in this
+# file and Python would raise NameError importing top-to-bottom.
+TREND_RECENT_BARS = 252
+
 # ── Micha-style segment trendlines / channels ─────────────────────────────────
 # Micha's lines are pivot-snapped segments ("snap it with magnets — high to high to
 # high, four, five highs"), anchored at the extreme of the CURRENT leg, and only
@@ -373,6 +388,49 @@ HEADROOM_HARD_TOUCHES = 4    # matches LEVEL_STRONG_TOUCHES — a well-tested br
 # Paid on the setup axis, small, and only while the break is still fresh.
 BREAK_HARD_BONUS = 4.0
 BREAK_SOFT_BONUS = 1.5
+
+# ── Potential: how big is the move if the thesis plays out ────────────────────
+# Owner's explicit directive (2026-08-19), stated as the top-priority correction
+# to this grade: a stock still far below its own highs, breaking out with a huge
+# ladder ahead (MRNA: target reaches ~29 ATR / +167%) sat at a bare C, while a
+# mature name a few percent from its all-time high with nowhere structurally
+# left to run (GILD: target reaches ~2-4 ATR / +10% — its only target IS the
+# ATH, since there is no resistance above one by definition) sat at A. HEADROOM
+# already answers "is the row directly ahead clear" and correctly gave GILD full
+# marks there; it does not answer "how big is the room past that", which is the
+# separate question this pays for.
+#
+# PROVENANCE: reasoned from the directive above, not measured. A related idea
+# (room to the first wall) was put through an actual forward-return study the
+# same day and failed its own control — see HEADROOM_MAX. This is a different
+# claim (size of the prize, not odds of collecting it soon) and the owner has
+# directed it be scored regardless of that earlier result. Flagged exactly as
+# HEADROOM_MAX was, so a future pass knows this rests on a directive, not a
+# validated edge.
+#
+# Bucketed against the SAME quantile bands the time-adjustment's own 62k-level
+# study already established (target-odds: 4-6 ATR reached 72.7% of the time,
+# 6-9 ATR 53.0%, 9-13 ATR 24.8%, 13-20 ATR 6.2%) so this only pays once a target
+# is BIGGER than what "normal and likely" already covers — the time term already
+# pays for an ordinary one.
+POTENTIAL_MAX = 10.0         # the full bonus, folded into `setup` — see HEADROOM_MAX
+                              # for why this lives inside setup rather than as a 4th axis
+POTENTIAL_REAL_ATR = 9.0     # beyond the 6-9 ATR band (53% hit) — a genuinely bigger prize
+POTENTIAL_BIG_ATR = 13.0     # beyond the 9-13 ATR band (24.8% hit) — most targets never get here
+POTENTIAL_HUGE_ATR = 20.0    # beyond the worst-odds band (13-20 ATR, 6.2%) — exceptional
+# ATR-normalizing avoids rewarding raw VOLATILITY (the reason nothing else in
+# this file scores in raw %) — but it breaks the other way for a stock calm
+# enough that ATR itself is tiny. AES, ATR% 0.36 (a utility, the calmest name
+# found in a 200-name sweep): an entirely ORDINARY +18% target landed 54 ATR
+# out purely because the denominator is minuscule, earning the identical
+# max bonus as MRNA's genuine +167%/29-ATR case. Every other name that earned
+# a bonus in that sweep sat at 1.5-4% ATR; only the sub-1.5% names were the
+# artifact. Below this floor, distance-in-ATR stops meaning "a big structural
+# move" and starts meaning "the denominator collapsed" — gate potential on it
+# rather than trying to tune a raw-%-gain floor that cannot cleanly separate a
+# genuine case (FRT, ATR% 1.56, +22%) from the artifact (AES, +20%) since
+# their raw gains sit a percentage point apart.
+POTENTIAL_MIN_ATR_PCT = 1.5
 
 # What the trigger axis may pay in an ENTERING state when the engine has ALSO named
 # a price overhead — i.e. it says "the trigger is happening right now" while its own
