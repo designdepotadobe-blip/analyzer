@@ -632,20 +632,36 @@ class Judgement:
             if not turning:
                 return 'avoid'
 
-        # ── A hard wall right overhead is not an entry, whatever else is true ──
-        # The chart can be excellent and the answer still be "not here": "פריצה מעל
-        # 88.17" (OKTA) is said ABOUT a chart he likes. When a well-defended wall sits
-        # inside HEADROOM_TIGHT_ATR of where the entry would be, the honest call is
-        # the one he writes — wait for that price to give — because everything above
-        # the entry between here and there is someone else's supply.
+        # ── An unbroken trigger right overhead is not an entry, whatever else is
+        # true ── The chart can be excellent and the answer still be "not here":
+        # "פריצה מעל 88.17" (OKTA) is said ABOUT a chart he likes; the entry is the
+        # break, not the chart quality. `trigger['tier'] == 'at_hand'` (≤1 ATR) is
+        # the SAME bar the rest of the app already uses to mean "essentially
+        # happening" (the alert copy, the trigger-axis grading) — reusing it here
+        # rather than inventing a second threshold is what closes the AMAT gap:
+        # AMAT's own named trigger (530.43, a real 2-touch level 0.5 ATR overhead)
+        # graded A 95 and said "enter" a line above the sentence naming that exact
+        # price as the thing still to break.
+        #
+        # Deliberately reads `trigger` directly rather than `_headroom()`. Two
+        # measured reasons: `_headroom`'s 0.75 ATR 'tight' cutoff is TIGHTER than
+        # `trigger`'s own 1.0 ATR at_hand cutoff, so a 0.93-ATR trigger (AAPL) read
+        # as at_hand everywhere else in the app failed to trip a check keyed to
+        # 'tight' — two thresholds gating the same decision, silently disagreeing.
+        # And `_headroom` only searches horizontal `res_levels`; `trigger` also
+        # covers trendline/cup_rim/base/channel candidates (ARES, BR, DOC all had
+        # an at_hand trigger of exactly one of those kinds and were invisible to a
+        # levels-only check). `trigger` is already the single most-authoritative
+        # "what's the next real obstacle" signal in this file — reuse it, don't
+        # re-derive a second, narrower version of the same question.
         #
         # This deliberately does NOT touch the grade (the structure is still the
-        # structure; see HEADROOM_MAX) and only fires when there is a concrete line to
-        # name, so the reader is never told to wait for something unspecified.
-        if trigger and trigger.get('tier') in ('at_hand', 'near'):
-            entry_ref = price
-            hr = self._headroom(ctx, s, entry_ref)
-            if hr.get('level') == 'tight' and float(trigger['price']) > price:
+        # structure; see HEADROOM_MAX) — a wall further out than at_hand still
+        # scores via the headroom adjustment and the TRIGGER_ENTERING_OVERHEAD
+        # reduction below, without vetoing the state outright.
+        if trigger and trigger.get('tier') == 'at_hand' and trigger.get('price'):
+            atr_eps = (ctx.atr * 0.01) if ctx.atr else 0.0
+            if float(trigger['price']) > price + atr_eps:
                 return 'at_trigger'
 
         # BREAKOUT NOW — a fresh break of a real level with volume behind it, AND
@@ -728,17 +744,25 @@ class Judgement:
     @staticmethod
     def _headroom(ctx, s: Signals, from_price: Optional[float] = None) -> dict:
         """
-        How far the trade can run before it meets the next HARD wall.
+        How far the trade can run before it meets the next real wall.
 
         Measured from where you would actually be long — the entry, or the trigger
         when the entry is a breakout — not from spot, because for a `wait_trigger`
         name the trigger itself would otherwise register as the ceiling and every
         such chart would read "no room".
 
-        Only well-defended levels close the road (`HEADROOM_HARD_TOUCHES`). A
-        2-touch high is not "התנגדות מעל הראש"; it still draws on the chart, it just
-        does not count as the wall. No hard wall above at all is blue sky — the case
-        he calls "יש לה מקום לרוץ".
+        ANY level in `res_levels` counts, with no extra touch-count bar of its own.
+        This was a 4-touch-or-strong filter until AMAT exposed why that is wrong:
+        the entry at 514.33 read as clean room because the filter would not admit
+        530.43 (only 2 touches) as a wall — while `_trigger()`, computed from the
+        exact same `res_levels`, was simultaneously naming 530.43 AS THE TRIGGER
+        and printing it on the chart. Two different bars for "is this a real wall"
+        on the same data meant the state machine could say "enter" one line above
+        the sentence that says "break above 530.43". `res_levels` is already
+        filtered upstream (`MIN_LEVEL_TOUCHES`), so anything in it is real enough
+        to block the road; strength/touches still ride along for the sentence.
+
+        No level above at all is blue sky — the case he calls "יש לה מקום לרוץ".
 
         Deliberately reports the FIRST wall only. Counting how many walls sit above
         is the congestion metric that was measured and removed (see `_grade`), and
@@ -763,10 +787,7 @@ class Judgement:
                 continue
             if float(rp) <= base + atr * 0.01:
                 continue
-            strong = (r.get('strength') == 'strong'
-                      or (r.get('touches') or 0) >= HEADROOM_HARD_TOUCHES)
-            if strong:
-                hard.append(r)
+            hard.append(r)
         hard.sort(key=lambda r: r['price'])
 
         if not hard:

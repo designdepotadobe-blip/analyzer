@@ -363,7 +363,11 @@ HEADROOM_CLEAR_ATR = 4.0     # real room to run; at/above this, or blue sky, pay
 # Only a WELL-DEFENDED level counts as a ceiling. A 2-touch high is not what he
 # means by "התנגדות מעל הראש" — he names walls the price has been rejected from
 # repeatedly. Weak levels still draw on the chart; they just do not close the road.
-HEADROOM_HARD_TOUCHES = 4    # matches LEVEL_STRONG_TOUCHES — a "hard" wall
+# Used ONLY for the break-bonus below (was a "here is our own definition of a
+# real wall" the moment a wall was BROKEN, but the moment a wall is still AHEAD
+# `_headroom()` now defers to res_levels' own MIN_LEVEL_TOUCHES bar instead — see
+# its docstring for why keeping two thresholds was the AMAT bug).
+HEADROOM_HARD_TOUCHES = 4    # matches LEVEL_STRONG_TOUCHES — a well-tested break
 # Breaking a hard wall is the event his whole method is organised around
 # ("פריצה משמעותית מעל"), and breaking a 2-touch high is not the same event.
 # Paid on the setup axis, small, and only while the break is still fresh.
