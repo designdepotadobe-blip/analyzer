@@ -122,6 +122,10 @@
           <input type="checkbox" [(ngModel)]="michaToggles.triangles" (ngModelChange)="onMichaToggleChange()" />
           Triangle
         </label>
+        <label class="tgl" *ngIf="a.overlays.gaps?.length">
+          <input type="checkbox" [(ngModel)]="michaToggles.gaps" (ngModelChange)="onMichaToggleChange()" />
+          Gap
+        </label>
         <label class="tgl">
           <input type="checkbox" [(ngModel)]="michaToggles.markers" (ngModelChange)="onMichaToggleChange()" />
           Markers
