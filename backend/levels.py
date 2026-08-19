@@ -328,6 +328,18 @@ class LevelEngine:
         sh_body_tops = np.maximum(ctx.opens[ctx.sh_idx], ctx.closes[ctx.sh_idx])
         sl_body_bottoms = np.minimum(ctx.opens[ctx.sl_idx], ctx.closes[ctx.sl_idx])
 
+        # `_cluster()` caps a level's span at LEVEL_MAX_SPAN_ATR when it merges raw
+        # pivot PRICES — but this step moves a boundary by a DIFFERENT measure (the
+        # candle body of whichever pivot in the mask has the most extreme body), which
+        # was never subject to that cap. AMZN's 256.84 support cleared clustering at a
+        # correct 0.43 ATR span (258.60/255.19); refinement then pushed `top` to
+        # 265.06 — a level nearly 3x the intended max, whose new top edge sat ABOVE
+        # spot while the level was still typed 'support' (`_assign_role` only checks
+        # the ANCHOR price, computed before this ran). The result functions as a real
+        # overhead wall — 6 touches, 'strong' — invisible to `_trigger()`/`_headroom()`,
+        # which only ever search `res_levels`, because its OWN type says 'support'.
+        # Reported by the owner as an unexplained line on the AMZN chart at 265.05.
+        max_span = atr * LEVEL_MAX_SPAN_ATR
         for lvl in levels:
             if lvl.get('is_consol'):
                 continue
@@ -335,6 +347,9 @@ class LevelEngine:
                 mask = (sh_highs >= lvl['bottom']) & (sh_highs <= lvl['top'] + 0.01 * atr)
                 if mask.any():
                     body_floor = float(sh_body_tops[mask].min())
+                    # never below the point that would blow the span past the cap —
+                    # the wick extreme (`top`) is the sharper, more meaningful edge
+                    body_floor = max(body_floor, lvl['top'] - max_span)
                     if body_floor < lvl['top']:
                         lvl['bottom'] = body_floor
                         lvl['spread'] = lvl['top'] - body_floor
@@ -342,6 +357,7 @@ class LevelEngine:
                 mask = (sl_lows >= lvl['bottom'] - 0.01 * atr) & (sl_lows <= lvl['top'])
                 if mask.any():
                     body_ceil = float(sl_body_bottoms[mask].max())
+                    body_ceil = min(body_ceil, lvl['bottom'] + max_span)
                     if body_ceil > lvl['bottom']:
                         lvl['top'] = body_ceil
                         lvl['spread'] = body_ceil - lvl['bottom']
