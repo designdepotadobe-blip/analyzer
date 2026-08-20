@@ -126,8 +126,9 @@ ACTION_LABELS = {
 }
 
 GRADE_MEANING = {
-    'A': ("Everything lines up — above the 150, near it, trigger in hand, tight stop.",
-          'הכל מסתדר — מעל ה-150, קרוב אליו, טריגר ביד, סטופ צמוד.'),
+    'A': ("Everything lines up — above the 150, near it, trigger in hand, tight stop, "
+          "and real room to grow.",
+          'הכל מסתדר — מעל ה-150, קרוב אליו, טריגר ביד, סטופ צמוד, ומקום אמיתי לגדול.'),
     'B': ('A real setup with one caveat.', 'סט אפ אמיתי עם הסתייגות אחת.'),
     'C': ('On the watchlist — not ripe.', 'ברשימת מעקב — עוד לא בשל.'),
     'D': ('Weak — the structure or the stop is not there.',
