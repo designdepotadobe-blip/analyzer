@@ -432,6 +432,20 @@ POTENTIAL_HUGE_ATR = 20.0    # beyond the worst-odds band (13-20 ATR, 6.2%) — 
 # their raw gains sit a percentage point apart.
 POTENTIAL_MIN_ATR_PCT = 1.5
 
+# The raw-percent alternative path (OR'd with the ATR bands above, in `_grade`'s
+# POTENTIAL block — whichever is more generous wins). Guards the mirror-image
+# case to AES above: a genuinely volatile name's genuinely large move gets
+# UNDER-credited by ATR-normalizing it, not over-credited. LRCX (measured
+# 2026-08-20): +43% to its own ATH, the largest raw prize among that day's
+# A-grades, at 7.15% ATR converts to only ~6 ATR — never reaches
+# POTENTIAL_REAL_ATR (9). A 30%+/45%+/70%+ move to the farthest real target is a
+# big prize on any stock regardless of how it happens to trade day to day.
+# PROVENANCE: reasoned from the LRCX case, not measured — same status as the ATR
+# bands themselves.
+POTENTIAL_REAL_PCT = 30.0
+POTENTIAL_BIG_PCT = 45.0
+POTENTIAL_HUGE_PCT = 70.0
+
 # What the trigger axis may pay in an ENTERING state when the engine has ALSO named
 # a price overhead — i.e. it says "the trigger is happening right now" while its own
 # `trigger` dict points at a wall that has not given yet. Both cannot be true, and
@@ -444,7 +458,40 @@ POTENTIAL_MIN_ATR_PCT = 1.5
 # that the decisive line is still ahead and the axis says so.
 TRIGGER_ENTERING_OVERHEAD = {'near': 22.0, 'moderate': 15.0, 'far': 10.0}
 
-GRADE_BUDGET = {'setup': 40, 'trigger': 30, 'risk': 30}
+# The mirror case TRIGGER_ENTERING_OVERHEAD does not cover: no NAMED wall stands
+# in the way (`over` is False — nothing to quote a price/touch-count for), but
+# there also isn't much of a thesis to collect once the break is bought — FOXA's
+# breakout had no further identified wall AND its farthest target was +9.4%, yet
+# still paid the full 30/30 "happening right now" because the reduction only
+# ever fired off a NAMED obstacle. Owner's directive (2026-08-20): full trigger
+# marks should require both the way being clear AND there being somewhere worth
+# going. Gated on the SAME `potential` the setup axis computes (zero whenever the
+# thesis never reaches POTENTIAL_REAL_ATR) so the two axes can't disagree about
+# what "a real prize" means. Set near TRIGGER_ENTERING_OVERHEAD['near'] — a
+# confirmed absence of upside is treated as seriously as a confirmed wall, just
+# without a specific price to name.
+TRIGGER_ENTERING_NO_PRIZE = 20.0
+
+# Owner's directive (2026-08-20): "we always want to prefer the reward and
+# willing to pay the risk" — the stop was being graded as heavily as the setup
+# and the trigger combined, when a close/tight stop can lose to noise on a
+# stock that's otherwise doing everything right, and the method's own doctrine
+# is to take that trade anyway when the setup and the trigger earn it. Moved
+# 10 points off risk onto setup and trigger — the things that answer "is there
+# a real reason to be here" and "is it actually happening" — rather than "how
+# comfortable is the stop," which the method treats as the price of admission,
+# not the deciding factor.
+#
+# Every literal point value inside `_grade`'s risk and trigger sections is
+# still written against the OLD 30-point scale each was designed and measured
+# on (his stops sit a median 0.43 ATR, "ideal"=16/30, etc.) — retuning every
+# one of those numbers by hand for a budget change risks introducing silent
+# drift between them. Instead `_grade` rescales the finished trig/risk_score
+# totals (AND every note filed under those axis names, so the why-sentence's
+# numbers never stop matching the score they explain) by TRIGGER_MAX/30 and
+# RISK_MAX/30 right before they're summed. Change the numbers here; nothing
+# else needs to change to keep them in sync.
+GRADE_BUDGET = {'setup': 45, 'trigger': 35, 'risk': 20}
 GRADE_BANDS = [(4, 85.0), (3, 70.0), (2, 55.0), (1, 40.0), (0, 0.0)]
 GRADE_BAND_RANGE = {4: (85.0, 99.0), 3: (70.0, 84.9), 2: (55.0, 69.9),
                     1: (40.0, 54.9), 0: (0.0, 39.9)}

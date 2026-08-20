@@ -342,10 +342,21 @@ class SetupScanner:
             top — the prior bar's low — is the full fill, so that is `far`.
           • UP gap (price rose away from it, box sits BELOW price): the top of the box
             — this bar's low — is `near`; the bottom — the prior bar's high — is `far`.
+
+        Scans the WHOLE display window, not a recent-bars cutoff — a real, unfilled
+        gap does not stop being a real, unfilled gap because it aged past an
+        arbitrary number of bars. ROP is the case that found this: a genuine -8.2%
+        gap from 2025-10-23 (~508) sat well inside the 2-year display window but was
+        invisible everywhere — the chart marker, the target ladder, `_grade`'s
+        POTENTIAL — because it was ~210 bars old against a 60-bar cutoff. Owner's
+        directive (2026-08-20): "gap stay open until it closes" — a gap's relevance
+        is decided by whether it has been filled (already checked below, at any
+        distance), not by its age. `out[-6:]` still caps what's RETURNED to the 6
+        most recently opened unfilled gaps, so this widens what can be FOUND, not
+        how much is shown.
         """
         out = []
-        lb = min(GAP_LOOKBACK, M - 1)
-        for i in range(M - lb, M):
+        for i in range(1, M):
             if lows[i] > highs[i - 1]:
                 if not np.any(lows[i + 1:] <= highs[i - 1]):
                     out.append({'idx': i, 'dir': 'up',

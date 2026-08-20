@@ -69,10 +69,13 @@ from config import (
     NEAR_ATR,
     OFF_HIGH_VALUE_PCT,
     POTENTIAL_BIG_ATR,
+    POTENTIAL_BIG_PCT,
     POTENTIAL_HUGE_ATR,
+    POTENTIAL_HUGE_PCT,
     POTENTIAL_MAX,
     POTENTIAL_MIN_ATR_PCT,
     POTENTIAL_REAL_ATR,
+    POTENTIAL_REAL_PCT,
     STOP_BUFFER,
     STOP_IDEAL_ATR,
     STOP_MAX_RISK_PCT,
@@ -86,6 +89,7 @@ from config import (
     TIME_SLOW_DAYS,
     TRIGGER_AT_HAND_ATR,
     TRIGGER_NEAR_ATR,
+    TRIGGER_ENTERING_NO_PRIZE,
     TRIGGER_ENTERING_OVERHEAD,
     TRIGGER_MAX_SPAN_ATR,
     TRIGGER_REACH_ATR,
@@ -844,6 +848,17 @@ class Judgement:
         The wall that was just broken, and how well defended it was. `break_level` is
         only a price; the touch history lives on the level it came from — and after a
         break that level has usually flipped, so both sides have to be searched.
+
+        `break_level` can also come from a broken descending-highs TREND LINE, not just
+        a horizontal level (see micha._fresh_break's `broke_desc` branch) — "פורצת שיאים
+        יורדים" (WGMI, NVDA, OKTA) is the same event in diagonal form. But `_fresh_break`
+        hands back only the line's price, same as it does for a level, so a trendline
+        break used to fall through the search below (it matches nothing in `res_levels`/
+        `sup_levels`) and was silently scored as a bare 2-touch break regardless of how
+        many pivots the line itself snapped through — a 5-touch descending-highs line
+        breaking, exactly the "hard resistance" event the method is organised around,
+        paid the same as a break with no history at all. The line's touch count lives in
+        `overlays['trendlines']`, so it has to be searched separately from the level map.
         """
         bl = s.break_level
         if not bl or not atr:
@@ -854,11 +869,19 @@ class Judgement:
             if rp and abs(float(rp) - float(bl)) <= atr * 0.15:
                 if best is None or (r.get('touches') or 0) > (best.get('touches') or 0):
                     best = r
-        if best is None:
+        line_touches = 0
+        for t in (s.overlays or {}).get('trendlines') or []:
+            if t.get('kind') != 'falling_highs':
+                continue
+            tp = (t.get('p2') or {}).get('price')
+            if tp is not None and abs(float(tp) - float(bl)) <= atr * 0.15:
+                line_touches = max(line_touches, t.get('touches') or 0)
+        level_touches = (best.get('touches') or 0) if best else 0
+        if best is None and not line_touches:
             return {'price': jnum(bl), 'touches': None, 'hard': False}
-        t = best.get('touches') or 0
-        return {'price': jnum(bl), 'touches': t,
-                'hard': bool(best.get('strength') == 'strong' or t >= HEADROOM_HARD_TOUCHES)}
+        t = max(level_touches, line_touches)
+        hard = bool((best and best.get('strength') == 'strong') or t >= HEADROOM_HARD_TOUCHES)
+        return {'price': jnum(bl), 'touches': t, 'hard': hard}
 
     @staticmethod
     def _at_floor(ctx, s: Signals) -> bool:
@@ -1143,6 +1166,7 @@ class Judgement:
         # needs it too, for POTENTIAL — see that block for why.
         best_early = self._best_option(options, action)
         thesis_atr_early = None
+        thesis_pct_early = None
         if best_early and state not in ('broken', 'avoid', 'nothing_yet'):
             _e0 = best_early.get('entry') or price
             _ups0 = [t['price'] for t in (s.targets or [])
@@ -1164,8 +1188,10 @@ class Judgement:
             for g in (s.overlays or {}).get('gaps') or []:
                 if g.get('dir') == 'down' and g.get('far') and g['far'] > _e0:
                     _ups0.append(float(g['far']))
-            if _ups0 and ctx.atr_pct:
-                thesis_atr_early = (max(_ups0) / _e0 - 1) * 100 / ctx.atr_pct
+            if _ups0:
+                thesis_pct_early = (max(_ups0) / _e0 - 1) * 100
+                if ctx.atr_pct:
+                    thesis_atr_early = thesis_pct_early / ctx.atr_pct
 
         # ── SETUP: is there a real structure here? ─────────────────────────────
         setup = 0.0
@@ -1258,6 +1284,23 @@ class Judgement:
             setup += 5
             note('setup', 5, s.candle.get('label') or 'buyers candle',
                  s.candle.get('label_he') or 'נר קונים')
+        # "קפיטולציה בווליום גבוה ואז התייצבות — תחתית אפשרית" (micha._capitulation):
+        # a high-volume wash-out after a deep decline that has since stabilized. This
+        # already GATES `_is_value` (whether a deep pullback counts as a buyable value
+        # entry) but was never itself worth a point in the grade — a chart that flushed
+        # hard on volume and held scored identically to one that just quietly drifted
+        # down. Owner's directive (2026-08-20): this sharp, irregular reset IS the event
+        # this method is looking for — it is also the entry with the least overhead
+        # supply and the most room back up, so score it, not just gate on it.
+        #
+        # PROVENANCE: reasoned from the directive, not measured — same status as
+        # HEADROOM_MAX / POTENTIAL_MAX. Small and additive rather than a cap-mover, same
+        # size as the candle/pattern bonuses beside it.
+        if s.capitulation:
+            setup += 5
+            note('setup', 5,
+                 'a high-volume wash-out then stabilizing — the flush that resets the risk',
+                 'קפיטולציה בווליום גבוה ואז התייצבות — התיקון שמאפס את הסיכון')
         # An unfilled gap-up left below price. He treats one as a liability — "I am
         # aware it has a gap below, THAT is why there is a stop" (ALAB), "if it turns
         # it can go toward the gap" (TSLA), quoting 80% (TSLA) / 96%-in-90-days (VIX)
@@ -1380,25 +1423,40 @@ class Judgement:
         # soon) and the owner has directed it be reflected regardless; flagged
         # here exactly as HEADROOM_MAX was, so a future pass knows what this
         # rests on.
+        # ATR-normalizing the target distance is right in principle — it's why
+        # POTENTIAL_MIN_ATR_PCT exists, to stop a sleepy, sub-1.5%-ATR name's
+        # ORDINARY move from reading as huge purely because its own denominator is
+        # tiny (see AES in that constant's comment). But the same normalization
+        # cuts the other way on a genuinely volatile name: LRCX's real +43% thesis
+        # to its own ATH — by far the largest raw prize of any A-grade the day
+        # this was measured — converts to only ~6 ATR at its own 7.15%-ATR, which
+        # NEVER reaches POTENTIAL_REAL_ATR (9). A raw-percent floor, checked
+        # alongside the ATR bands (whichever is more generous wins), catches the
+        # case the ATR conversion structurally can't see: a move that large is a
+        # big prize on ANY stock regardless of how it happens to trade day to day.
+        # PROVENANCE: reasoned from the LRCX case, not measured — same status as
+        # the ATR bands themselves.
         potential = 0.0
-        if (thesis_atr_early is not None and state not in ('broken', 'avoid', 'nothing_yet')
-                and ctx.atr_pct and ctx.atr_pct >= POTENTIAL_MIN_ATR_PCT):
-            ta = thesis_atr_early
-            if ta >= POTENTIAL_HUGE_ATR:
+        if thesis_pct_early is not None and state not in ('broken', 'avoid', 'nothing_yet'):
+            ta = (thesis_atr_early if (ctx.atr_pct and ctx.atr_pct >= POTENTIAL_MIN_ATR_PCT)
+                  else None)
+            tp = thesis_pct_early
+            atr_en = f"{ta:.0f} ATR / " if ta is not None else ''
+            if (ta is not None and ta >= POTENTIAL_HUGE_ATR) or tp >= POTENTIAL_HUGE_PCT:
                 potential = POTENTIAL_MAX
                 note('setup', potential,
-                     f"the thesis reaches {ta:.0f} ATR out — an exceptional amount of room",
-                     f"התזה מגיעה ל-{ta:.0f} ATR מכאן — כמות עצומה של מקום")
-            elif ta >= POTENTIAL_BIG_ATR:
+                     f"the thesis reaches {atr_en}{tp:.0f}% out — an exceptional amount of room",
+                     f"התזה מגיעה ל-{atr_en}{tp:.0f}% מכאן — כמות עצומה של מקום")
+            elif (ta is not None and ta >= POTENTIAL_BIG_ATR) or tp >= POTENTIAL_BIG_PCT:
                 potential = POTENTIAL_MAX * 0.6
                 note('setup', potential,
-                     f"the thesis reaches {ta:.0f} ATR out — real room beyond the near target",
-                     f"התזה מגיעה ל-{ta:.0f} ATR מכאן — מקום ממשי מעבר ליעד הקרוב")
-            elif ta >= POTENTIAL_REAL_ATR:
+                     f"the thesis reaches {atr_en}{tp:.0f}% out — real room beyond the near target",
+                     f"התזה מגיעה ל-{atr_en}{tp:.0f}% מכאן — מקום ממשי מעבר ליעד הקרוב")
+            elif (ta is not None and ta >= POTENTIAL_REAL_ATR) or tp >= POTENTIAL_REAL_PCT:
                 potential = POTENTIAL_MAX * 0.3
                 note('setup', potential,
-                     f"the thesis reaches {ta:.0f} ATR out — more than the ordinary target",
-                     f"התזה מגיעה ל-{ta:.0f} ATR מכאן — יותר מיעד רגיל")
+                     f"the thesis reaches {atr_en}{tp:.0f}% out — more than the ordinary target",
+                     f"התזה מגיעה ל-{atr_en}{tp:.0f}% מכאן — יותר מיעד רגיל")
             if potential:
                 setup += potential
 
@@ -1422,9 +1480,22 @@ class Judgement:
                                   f"{tp:.2f} — is still {tpc:+.0f}% overhead")
                 trig_detail_he = (f"פרצה רמה, אבל הרמה שחוסמת את המהלך — {tp:.2f} — עדיין "
                                   f"{tpc:+.0f}% מעל")
-                note('trigger', reduced - float(B['trigger']), trig_detail_en, trig_detail_he)
+                note('trigger', reduced - 30.0, trig_detail_en, trig_detail_he)
+            elif not potential:
+                # No NAMED wall stands in the way, but there also isn't a real prize
+                # to collect once this break is bought — `potential` (computed above,
+                # zero whenever the thesis never reaches POTENTIAL_REAL_ATR) is the
+                # SAME signal the setup axis already uses, reused here rather than a
+                # second test so the two axes cannot quietly disagree about what "a
+                # real prize" means. Owner's directive (2026-08-20): "the trigger is
+                # happening right now" should require both the way being clear AND
+                # there being somewhere worth going. See TRIGGER_ENTERING_NO_PRIZE.
+                trig = TRIGGER_ENTERING_NO_PRIZE
+                trig_detail_en = "it broke out, but there isn't much room left to run from here"
+                trig_detail_he = "פרצה, אבל אין הרבה מקום לרוץ מכאן"
+                note('trigger', TRIGGER_ENTERING_NO_PRIZE - 30.0, trig_detail_en, trig_detail_he)
             else:
-                trig = float(B['trigger'])      # it is happening now
+                trig = 30.0                     # it is happening now — on the 30-point basis; rescaled below
                 trig_detail_en, trig_detail_he = 'the trigger is happening right now', 'הטריגר קורה ממש עכשיו'
                 note('trigger', 30, trig_detail_en, trig_detail_he)
         elif trigger:
@@ -1450,6 +1521,15 @@ class Judgement:
             note('trigger', 6, trig_detail_en, trig_detail_he)
         if state in ('broken', 'avoid'):
             trig = min(trig, 5.0)
+
+        # Rescale from the 30-point basis every literal above is written against
+        # onto whatever GRADE_BUDGET['trigger'] actually is — see the comment on
+        # GRADE_BUDGET for why this lives here rather than in each literal. Notes
+        # rescale with it so the why-sentence's numbers stay truthful.
+        trig_scale = B['trigger'] / 30.0
+        trig *= trig_scale
+        notes = [(ax, w * trig_scale, en, he) if ax == 'trigger' else (ax, w, en, he)
+                 for ax, w, en, he in notes]
 
         # ── RISK: the decisive axis — is the stop tight, real and obvious? ─────
         best = self._best_option(options, action)
@@ -1596,6 +1676,21 @@ class Judgement:
                          f'התזה רחוקה — יעד במרחק כזה מושג ב-{thesis_hit*100:.0f}% מהמקרים')
                 else:
                     note('risk', rr_pts, f'reward-to-risk {rr:.1f}', f'יחס סיכוי/סיכון {rr:.1f}')
+        # Rescale the stop+R/R portion from the 30-point basis every literal above is
+        # written against onto whatever GRADE_BUDGET['risk'] actually is — see the
+        # comment on GRADE_BUDGET. Deliberately BEFORE the time adjustment below:
+        # TIME is a fixed, bounded ±TIME_EFFICIENCY_MAX nudge (same contract as
+        # HEADROOM_MAX/POTENTIAL_MAX), meant to stay that size regardless of how
+        # risk's own budget is retuned — rescaling it too would silently shrink it
+        # to ±2.7 the moment risk's budget dropped, with no comment anywhere
+        # explaining why the displayed cap and the actual contribution no longer
+        # agreed. Notes rescale with the stop+R/R portion so the why-sentence's
+        # numbers stay truthful; TIME's own note (filed below) is untouched.
+        risk_scale = B['risk'] / 30.0
+        risk_score *= risk_scale
+        notes = [(ax, w * risk_scale, en, he) if ax == 'risk' else (ax, w, en, he)
+                 for ax, w, en, he in notes]
+
         # ── TIME: the half of "reward" the R/R ratio cannot see ────────────────
         # R/R says how much per unit of risk, never how long the money is tied up for
         # — so it scores a 60-day grind and a 12-day move identically. Measured, the
@@ -1711,6 +1806,35 @@ class Judgement:
                 f"({hr['price']:.2f}) — no room to run yet",
                 f"רמה עם {hr['touches']} נגיעות {hr['atr']:.1f} ATR מעל הכניסה "
                 f"({hr['price']:.2f}) — אין עדיין מקום לרוץ", 3)
+        # Symmetric to `no_room` above: that one reserves A for a chart with
+        # somewhere to go WHEN a wall is what's blocking it; this reserves A for a
+        # chart with somewhere to go, full stop. `potential` (computed earlier, in
+        # the SETUP section) is zero whenever the thesis never reaches
+        # POTENTIAL_REAL_ATR — a target ladder that never gets past the ordinary.
+        # Owner's directive (2026-08-20), reversing an earlier stance: a clean,
+        # well-defended setup with only a small remaining prize (GILD-style — its
+        # only target IS its own ATH, a few percent out) used to be treated as a
+        # legitimate A on structure alone. Measured against the live A-grade list
+        # the day this was written: 6 of 17 current A's had under ~12% total
+        # remaining upside to the farthest real target, with zero potential credit
+        # — exactly this case.
+        #
+        # Gated on `idx >= 4` (i.e. only when the raw score would otherwise BE an
+        # A) rather than firing on every potential-less setup: `not potential` is
+        # the ORDINARY case — most setups are, by design, not exceptional — so an
+        # ungated call would land in `caps` on the large majority of C/D 'enter'
+        # actions too and silently disable the `action=='enter' and not caps`
+        # floor-to-B rule below for all of them, reintroducing the exact
+        # grade/recommendation mismatch that rule exists to prevent. A cap rather
+        # than a bigger deduction for the same reason `no_room` is a cap: a
+        # deduction large enough to separate these on a ~100-point scale would
+        # also push well-built, merely-modest charts toward F.
+        if idx >= 4 and state not in ('broken', 'avoid', 'nothing_yet') and not potential:
+            cap('no_potential',
+                "the thesis never reaches real room beyond the ordinary target — a "
+                "fine setup, but not the exceptional one an A promises",
+                'התזה אף פעם לא מגיעה למקום ממשי מעבר ליעד הרגיל — סט-אפ תקין, אבל '
+                'לא החריג שא\' מבטיח', 3)
         if s.ext.get('severe'):
             # Clear of BOTH the 150 and the 200 — "מהממוצעים", plural. This is the
             # one he declines rather than merely flags: "מתוחה ורחוקה מהממוצע. האם זו
@@ -1787,10 +1911,22 @@ class Judgement:
                 # same contract as `headroom` above — a bounded adjustment already
                 # counted inside `setup`, surfaced so the size of the prize is
                 # visible on its own line rather than buried inside the setup total
+                # Mirrors whichever path (ATR-normalized or raw-percent) actually
+                # qualified the tier inside the POTENTIAL block above — showing
+                # `thesis_atr_early` unconditionally here used to state a distance
+                # that had nothing to do with the tier actually earned whenever the
+                # raw-percent floor was what fired (a volatile name's ATR-normalized
+                # distance can sit well under the ATR bands while its raw percent
+                # alone clears them — see POTENTIAL_REAL_PCT).
                 {'key': 'potential', 'label': 'Potential', 'label_he': 'פוטנציאל',
                  'got': jnum(potential), 'max': POTENTIAL_MAX, 'adjustment': True,
-                 'detail': f"the thesis target is {thesis_atr_early:.0f} ATR out",
-                 'detail_he': f"יעד התזה במרחק {thesis_atr_early:.0f} ATR"},
+                 'detail': (f"the thesis target is {thesis_atr_early:.0f} ATR / "
+                            f"{thesis_pct_early:.0f}% out"
+                            if ctx.atr_pct and ctx.atr_pct >= POTENTIAL_MIN_ATR_PCT
+                            else f"the thesis target is {thesis_pct_early:.0f}% out"),
+                 'detail_he': (f"יעד התזה במרחק {thesis_atr_early:.0f} ATR / {thesis_pct_early:.0f}%"
+                               if ctx.atr_pct and ctx.atr_pct >= POTENTIAL_MIN_ATR_PCT
+                               else f"יעד התזה במרחק {thesis_pct_early:.0f}%")},
             ] if potential else []) + ([
                 # not a fourth axis — a named, bounded adjustment already counted
                 # inside `risk`, shown separately so the letter stays auditable
