@@ -660,11 +660,23 @@ class Judgement:
         # "what's the next real obstacle" signal in this file — reuse it, don't
         # re-derive a second, narrower version of the same question.
         #
-        # This deliberately does NOT touch the grade (the structure is still the
-        # structure; see HEADROOM_MAX) — a wall further out than at_hand still
-        # scores via the headroom adjustment and the TRIGGER_ENTERING_OVERHEAD
-        # reduction below, without vetoing the state outright.
-        if trigger and trigger.get('tier') == 'at_hand' and trigger.get('price'):
+        # Extended to 'near' tier too (owner's report, ARE): a hard, 16-touch wall
+        # 5.1% / 1.3 ATR overhead is exactly the kind of line he means by "a good
+        # line" — being one tier farther than at_hand doesn't make it any less
+        # real. Gated on the SAME `has_real_wall` condition TRIGGER_ENTERING_
+        # OVERHEAD already uses for the grade reduction below, so action and
+        # grade can no longer disagree about the same fact: measured, 7 of 8
+        # names currently entering at 'near' tier had a genuine touch-tested wall
+        # in the way (ARE 16 touches, CAG 5, EL 10, BAX 7, AJG 13, BR 10, AMZN 3)
+        # — only ARM's near-tier "obstacle" was a trendline/ATH with no touch
+        # history, i.e. distance into blue sky rather than a defended line, and
+        # ARM correctly keeps its full trigger score AND its 'enter' action.
+        # Requiring `has_real_wall` (not just tier) is what keeps that distinction
+        # — widening to 'near' by tier ALONE, measured first, would have gutted
+        # 8 of 11 live 'enter' actions down to 3, including ARM's legitimate one.
+        has_real_wall = bool(trigger and (trigger.get('wall') or {}).get('touches'))
+        if (trigger and trigger.get('tier') in ('at_hand', 'near') and trigger.get('price')
+                and has_real_wall):
             atr_eps = (ctx.atr * 0.01) if ctx.atr else 0.0
             if float(trigger['price']) > price + atr_eps:
                 return 'at_trigger'
