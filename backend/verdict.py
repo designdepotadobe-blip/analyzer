@@ -1990,17 +1990,32 @@ class Judgement:
             call_he = f"כניסה סביב {best['entry']:.2f}, סטופ {best['stop']:.2f}."
         elif action == 'wait_trigger' and trigger:
             _stop_en = (f" Stop {best['stop']:.2f}." if best and best.get('stop') else "")
-            call = (f"Break above {trigger['price']:.2f} — no trade before that."
-                    f"{_stop_en}")
-            # His own shape, and his own order: the price FIRST, then the refusal to
-            # act before it, then the stop — "פריצה משמעותית מעל 21.45$", "מעל 552. אם
-            # לא עוברת מעל אין טרייד", "אין מה להיכנס לפני" (FLY), "חכו לפריצה שלא סתם
-            # תעופו בסטופ" (SEDG). The previous wording opened with "אין כניסה עדיין —
-            # התראה על…", which is alert-console language: it buries the one number he
-            # always leads with and describes the mechanism instead of the trade.
             _stop_he = (f" סטופ {best['stop']:.2f}." if best and best.get('stop') else "")
-            call_he = (f"פריצה מעל {trigger['price']:.2f} — לפני זה אין טרייד."
-                       f"{_stop_he}")
+            if s.break_level:
+                # This is the case the near-tier wall veto produces (see `_state`):
+                # a REAL break just happened — `s.break_level` only holds a fresh one
+                # — but a well-defended wall sits close enough overhead that it isn't
+                # a clean trigger yet. Saying only "break above X" here would erase
+                # what actually happened and read identically to a chart that has done
+                # nothing at all. Owner's ask: make this read as a WARNING — it broke
+                # something real, AND there is a hard wall right there — not as the
+                # generic "still coiled" copy.
+                call = (f"Broke {s.break_level:.2f}, but a hard wall is close — wait "
+                        f"for {trigger['price']:.2f} too.{_stop_en}")
+                call_he = (f"פרצה את {s.break_level:.2f}, אבל קיר קשה קרוב — להמתין "
+                           f"גם ל-{trigger['price']:.2f}.{_stop_he}")
+            else:
+                # His own shape, and his own order: the price FIRST, then the refusal
+                # to act before it, then the stop — "פריצה משמעותית מעל 21.45$", "מעל
+                # 552. אם לא עוברת מעל אין טרייד", "אין מה להיכנס לפני" (FLY), "חכו
+                # לפריצה שלא סתם תעופו בסטופ" (SEDG). The previous wording opened with
+                # "אין כניסה עדיין — התראה על…", which is alert-console language: it
+                # buries the one number he always leads with and describes the
+                # mechanism instead of the trade.
+                call = (f"Break above {trigger['price']:.2f} — no trade before that."
+                        f"{_stop_en}")
+                call_he = (f"פריצה מעל {trigger['price']:.2f} — לפני זה אין טרייד."
+                           f"{_stop_he}")
         elif action == 'wait_buyers':
             call = "It reached the zone — wait for a buyers' candle before entering."
             call_he = "הגיעה לאזור — להמתין לנר קונים לפני כניסה."
