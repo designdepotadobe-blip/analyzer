@@ -1526,3 +1526,13 @@ button:disabled {
   direction: ltr;
   unicode-bidi: isolate;
 }
+
+/* The ticker box is upper-case ASCII only — see normalizeTicker(). The transform
+   is cosmetic and the model is what actually enforces it; both are here so a
+   lower-case keystroke LOOKS right the instant it is typed rather than snapping a
+   frame later, and so an RTL keyboard cannot silently right-align the field. */
+.search-wrap input {
+  text-transform: uppercase;
+  direction: ltr;
+  text-align: left;
+}

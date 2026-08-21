@@ -94,8 +94,26 @@ export class AnalyzerPageComponent implements OnInit {
   }
 
   onTickerInput(): void {
+    this.ticker = AnalyzerPageComponent.normalizeTicker(this.ticker);
     this.showSuggestions = true;
     this.suggestionIndex = -1;
+  }
+
+  /**
+   * A ticker is Latin capitals and nothing else.
+   *
+   * Typed into the box, anything else is a lookup that cannot succeed: the symbol
+   * universe is upper-case ASCII, and this app's other half is in Hebrew, so an
+   * RTL keyboard left on is the ordinary way to end up typing "בvda" and getting
+   * a dead result with no explanation. Lower case is folded up rather than
+   * rejected — "nvda" is not a mistake, it is the same ticker.
+   *
+   * `.` and `-` survive because they are part of real symbols (BRK.B, RDS-A), and
+   * digits because of names like 7203.T. Everything else — Hebrew, spaces,
+   * punctuation, emoji — is dropped as it is typed.
+   */
+  static normalizeTicker(v: string): string {
+    return (v || '').toUpperCase().replace(/[^A-Z0-9.\-]/g, '');
   }
 
   onBlur(): void {
@@ -206,7 +224,11 @@ export class AnalyzerPageComponent implements OnInit {
 
   load(tk?: string): void {
     if (tk) this.ticker = tk;
-    const t = this.ticker.trim().toUpperCase();
+    // Normalized here as well as on input, because three other paths reach this
+    // without ever passing through the box: the `@Input`, the `?ticker=` query
+    // param the Radar page navigates with, and `load(tk)` called directly.
+    this.ticker = AnalyzerPageComponent.normalizeTicker(this.ticker);
+    const t = this.ticker.trim();
     if (!t) return;
     this.loading = true;
     this.error = '';
@@ -350,7 +372,12 @@ export class AnalyzerPageComponent implements OnInit {
     this.michaToggles = {
       sma20: f.sma20, sma50: false, sma150: f.sma150, sma200: f.sma200,
       levels: f.levels, trendlines: f.trendlines, channels: f.channels,
-      triangles: f.triangles, fib: f.fib, markers: false, gaps: f.gaps,
+      // `gaps` is hard-overridden off for the same reason `markers` and `sma50`
+      // are: the shaded gap boxes are large, sit behind the price action, and are
+      // relevant on far fewer charts than `chart_focus` turns them on for. The
+      // checkbox stays available whenever the stock HAS a gap — it just does not
+      // start checked. Owner's call.
+      triangles: f.triangles, fib: f.fib, markers: false, gaps: false,
     };
   }
 

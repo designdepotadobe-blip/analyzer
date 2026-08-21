@@ -13,6 +13,9 @@
           placeholder="Ticker e.g. GTLB"
           spellcheck="false"
           autocomplete="off"
+          autocapitalize="characters"
+          autocorrect="off"
+          maxlength="12"
         />
         <div class="suggestions" *ngIf="showSuggestions && filteredTickers.length">
           <div
