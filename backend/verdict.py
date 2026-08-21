@@ -946,12 +946,37 @@ class Judgement:
 
         w = hard[0]
         wp = float(w['price'])
-        d = (wp - base) / atr
+        # ── The room ends at the band's LOWER edge, not at its midpoint ────────
+        # A level is a band everywhere else in this file — `_trigger` quotes
+        # `zone_top` as the price to clear and anchors the stop under the band's
+        # bottom, on the strength of his own two labelled charts ("86.88 - 88.17 →
+        # סטופ מתחת 86"). Headroom was the last place still collapsing a wall to one
+        # number, and it collapsed it to the wrong one: a rally does not run to the
+        # middle of a supply band before meeting sellers, it meets them at the edge.
+        #
+        # ARE is the case the owner caught. Entry 53.15, the next wall a 12-touch
+        # level drawn 54.04-55.27, and an 8-touch one at 55.12-56.35 right behind
+        # it. Measured to the midpoint (54.95) that is 0.88 ATR — 'close', worth -2
+        # points and no ceiling, so it graded A 77 / 8-10 while telling the reader to
+        # buy into a wall. Measured to the edge the price actually reaches (54.04) it
+        # is 0.43 ATR — 'tight', which is what `no_room` exists for. Same rule the
+        # owner stated on CMG: if a hard line sits above, being under it is not a
+        # clean entrance.
+        #
+        # Clamped at zero for a band that straddles the entry: you are not 'a
+        # negative distance' from resistance, you are already inside it.
+        lo = w.get('bottom')
+        edge = min(wp, float(lo)) if lo else wp
+        d = max(0.0, (edge - base) / atr)
         level = ('tight' if d < HEADROOM_TIGHT_ATR else
                  'close' if d < HEADROOM_CLOSE_ATR else
                  'some' if d < HEADROOM_OK_ATR else
                  'clear' if d < HEADROOM_CLEAR_ATR else 'open')
-        return {'atr': jnum(d), 'pct': jnum((wp / base - 1) * 100), 'price': jnum(wp),
+        return {'atr': jnum(d), 'pct': jnum((edge / base - 1) * 100),
+                # the level is still NAMED by its own price — that is the number on
+                # the chart and the one he would quote; only the DISTANCE is measured
+                # to the edge that stops the move
+                'price': jnum(wp), 'edge': jnum(edge),
                 'touches': w.get('touches'), 'strength': w.get('strength'),
                 'level': level, 'from': jnum(base)}
 
