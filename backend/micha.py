@@ -86,6 +86,8 @@ class MichaAnalyzer:
         base = self._long_base(ctx)
         broke_desc = self._broke_descending(ctx, overlays)
         break_level = self._fresh_break(ctx, sup_levels, overlays, broke_desc)
+        break_age = self._bars_since_cross(ctx, break_level, up=True)
+        ma150_reclaim = self._ma150_reclaim(ctx)
         lost_level = self._lost_level(ctx, res_levels)
         small_cap = bool(ctx.market_cap and ctx.market_cap < MIN_MARKET_CAP)
         pattern = self._pattern(codes, base)
@@ -105,7 +107,8 @@ class MichaAnalyzer:
             ext=ext, vol=vol, candle=candle, capitulation=capitulation, base=base,
             momentum=momentum, res_levels=res_levels, sup_levels=sup_levels,
             nearest_res=nearest_res, nearest_sup=nearest_sup, broke_desc=broke_desc,
-            break_level=break_level, lost_level=lost_level,
+            break_level=break_level, break_age=break_age,
+            ma150_reclaim=ma150_reclaim, lost_level=lost_level,
             overlays=overlays, codes=codes,
             dir_change=dir_change, channel=channel, targets=targets, pattern=pattern,
             recent_low=float(np.min(ctx.lows[-5:])),
@@ -148,6 +151,8 @@ class MichaAnalyzer:
             # the grade
             'grade': j['grade'],
             'grade_score': j['grade_score'],
+            # the headline number the panel leads with — see verdict._rating
+            'rating': j['rating'], 'rating_max': j['rating_max'],
             'grade_meaning': j['grade_meaning'], 'grade_meaning_he': j['grade_meaning_he'],
             # why THIS stock got THIS letter, in two sentences (verdict._grade_sentence).
             # NB: this dict is rebuilt field by field, so a new verdict.py key that is
@@ -1127,6 +1132,53 @@ class MichaAnalyzer:
             for t in overlays.get('trendlines', []):
                 if t.get('kind') == 'falling_highs' and t.get('broke'):
                     return float(t['p2']['price'])
+        return None
+
+    @staticmethod
+    def _bars_since_cross(ctx, level, up: bool = True):
+        """
+        How many bars ago price last closed through `level` in the given direction.
+
+        `_fresh_break` returns only the PRICE of the level that gave way, which is
+        all the state machine needs ("are we still at it") but not what the grade
+        needs: an event has to decay. A wall broken 3 bars ago is the news; the same
+        wall broken 22 bars ago is the reason the stock is where it is, and paying
+        the identical points for both is how a stale break keeps propping up a grade
+        long after the entry it describes has gone. Returns None when no crossing is
+        found in the display window — the caller treats that as "not an event".
+        """
+        if level is None:
+            return None
+        c = ctx.closes
+        lvl = float(level)
+        for i in range(len(c) - 1, 0, -1):
+            crossed = (c[i - 1] <= lvl < c[i]) if up else (c[i - 1] >= lvl > c[i])
+            if crossed:
+                return int(len(c) - 1 - i)
+        return None
+
+    @staticmethod
+    def _ma150_reclaim(ctx):
+        """
+        Price has closed back above the 150 after being under it — the single event
+        the whole method is anchored on ("ברגע שתעבור את ממוצע 150 ... זה אפילו טרייד
+        יותר בשרני" ADBE, OKTA "✅ עברה את ממוצע 150").
+
+        Returns {'bars': n} for a reclaim inside the display window, else None. Only
+        counts a crossing that STUCK: price has to still be above the average now,
+        otherwise this is describing a failed poke, not a reclaim.
+        """
+        if not ctx.above_150 or ctx.sma150 is None:
+            return None
+        c = ctx.closes
+        ma = ctx.w['sma150'].to_numpy() if 'sma150' in ctx.w else None
+        if ma is None or len(ma) != len(c):
+            return None
+        for i in range(len(c) - 1, 0, -1):
+            if ma[i] != ma[i] or ma[i - 1] != ma[i - 1]:   # NaN before warm-up
+                break
+            if c[i - 1] <= ma[i - 1] and c[i] > ma[i]:
+                return {'bars': int(len(c) - 1 - i), 'price': float(ma[i])}
         return None
 
     def _lost_level(self, ctx, res_levels):

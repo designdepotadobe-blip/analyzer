@@ -205,10 +205,26 @@ PACE_NORMAL_DAYS = 40
 # ATR itself; and corr(days, current grade) = +0.25, i.e. the grade today mildly
 # FAVOURS slower theses, so this term corrects an existing tilt rather than
 # amplifying one.
-TIME_EFFICIENCY_MAX = 4.0      # ± points, out of a 100-point grade
-TIME_FAST_DAYS = 14.0          # p25 — full bonus at/under
-TIME_MEDIAN_DAYS = 25.0        # p50 — neutral
-TIME_SLOW_DAYS = 56.0          # p90 — full penalty at/over
+# ── Rewritten 2026-08-21: one-sided, small, and late ──────────────────────────
+# As a symmetric ± term this DOUBLE-TAXED exactly the trades the method is for. The
+# reward axis already discounts a distant thesis by its measured odds of being
+# reached (`rr_eff = rr * thesis_hit`); charging a second time for the calendar days
+# the same distance implies is the same fact billed twice. Measured: CMG's +86%
+# thesis took -4 for "82 trading days", UNH's +53% took -4 for 84 — both were among
+# the highest-expectancy setups in the universe and both graded C.
+#
+# The BONUS half is gone entirely. It was already neutralised in three separate
+# places (no bonus without R/R >= 1, none when stretched, none when ran_hot) because
+# every case it fired on turned out to be "the target is close because the ladder is
+# exhausted" — AMD, 3 days to a target half an ATR overhead. A term whose positive
+# half has to be switched off in every branch it can reach is not a positive term.
+#
+# What remains is the honest residue: a thesis so far out that it is a different
+# trade from the one being graded. It starts at the old p90 and reaches full penalty
+# at roughly six months, which is where "swing trade" stops being the right word.
+TIME_EFFICIENCY_MAX = 2.0      # one-sided penalty now, out of a 100-point grade
+TIME_SLOW_DAYS = 56.0          # p90 — the penalty starts here
+TIME_GLACIAL_DAYS = 120.0      # ~6 months — full penalty at/over
 
 # ── Expectancy: what a setup is actually worth ───────────────────────────────
 # `growth.hit_rate` answers "is the target reached inside 6 months" and IGNORES the
@@ -269,10 +285,24 @@ def expectancy(stop_atr: float | None, rr: float | None) -> tuple:
     """
     if stop_atr is None or rr is None or stop_atr <= 0 or rr <= 0:
         return None, None
-    rows = [_interp(rr, EXPECTANCY_RS, row) for row in EXPECTANCY_PWIN]
+    # ── Never extrapolate past the grid ───────────────────────────────────────
+    # `_interp` holds p FLAT beyond the last knot, so E = p*R - (1-p) keeps growing
+    # LINEARLY in R over a probability that stopped being measured at R=10. That is
+    # not a big edge, it is an unmeasured one: AES (a utility, ATR% 0.36) priced a
+    # 24.6 R/R at p=0.102 and reported E[R] = +1.59 — the single highest expectancy
+    # in a 245-name sweep, manufactured entirely by the flat tail. Past the last
+    # measured R the honest answer is "at least this good, and we cannot say more",
+    # so the RATIO is clamped to the grid before it multiplies anything.
+    #
+    # Clamped rather than rejected because a 24 R setup is genuinely better than a
+    # 5 R one; what it is not is 2.5x better than a 10 R one on evidence we have.
+    # `expectancy_r` is what /radar and /portfolio sort by and what the REWARD axis
+    # scores, so the clamp has to live here rather than at each call site.
+    r_eff = min(float(rr), EXPECTANCY_RS[-1])
+    rows = [_interp(r_eff, EXPECTANCY_RS, row) for row in EXPECTANCY_PWIN]
     p = _interp(stop_atr, EXPECTANCY_STOPS, rows)
     p = min(max(p, 0.0), 1.0)
-    return round(p, 4), round(p * rr - (1 - p), 4)
+    return round(p, 4), round(p * r_eff - (1 - p), 4)
 
 
 def time_to_target(gain_atr: float, atr_pct: float | None = None) -> tuple:
@@ -491,10 +521,143 @@ TRIGGER_ENTERING_NO_PRIZE = 20.0
 # numbers never stop matching the score they explain) by TRIGGER_MAX/30 and
 # RISK_MAX/30 right before they're summed. Change the numbers here; nothing
 # else needs to change to keep them in sync.
-GRADE_BUDGET = {'setup': 45, 'trigger': 35, 'risk': 20}
-GRADE_BANDS = [(4, 85.0), (3, 70.0), (2, 55.0), (1, 40.0), (0, 0.0)]
-GRADE_BAND_RANGE = {4: (85.0, 99.0), 3: (70.0, 84.9), 2: (55.0, 69.9),
-                    1: (40.0, 54.9), 0: (0.0, 39.9)}
+# ── The four axes ─────────────────────────────────────────────────────────────
+# Owner's directive (2026-08-21), after a 245-name sweep of the live universe made
+# the old three-axis split untenable. The measurements that forced it:
+#
+#   spearman(grade_score, potential)    = -0.10   the bigger the prize, the WORSE
+#   spearman(grade_score, expectancy_r) = +0.28   barely related to what it pays
+#   median E[R] by letter: A +0.17  B +0.28  C +0.21  D +0.20   — flat, A worst
+#   the grade's own top-10 had median E[R] 0.22; ranking by E[R] gave 2.2
+#
+# The cause was structural, not a bad weight. `setup` (45) and `trigger` (35) both
+# scored CONDITION — how tidy is the chart, how close is the wall — leaving 80 of
+# 100 points unable to express what a trade is worth. Reward entered only as a <=10
+# bonus buried INSIDE setup, where the structural checkboxes already reached 42/45
+# on their own (KO scored 42.5 with zero potential), so the bonus bought nothing.
+# And `trigger`'s observed distribution over 208 names was {28.0: 102, 5.8: 63,
+# 19.8: 30, 35.0: 6} — a proximity switch, not a measure of quality: 35 points for
+# "is a wall within 1 ATR of spot today", which is an accident of today's price.
+#
+# So the axes now answer four different questions, and the two that carry the most
+# weight are the two the owner names as the reason to take a trade at all:
+#
+#   EVENT      did something actually HAPPEN — a hard level broken, a trendline
+#              broken, a direction change confirmed, the 150 reclaimed. Replaces
+#              `trigger`, which paid for anticipation. Anticipation still scores,
+#              at a fraction: EVENT_TIERS['at_hand'] vs a full break.
+#   REWARD     what is it worth, odds-adjusted. Built on the measured `expectancy`
+#              grid, plus the size of the prize and the room back to old highs.
+#   STRUCTURE  is the chart sound. The old `setup`, minus potential (now REWARD's)
+#              and rescaled.
+#   RISK       is the stop real. Deliberately the SMALLEST axis: "it's okay when
+#              there's risk, it's swing trading and we are willing to do so."
+#              Its R/R term moved to REWARD, so the two stopped being entangled.
+#
+# Same rescale contract as before: literal point values inside `_grade`'s EVENT and
+# RISK sections are written against a 30-point basis and rescaled to whatever these
+# say. Change the numbers here; nothing else needs to change to stay in sync.
+GRADE_BUDGET = {'event': 30, 'reward': 30, 'structure': 25, 'risk': 15}
+# Recalibrated with the four-axis budget, because the old boundaries were fitted to
+# a scale that no longer exists. Under the three-axis split `setup` and `trigger`
+# moved together — a tidy chart coiled under a wall scored well on both — so totals
+# piled up in the 70s and 80s and A started at 85. The new axes are deliberately
+# less correlated (a big EVENT does not imply a big REWARD, which is the entire
+# point), so the same universe now spans a lower, wider range: measured over 208
+# names, p50 49, p90 66, p95 70, max 75. Left at 85 an A became unreachable — the
+# sweep produced zero of them and 74 F's.
+#
+# Set from that measured distribution so the letters keep meaning what they did:
+# A the top ~5%, B the next ~17%, C ~30%, D ~25%, F the rest. Note this is a
+# PRESENTATION recalibration, not a change to any score — nothing about which stock
+# outranks which moves, and `rating` (see verdict._rating) is computed off the raw
+# score and is unaffected by these boundaries entirely.
+GRADE_BANDS = [(4, 70.0), (3, 60.0), (2, 48.0), (1, 34.0), (0, 0.0)]
+GRADE_BAND_RANGE = {4: (70.0, 99.0), 3: (60.0, 69.9), 2: (48.0, 59.9),
+                    1: (34.0, 47.9), 0: (0.0, 33.9)}
+
+# ── EVENT: what actually happened, on a 30-point basis ────────────────────────
+# The catalogue is ordered by how decisive the event is, and the top of it is the
+# owner's own list: "we are looking to enter a stock when something happened - break
+# hard resistance line, or trend line, bearish to bullish".
+#
+# Measured before this existed, over 245 universe names:
+#   108 names had a broken trendline; 9 (8%) were in a state that could be paid
+#       for it, and the payment was BREAK_SOFT_BONUS = 1.5 points.
+#   28 names had a CONFIRMED direction change (all four dictated stages); 3 (11%)
+#       were payable. Their grades: 14 C, 7 B, 4 F, 3 D, zero A, median score 61 —
+#       exactly the universe median. The event bought nothing.
+# Both were gated on `state in ('breakout_now', 'holding')`, which fired for 9 of
+# 245 names. So the events are scored here on the EVENT they represent, not on the
+# state the price happens to be sitting in afterwards.
+EVENT_HARD_BREAK = 30.0      # a 4+-touch wall, or a multi-touch descending line, given way
+EVENT_DIR_CHANGE = 30.0      # all four stages of "שינוי כיוון", breakout included
+EVENT_MA150_RECLAIM = 26.0   # back above the anchor of the whole method
+EVENT_SOFT_BREAK = 21.0      # a real level, but a 2-3 touch one — not the same event
+EVENT_BOUNCE = 20.0          # buyers stepped in ON a floor: a confirmed candle at the level
+EVENT_CAPITULATION = 18.0    # the high-volume flush, then stabilizing
+EVENT_TURNING = 14.0         # 3 of the 4 stages — turning, not yet turned
+# Nothing has happened yet; this is the WAIT, priced as a wait. The old trigger axis
+# paid 28/35 here, which is why a coiled mega-cap outranked a confirmed turn.
+EVENT_TIERS = {'at_hand': 12.0, 'near': 8.0, 'moderate': 4.0, 'far': 2.0}
+EVENT_NONE = 3.0             # blue sky: nothing overhead to clear, nothing done yet
+# How long an event stays THE event. A break 30 bars ago is history, not news, and
+# without a decay the catalogue above would keep paying full marks for it long after
+# the entry it describes has gone. Full value while fresh, then straight-line to
+# half by the time it is this old.
+EVENT_FRESH_BARS = 5
+EVENT_STALE_BARS = 25
+EVENT_STALE_FLOOR = 0.5
+# What a NON-break event may score while an unbroken, touch-tested wall still sits
+# overhead inside one ATR. TRIGGER_ENTERING_OVERHEAD deliberately exempts `at_hand`
+# because inside 1 ATR a BREAK is genuinely in progress; that exemption was never
+# meant to cover a reclaim, a bounce or a capitulation that happened UNDER the wall.
+# Owner's CMG report: "if the stock is facing a hard resistance line or trendline
+# above, we want it to be above it so the entrance will be clean." Set above the
+# at_hand wait tier (something did happen) and well below a clean break.
+EVENT_UNDER_WALL = 16.0
+
+# ── REWARD: what the trade is worth, on a 30-point basis ──────────────────────
+# Three parts, because "is it worth it" has three separable answers and collapsing
+# them is how the old grade lost the plot:
+#
+#   EXPECTED VALUE (E[R])  the measured odds of collecting, times the size. This is
+#       `config.expectancy` — already computed on every option, already what
+#       /radar and /portfolio SORT by, and never once read by the grade before
+#       today. The app's own ranking and its own letter disagreed by construction.
+#   PRIZE SIZE             how big the move is if it works. The old POTENTIAL,
+#       moved out of `setup` where it was competing with checkboxes for room.
+#   RECOVERY ROOM          the two sources the owner names by hand: "close gaps,
+#       history of high records". An unfilled gap overhead is a price the stock has
+#       already traded at and left behind; distance under the prior high is the same
+#       argument on a longer horizon. Both were computable and neither was scored.
+#
+# EV carries the most because it is the only one of the three that is measured.
+REWARD_EV_MAX = 18.0
+REWARD_PRIZE_MAX = 8.0
+REWARD_ROOM_MAX = 4.0
+# E[R] bands, in R. The grid tops out at R=10 (see `expectancy`), so a perfect score
+# here means "as good as anything we have measured", not "unbounded".
+REWARD_EV_BANDS = ((1.20, 1.00), (0.80, 0.85), (0.50, 0.70),
+                   (0.30, 0.55), (0.15, 0.40), (0.00, 0.22))
+# Below zero the setup loses money at its own measured odds. That is not a weak
+# trade, it is a negative one, so it takes the axis to nothing rather than scoring
+# a small positive — KO's real case: R/R 0.34, E[R] -0.27, graded B 81.
+REWARD_EV_NEGATIVE = 0.0
+
+# "History of high records" — how far under its own prior high the stock still is.
+# He posts this constantly as the reason a name has somewhere to go ("מגיעה שוב
+# לשיאים שלה", "74.29 מחיר פריצה שיא"), and the engine already computes `off_high`
+# for `_is_value` without ever crediting it. Deliberately capped well below the EV
+# term: being far off the high is a REASON to look, never on its own a reason to buy
+# — "המניה מעולה, פשוט רחוקה כרגע מהממוצעים" is the same stock.
+REWARD_OFF_HIGH_REAL_PCT = 15.0
+REWARD_OFF_HIGH_BIG_PCT = 30.0
+# An unfilled DOWN gap overhead is the "סגירת הגאפ" target. Measured over 245 names,
+# F-grade names carried 2.19 unfilled down-gaps against 0.81 for B — i.e. the old
+# grade was inversely related to the single most-quoted recovery target he uses,
+# because the names with the most room to recover are the ones that fell to get it.
+REWARD_GAP_NEAR_ATR = 12.0   # a gap this far overhead is still a target, not history
 
 # How far the named trigger price is, in ATR. "אין מה להיכנס לפני" — a pending
 # trigger is an alert, never an entry, so this only grades how watchable it is.

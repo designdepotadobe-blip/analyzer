@@ -42,8 +42,19 @@ from typing import Optional
 
 from config import (
     ALERT_CLOSE_ATR,
-    BREAK_HARD_BONUS,
-    BREAK_SOFT_BONUS,
+    EVENT_BOUNCE,
+    EVENT_CAPITULATION,
+    EVENT_DIR_CHANGE,
+    EVENT_FRESH_BARS,
+    EVENT_HARD_BREAK,
+    EVENT_MA150_RECLAIM,
+    EVENT_NONE,
+    EVENT_SOFT_BREAK,
+    EVENT_STALE_BARS,
+    EVENT_STALE_FLOOR,
+    EVENT_TIERS,
+    EVENT_TURNING,
+    EVENT_UNDER_WALL,
     HEADROOM_CLEAR_ATR,
     HEADROOM_CLOSE_ATR,
     HEADROOM_HARD_TOUCHES,
@@ -83,13 +94,19 @@ from config import (
     STOP_POSITION_WIDEN,
     STOP_RISK_BUDGET_PCT,
     STOP_WIDE_ATR,
+    REWARD_EV_BANDS,
+    REWARD_EV_MAX,
+    REWARD_EV_NEGATIVE,
+    REWARD_GAP_NEAR_ATR,
+    REWARD_OFF_HIGH_BIG_PCT,
+    REWARD_OFF_HIGH_REAL_PCT,
+    REWARD_PRIZE_MAX,
+    REWARD_ROOM_MAX,
     TIME_EFFICIENCY_MAX,
-    TIME_FAST_DAYS,
-    TIME_MEDIAN_DAYS,
+    TIME_GLACIAL_DAYS,
     TIME_SLOW_DAYS,
     TRIGGER_AT_HAND_ATR,
     TRIGGER_NEAR_ATR,
-    TRIGGER_ENTERING_NO_PRIZE,
     TRIGGER_ENTERING_OVERHEAD,
     TRIGGER_MAX_SPAN_ATR,
     TRIGGER_REACH_ATR,
@@ -106,6 +123,8 @@ STATE_LABELS = {
     'buyers_at_level': ('Buyers stepped in at the level', 'קונים נכנסו על הרמה'),
     'value_pullback':  ('Value pullback',            'השקעת ערך בתיקון'),
     'at_trigger':      ('Coiled at the trigger',     'מתכנסת לפני פריצה'),
+    'turning':         ('Bearish to bullish — the turn is confirmed',
+                        'שינוי כיוון — המהפך מאושר'),
     'needs_buyers':    ('At the level, waiting for buyers', 'על הרמה, מחכים לקונים'),
     'holding':         ('In the move, holding',      'בתוך המהלך, שומרת'),
     'nothing_yet':     ("Hasn't done anything yet",  'עוד לא עשתה כלום'),
@@ -160,6 +179,11 @@ class Signals:
     nearest_sup: Optional[dict] = None
     broke_desc: bool = False
     break_level: Optional[float] = None   # a level just broken upward, if any
+    # bars since that break, so the EVENT axis can decay a stale one — see
+    # micha._bars_since_cross
+    break_age: Optional[int] = None
+    # {'bars', 'price'} when price has closed back above the 150 and stayed there
+    ma150_reclaim: Optional[dict] = None
     lost_level: Optional[float] = None    # a level just lost downward, if any
     overlays: dict = field(default_factory=dict)
     codes: set = field(default_factory=set)
@@ -195,6 +219,21 @@ def drawn_line(overlays, kind: str) -> Optional[dict]:
         if t.get('kind') == kind:
             return t
     return None
+
+
+def _rating(score: float) -> int:
+    """
+    The 0-100 grade score as a 1-10 rating.
+
+    Ten buckets rather than five letters, because five could not order a watchlist:
+    a 246-name sweep put 85 in C and 74 in B, so two thirds of the universe sat in
+    two indistinguishable piles. Straight division rather than its own band table on
+    purpose — a second set of boundaries is a second thing that can disagree with the
+    letter, and the letter's bands are load-bearing (every `cap()` is written in band
+    indices). Floors at 1: nothing is rated zero, a chart that is simply not a trade
+    still has a rating, and `state`/`action` are where "stay away" is said.
+    """
+    return max(1, min(10, int(round(float(score) / 10.0))))
 
 
 def _edge(lvl, side: str) -> Optional[float]:
@@ -237,6 +276,9 @@ class Judgement:
             'state': state, 'state_label': st_en, 'state_label_he': st_he,
             'action': action, 'action_label': ac_en, 'action_label_he': ac_he,
             'grade': grade, 'grade_score': breakdown['score'],
+            # the headline number — see `_rating`. `grade`/`grade_score` stay for the
+            # scan filters, the caps machinery and `grade_if_break`'s delta.
+            'rating': breakdown['rating'], 'rating_max': 10,
             'grade_meaning': gm_en, 'grade_meaning_he': gm_he,
             # Why THIS stock earned THIS letter, in two sentences, built from the
             # grade's own terms. `grade_meaning` above is one fixed string per
@@ -303,19 +345,24 @@ class Judgement:
         g2, bd2 = self._grade(ctx2, s, 'breakout_now', trigger, [brk], 'enter',
                               small_cap, earn)
         delta = bd2['score'] - breakdown['score']
-        moved = g2 != grade
+        # Tracked on the RATING, not the letter: the rating is what the panel leads
+        # with, and a 1-10 move is the change a reader actually sees. On letters this
+        # missed every projection that moved a full point without crossing a band
+        # boundary, which after the four-axis rework is most of them.
+        moved = bd2['rating'] != breakdown['rating']
         return {
             'grade': g2, 'score': bd2['score'], 'delta': jnum(delta),
+            'rating': bd2['rating'], 'rating_delta': bd2['rating'] - breakdown['rating'],
             'moves': moved,
             'at_price': jnum(tp),
             'components': bd2['components'],
             'caps': bd2['caps'],
             # the same two-sentence explanation, for the projected letter
             'why': bd2['summary'], 'why_he': bd2['summary_he'],
-            'label': (f"clears {tp:.2f} → {g2} ({bd2['score']:.0f})"
-                      if moved else f"clears {tp:.2f} → still {g2}"),
-            'label_he': (f"פורצת {tp:.2f} → {g2} ({bd2['score']:.0f})"
-                         if moved else f"פורצת {tp:.2f} → נשארת {g2}"),
+            'label': (f"clears {tp:.2f} → {bd2['rating']}/10"
+                      if moved else f"clears {tp:.2f} → still {bd2['rating']}/10"),
+            'label_he': (f"פורצת {tp:.2f} → {bd2['rating']}/10"
+                         if moved else f"פורצת {tp:.2f} → נשארת {bd2['rating']}/10"),
         }
 
     # ── 1. The trigger — the price he names ───────────────────────────────────
@@ -354,8 +401,26 @@ class Judgement:
             if t.get('kind') == 'falling_highs':
                 p = (t.get('p2') or {}).get('price')
                 if p and p > price:
+                    # A descending-highs line carries a real touch history — the
+                    # pivots it was fitted through — and it has to be handed over as
+                    # a `wall`, not as None.
+                    #
+                    # This was the CMG bug (owner's report): a stock sitting under
+                    # BOTH a hard horizontal at 37.16 and a descending trendline, and
+                    # every "is a real wall in the way" check in this file keys on
+                    # `trigger['wall']['touches']`. With None there, the state machine
+                    # would not defer, the EVENT axis's honesty ceiling would not
+                    # fire, and the grade was free to price an entry at spot as
+                    # though the road above were open. "If the stock is facing a hard
+                    # resistance line or trendline above, we want it to be ABOVE it
+                    # so the entrance will be clean" — a line is a line, whichever
+                    # way it runs. The `kind` is carried so the copy can name it
+                    # correctly rather than calling a diagonal a level.
                     cands.append((float(p), 'trendline', 'the descending-highs line',
-                                  'קו השיאים היורדים', None))
+                                  'קו השיאים היורדים',
+                                  {'touches': t.get('touches') or 2,
+                                   'strength': t.get('strength'),
+                                   'kind': 'trendline'}))
 
         ft = ov.get('flag_top')
         if ft and ft > price:
@@ -629,18 +694,74 @@ class Judgement:
         vol_ok = s.vol.get('trend') != 'falling' or s.vol.get('falling_streak', 0) <= 2
         rl_broke = bool(s.dir_change and s.dir_change.get('rising_lows_broke'))
 
+        # ── BEARISH TO BULLISH — the turn, confirmed ──────────────────────────
+        # "שינוי כיוון" with all four dictated stages done, the breakout included.
+        # `_direction_change` only sets `confirmed` on a chart that WAS weak
+        # (`applicable`), so this cannot fire on a healthy name in continuation, and
+        # a confirmed turn already above the 150 still falls through to
+        # `breakout_now` below exactly as before. What it changes is the case that
+        # had no exit: below the 150, the two `broken` rules and `avoid` fired first
+        # and every such name was capped at D or F. That is where this setup LIVES —
+        # a stock only turns from bearish to bullish while it is still under its
+        # averages, and the owner names it as one of the three events worth entering
+        # on.
+        #
+        # Measured over 245 names before this existed: 28 had a confirmed direction
+        # change, graded 14 C / 7 B / 4 F / 3 D with zero A and a median score dead
+        # on the universe median. Of the 67 in `broken`, 8 had 3+ stages done. And
+        # on the 1,098-call forward test, `broken` names returned +3.66% excess
+        # against `breakout_now`'s -4.88% — the dead-end bucket was not full of dead
+        # stocks.
+        turned = bool(s.dir_change and s.dir_change.get('confirmed'))
+
+        # ── A below-150 chart is not automatically finished ───────────────────
+        # `turned` above is the strict case (all four stages, breakout included) and
+        # it is rare. This is the loose one, and it exists because a test against his
+        # own last three weeks of posts said it had to. Of 17 calls where his text
+        # gave a clear instruction, we disagreed with 7 — and FOUR of those were this
+        # exact shape, us saying "out"/"avoid" on a sub-150 name he was actively
+        # posting as a setup:
+        #
+        #   ONDS  "לכל האוהבים מניות מתחת לממוצע 150 - מנסה לעלות מעל הקו הלבן"
+        #         — he is naming the sub-150 audience explicitly.
+        #   NFLX  "מעל 82 זו נקודה יותר מעניינת מאשר מעל 80" — a trigger call.
+        #   META  "שבורה. אבל בראלי כל מטאטא יורה. שימו לב לגאפ מעל הראש" — he says
+        #         broken himself, and still points at the gap overhead as the reason
+        #         to watch it.
+        #   CRWV  "קופצת על קו התמיכה עם יום חזק ווליום גבוה. הייתי ממתין מעל ממוצע
+        #         150 או להיכנס עם סטופ ב-ATR" — a bounce, with two named plans.
+        #
+        # Independently, the 1,098-call forward test puts `broken` at +3.66% excess
+        # over 60 days against `breakout_now`'s -4.88%: the bucket we were writing
+        # off outperformed the one we were buying.
+        #
+        # Gated hard, so this stays a narrow exit and not a hole. It needs a fresh
+        # BULLISH event on the chart — the flush, buyers actually stepping in, or the
+        # turn under way — AND a trigger within reach for the reader to act on. The
+        # sub-150 penalty is still charged in full on the STRUCTURE axis, and the
+        # validation anchor still holds: DKNG at the date of his "סטופ מתחת ל 25.4"
+        # post has none of these and still returns `broken`.
+        recovering = bool(
+            (s.capitulation or s.candle.get('found')
+             or (s.dir_change or {}).get('turning'))
+            and trigger and trigger.get('tier') in ('at_hand', 'near'))
+
         # BROKEN — "כשאני מציין 'אין סט אפ' זה אומר שהסט אפ נגמר ... צריך לצאת מנקודת
         # הנחה שהסטופ שלכם קפץ". Losing the rising-lows line that WAS the structure, or
         # dropping back under a level that had just flipped to support, ends it.
-        if s.lost_level and not ctx.above_150:
+        if s.lost_level and not ctx.above_150 and not turned and not recovering:
             return 'broken'
-        if rl_broke and not ctx.above_150 and s.trend != 'uptrend':
+        if (rl_broke and not ctx.above_150 and s.trend != 'uptrend'
+                and not turned and not recovering):
             return 'broken'
 
         if not ctx.above_150 and s.trend == 'downtrend':
             turning = bool(s.dir_change and s.dir_change.get('turning'))
-            if not turning:
+            if not turning and not turned and not recovering:
                 return 'avoid'
+
+        if turned and not ctx.above_150:
+            return 'turning'
 
         # ── An unbroken trigger right overhead is not an entry, whatever else is
         # true ── The chart can be excellent and the answer still be "not here":
@@ -742,7 +863,14 @@ class Judgement:
         # and that is one of his most-posted setups — "עוברת את הממוצע 150. שפלים
         # עולים" (BULL), "ברגע שתעבור את ממוצע 150 ... זה אפילו טרייד יותר בשרני"
         # (ADBE), OKTA "✅ עברה את ממוצע 150 ... מתי נכנסים? פריצה מעל 88.17".
-        if trigger and trigger['tier'] in ('at_hand', 'near') and s.trend != 'downtrend':
+        # `recovering` overrides the downtrend guard for the same reason it overrides
+        # `avoid` above: a two-year regression still reads 'downtrend' on exactly the
+        # charts he posts as "trying to climb above the white line", and without this
+        # a name that escaped `avoid` would fall through every branch into
+        # `nothing_yet` — trading one wrong answer ("out") for another ("nothing
+        # here") on a chart that has a flush, a buyers' candle and a line to cross.
+        if trigger and trigger['tier'] in ('at_hand', 'near') and (
+                s.trend != 'downtrend' or recovering):
             return 'at_trigger'
 
         # HOLDING — already inside a move, above its structure, nothing new to do.
@@ -1132,6 +1260,11 @@ class Judgement:
         if entering:
             return 'enter'
         return {
+            # A confirmed turn under the 150 is his "ברגע שתעבור את ממוצע 150 ... זה
+            # אפילו טרייד יותר בשרני" (ADBE): the turn is real, the entry is the
+            # average. `_trigger` already names the 150 as the price when price is
+            # under it, so this routes to the same wait the rest of the app means.
+            'turning':      'wait_trigger',
             'at_trigger':   'wait_trigger',
             'needs_buyers': 'wait_buyers',
             'holding':      'hold',
@@ -1140,13 +1273,299 @@ class Judgement:
             'avoid':        'avoid',
         }[state]
 
-    # ── 7. The grade — setup / trigger / risk ─────────────────────────────────
+    # ── 7. The grade — event / reward / structure / risk ──────────────────────
+
+    def _thesis(self, ctx, s: Signals, best, state) -> tuple:
+        """
+        How far the farthest upward target is, in percent and in ATR.
+
+        Read from its OWN uncapped candidate set rather than the display ladder.
+        `s.targets` is capped at MAX_TARGET_STATIONS=3 by design — the panel shows
+        "next station -> next -> ATH" — which means a genuinely far target is
+        silently truncated off whenever 3+ nearer candidates crowd it out
+        (ROP/IBM-style charts with several intermediate levels below the real
+        ceiling). The owner's own recurring targets are exactly the ones that get
+        crowded out: "סגירת הגאפ" and the prior high. So both are added back here.
+        """
+        if best is None or state in ('broken', 'avoid', 'nothing_yet'):
+            return None, None
+        entry = best.get('entry') or ctx.price
+        ups = [t['price'] for t in (s.targets or [])
+               if t.get('price') and t['price'] > entry]
+        if s.ath and s.ath > entry:
+            ups.append(float(s.ath))
+        for g in (s.overlays or {}).get('gaps') or []:
+            if g.get('dir') == 'down' and g.get('far') and g['far'] > entry:
+                ups.append(float(g['far']))
+        if not ups:
+            return None, None
+        pct = (max(ups) / entry - 1) * 100
+        return pct, (pct / ctx.atr_pct if ctx.atr_pct else None)
+
+    def _event(self, ctx, s: Signals, state, trigger) -> dict:
+        """
+        What actually HAPPENED — the axis that replaced `trigger`.
+
+        The owner's sentence: "we are looking to enter a stock when something
+        happened - break hard resistance line, or trend line, bearish to bullish".
+        The old trigger axis could not express any of that. It scored PROXIMITY: its
+        observed distribution over 208 names was {28.0: 102, 5.8: 63, 19.8: 30,
+        35.0: 6}, i.e. 35 points riding on "is a wall within 1 ATR of spot today".
+        Measured at the same time, 108 names had a broken trendline and 9 were in a
+        state that could be paid for it; 28 had a confirmed direction change and 3
+        were payable, their grades 14 C / 7 B / 4 F / 3 D and a median score dead on
+        the universe median. Anticipation outscored the event by 28 points to zero.
+
+        So the catalogue below is ordered by how DECISIVE the event is, the events
+        are read off the chart rather than off the state the price landed in
+        afterwards, and an unbroken trigger — a wait, however close — is priced as a
+        wait. Returns the best single event; they are alternatives, not a checklist,
+        because a stock that breaks a hard level while confirming a direction change
+        has had one good day, not two.
+        """
+        atr = ctx.atr
+        brk = self._break_strength(s, atr)
+        dc = s.dir_change or {}
+        cands: list[tuple[float, str, Optional[int], str, str]] = []
+
+        if brk:
+            if brk['hard']:
+                t = brk.get('touches') or 0
+                cands.append((EVENT_HARD_BREAK, 'hard_break', s.break_age,
+                              f"broke a well-defended level at {brk['price']:.2f} "
+                              f"({t} touches)",
+                              f"פרצה רמה חזקה ב-{brk['price']:.2f} ({t} נגיעות)"))
+            else:
+                cands.append((EVENT_SOFT_BREAK, 'soft_break', s.break_age,
+                              f"broke the level at {brk['price']:.2f}",
+                              f"פרצה את הרמה ב-{brk['price']:.2f}"))
+        # "שינוי כיוון" complete — all four dictated stages including the breakout.
+        # This is the bearish-to-bullish turn the owner names, and until now the
+        # grade's only acknowledgement of it was +4 for one of its four stages.
+        if dc.get('confirmed'):
+            cands.append((EVENT_DIR_CHANGE, 'dir_change', s.break_age,
+                          'bearish to bullish — all four stages, breakout included',
+                          'שינוי כיוון מלא — כל ארבעת השלבים, כולל הפריצה'))
+        if s.ma150_reclaim:
+            cands.append((EVENT_MA150_RECLAIM, 'ma150_reclaim',
+                          s.ma150_reclaim.get('bars'),
+                          'closed back above the 150MA and held it',
+                          'חזרה מעל ממוצע 150 ונשארה מעליו'))
+        if state in ('buyers_at_level', 'value_pullback') and s.candle.get('found'):
+            cands.append((EVENT_BOUNCE, 'bounce', None,
+                          s.candle.get('label') or 'buyers stepped in at the level',
+                          s.candle.get('label_he') or 'קונים נכנסו על הרמה'))
+        if s.capitulation:
+            cands.append((EVENT_CAPITULATION, 'capitulation', None,
+                          'a high-volume wash-out then stabilizing — the flush that '
+                          'resets the risk',
+                          'קפיטולציה בווליום גבוה ואז התייצבות — התיקון שמאפס את הסיכון'))
+        if dc.get('turning'):
+            n = dc.get('stages_done') or 0
+            cands.append((EVENT_TURNING, 'turning', None,
+                          f'changing direction — {n} of 4 stages, waiting on the break',
+                          f'משנה כיוון — {n} מתוך 4 שלבים, מחכים לפריצה'))
+
+        # An event decays, and then it EXPIRES. A wall broken 3 bars ago is the news;
+        # broken 22 bars ago it is the reason the stock is where it is; broken 154
+        # bars ago it is not an event at all, and a decay floor alone still paid it
+        # half — KO's real case, where a 150MA reclaim from 154 bars back scored
+        # 13/30, more than a live wait. Past EVENT_STALE_BARS the honest reading is
+        # that nothing has happened lately, so the candidate is dropped and the axis
+        # falls through to whatever IS true now: waiting on the trigger.
+        cands = [c for c in cands if c[2] is None or c[2] <= EVENT_STALE_BARS]
+        if cands:
+            pts, key, age, en, he = max(cands, key=lambda c: c[0])
+            if age is not None and age > EVENT_FRESH_BARS:
+                span = EVENT_STALE_BARS - EVENT_FRESH_BARS
+                f = 1.0 - (1.0 - EVENT_STALE_FLOOR) * min(1.0, (age - EVENT_FRESH_BARS) / span)
+                pts *= f
+                en += f' ({age} bars ago)'
+                he += f' (לפני {age} נרות)'
+        elif trigger:
+            pts = EVENT_TIERS[trigger['tier']]
+            key = 'waiting'
+            tp, tpc, td = trigger['price'], trigger['distance_pct'], trigger['distance_atr']
+            if trigger['tier'] == 'at_hand':
+                en = f"nothing yet — {trigger['what']} at {tp:.2f} is right overhead ({td:.1f} ATR)"
+                he = f"עוד לא קרה כלום — {trigger['what_he']} ב-{tp:.2f} ממש מעל ({td:.1f} ATR)"
+            else:
+                en = f"nothing has happened yet — the trigger {tp:.2f} is {tpc:+.0f}% away"
+                he = f"עוד לא קרה כלום — הטריגר {tp:.2f} במרחק {tpc:+.0f}%"
+        else:
+            pts, key = EVENT_NONE, 'none'
+            en, he = 'nothing overhead left to clear', 'אין מעל הראש מה לפרוץ'
+
+        # ── The honesty ceiling ───────────────────────────────────────────────
+        # An event may not claim the road is open while the engine's OWN trigger
+        # names an unbroken wall above it. Paying full marks regardless is what let
+        # TXN grade A 92 with a 10-touch wall 6.1% overhead.
+        #
+        # `at_hand` is exempt ONLY for a break. Inside 1 ATR a break genuinely is in
+        # progress, so "it is happening now" is true — but that exemption was written
+        # for the breakout case and it silently covered every other event too. CMG
+        # (owner's report) is what it costs: a 150MA reclaim scoring 26/30 while the
+        # stock sat under BOTH a hard horizontal at 37.16 and a descending trendline.
+        # "Room to grow is very important, so the breaking line has to be on point —
+        # if the stock is facing a hard resistance line or trendline above, we want
+        # it to be ABOVE it so the entrance will be clean." A reclaim that happened
+        # below an unbroken wall has not bought a clean entrance, however close the
+        # wall is; only clearing the wall does that. So a NON-break event is ceilinged
+        # at every tier, at_hand included.
+        BREAK_EVENTS = ('hard_break', 'soft_break', 'dir_change')
+        over = (trigger and trigger.get('price') and float(trigger['price']) > ctx.price
+                and (trigger.get('wall') or {}).get('touches'))
+        ceiling = None
+        if over:
+            ceiling = TRIGGER_ENTERING_OVERHEAD.get(trigger['tier'])
+            if ceiling is None and key not in BREAK_EVENTS:
+                # at_hand, and the event is not the break of this wall
+                ceiling = EVENT_UNDER_WALL
+        capped = False
+        if ceiling is not None and pts > ceiling:
+            pts, capped = float(ceiling), True
+            tp, tpc = trigger['price'], trigger['distance_pct']
+            en += f", but the wall that caps this move — {tp:.2f} — is still {tpc:+.0f}% overhead"
+            he += f", אבל הרמה שחוסמת את המהלך — {tp:.2f} — עדיין {tpc:+.0f}% מעל"
+        if state in ('broken', 'avoid'):
+            pts = min(pts, 5.0)
+        return {'points': pts, 'key': key, 'en': en, 'he': he, 'capped': capped}
+
+    def _reward(self, ctx, s: Signals, best, thesis_pct, thesis_atr, state) -> dict:
+        """
+        What the trade is worth — the axis that did not exist.
+
+        Three separable parts. EXPECTED VALUE is the measured one and carries the
+        most: `config.expectancy` prices the odds of collecting against the size of
+        the prize, and it was already being computed on every option and used to
+        SORT /radar and /portfolio while the letter ignored it entirely. Measured
+        over 208 live names, the grade's own top-10 had a median E[R] of 0.22 while
+        ranking by E[R] gave 2.2 — the app's two opinions of the same stock.
+
+        PRIZE SIZE is the old POTENTIAL, moved here out of `setup` where it was
+        competing for room against structural checkboxes that already reached 42/45
+        without it. RECOVERY ROOM is the pair the owner names by hand — an unfilled
+        gap overhead to close, and distance back under the prior high.
+        """
+        out = {'ev': 0.0, 'prize': 0.0, 'room': 0.0, 'time': 0.0,
+               'notes': [], 'ev_r': None, 'days': None}
+        if state in ('broken', 'avoid', 'nothing_yet') or best is None:
+            return out
+        note = out['notes'].append
+
+        # ── Expected value ───────────────────────────────────────────────────
+        ev = best.get('expectancy_r')
+        rr = best.get('risk_reward')
+        out['ev_r'] = ev
+        if ev is not None:
+            if ev < 0:
+                out['ev'] = REWARD_EV_NEGATIVE
+                note((-REWARD_EV_MAX,
+                      f'negative expectancy — at its own measured odds this setup '
+                      f'loses {abs(ev):.2f}R',
+                      f'תוחלת שלילית — בסיכויים הנמדדים שלו הטרייד מפסיד {abs(ev):.2f}R'))
+            else:
+                frac = next((f for lo, f in REWARD_EV_BANDS if ev >= lo), 0.0)
+                out['ev'] = REWARD_EV_MAX * frac
+                p = best.get('p_win')
+                pw = f", {p*100:.0f}% of the time" if p else ''
+                pwh = f", {p*100:.0f}% מהמקרים" if p else ''
+                if frac >= 0.70:
+                    note((out['ev'],
+                          f'expectancy {ev:+.2f}R at reward-to-risk {rr:.1f}{pw}',
+                          f'תוחלת {ev:+.2f}R ביחס סיכוי/סיכון {rr:.1f}{pwh}'))
+                elif frac <= 0.40:
+                    note((-(REWARD_EV_MAX - out['ev']),
+                          f'thin expectancy — {ev:+.2f}R for the risk taken',
+                          f'תוחלת דקה — {ev:+.2f}R על הסיכון שנלקח'))
+                else:
+                    note((out['ev'], f'expectancy {ev:+.2f}R',
+                          f'תוחלת {ev:+.2f}R'))
+
+        # ── Prize size ───────────────────────────────────────────────────────
+        # ATR-normalized where the ATR means something, with a raw-percent floor
+        # OR'd in — whichever is more generous. Both guards are load-bearing and
+        # cut opposite ways: below POTENTIAL_MIN_ATR_PCT the denominator collapses
+        # and an ordinary move reads as enormous (AES, a utility: +18% landed 54
+        # ATR out), while on a genuinely volatile name the same conversion
+        # UNDER-credits a real move (LRCX: +43% to its own ATH is only ~6 ATR at
+        # 7.15% ATR, never reaching POTENTIAL_REAL_ATR).
+        if thesis_pct is not None:
+            ta = (thesis_atr if (ctx.atr_pct and ctx.atr_pct >= POTENTIAL_MIN_ATR_PCT)
+                  else None)
+            tp = thesis_pct
+            unit = f"{ta:.0f} ATR / " if ta is not None else ''
+            if (ta is not None and ta >= POTENTIAL_HUGE_ATR) or tp >= POTENTIAL_HUGE_PCT:
+                out['prize'] = REWARD_PRIZE_MAX
+                note((out['prize'],
+                      f'the thesis reaches {unit}{tp:.0f}% out — an exceptional amount of room',
+                      f'התזה מגיעה ל-{unit}{tp:.0f}% מכאן — כמות עצומה של מקום'))
+            elif (ta is not None and ta >= POTENTIAL_BIG_ATR) or tp >= POTENTIAL_BIG_PCT:
+                out['prize'] = REWARD_PRIZE_MAX * 0.6
+                note((out['prize'],
+                      f'the thesis reaches {unit}{tp:.0f}% out — real room beyond the near target',
+                      f'התזה מגיעה ל-{unit}{tp:.0f}% מכאן — מקום ממשי מעבר ליעד הקרוב'))
+            elif (ta is not None and ta >= POTENTIAL_REAL_ATR) or tp >= POTENTIAL_REAL_PCT:
+                out['prize'] = REWARD_PRIZE_MAX * 0.3
+                note((out['prize'],
+                      f'the thesis reaches {unit}{tp:.0f}% out — more than the ordinary target',
+                      f'התזה מגיעה ל-{unit}{tp:.0f}% מכאן — יותר מיעד רגיל'))
+
+        # ── Recovery room: the gap to close, and the old high to get back to ──
+        room = 0.0
+        entry = best.get('entry') or ctx.price
+        gap = None
+        for g in (s.overlays or {}).get('gaps') or []:
+            if (g.get('dir') == 'down' and g.get('far') and g['far'] > entry
+                    and ctx.atr and (g['far'] - entry) / ctx.atr <= REWARD_GAP_NEAR_ATR):
+                gap = g['far'] if gap is None else min(gap, float(g['far']))
+        if gap is not None:
+            room += REWARD_ROOM_MAX * 0.5
+            note((REWARD_ROOM_MAX * 0.5,
+                  f'an unfilled gap overhead at {gap:.2f} to close',
+                  f'גאפ פתוח מעל ב-{gap:.2f} שצריך להיסגר'))
+        if s.off_high >= REWARD_OFF_HIGH_BIG_PCT:
+            room += REWARD_ROOM_MAX * 0.5
+            note((REWARD_ROOM_MAX * 0.5,
+                  f'still {s.off_high:.0f}% under its own prior high',
+                  f'עדיין {s.off_high:.0f}% מתחת לשיא שלה'))
+        elif s.off_high >= REWARD_OFF_HIGH_REAL_PCT:
+            room += REWARD_ROOM_MAX * 0.25
+        out['room'] = min(room, REWARD_ROOM_MAX)
+
+        # ── Time, one-sided ──────────────────────────────────────────────────
+        # See TIME_EFFICIENCY_MAX: as a symmetric ± this billed a distant thesis
+        # twice, once through the odds discount already inside `expectancy` and
+        # again for the days that distance implies. What is left is the residue —
+        # a target so far out it is a different trade from the one being graded.
+        if thesis_atr is not None:
+            days, _hit = time_to_target(thesis_atr, ctx.atr_pct)
+            out['days'] = days
+            if days > TIME_SLOW_DAYS:
+                span = TIME_GLACIAL_DAYS - TIME_SLOW_DAYS
+                f = min(1.0, (days - TIME_SLOW_DAYS) / span)
+                out['time'] = -TIME_EFFICIENCY_MAX * f
+                if f >= 0.5:
+                    note((out['time'],
+                          f'the target is ~{days:.0f} trading days out — a long wait',
+                          f'היעד ~{days:.0f} ימי מסחר מכאן — המתנה ארוכה'))
+        return out
 
     def _grade(self, ctx, s: Signals, state, trigger, options, action, small_cap, earn):
         """
-        Three axes, because his own A-grade sentence has exactly three clauses:
-        "מעל נקודת הפריצה (trigger). מעל ממוצע 150 (setup). קרוב לממוצע (risk — the stop
-        is right there). מה עוד נותר לבקש" (GEV).
+        Four axes: EVENT, REWARD, STRUCTURE, RISK.
+
+        His own A-grade sentence has three clauses — "מעל נקודת הפריצה (the event).
+        מעל ממוצע 150 (structure). קרוב לממוצע (risk — the stop is right there). מה
+        עוד נותר לבקש" (GEV) — and for a long time this scored exactly those three.
+        The fourth is the owner's, and it is the one his posts assume rather than
+        state: he only posts a chart at all when he thinks it is worth something.
+        Grading without it produced the inversion that forced this rewrite — a
+        universe sweep where spearman(score, potential) came out at -0.10, the
+        median E[R] per letter ran A +0.17 / B +0.28 / C +0.21 / D +0.20, and CMG
+        (86% thesis, 12.4 R/R, positive expectancy) graded C 69 while KO (R/R 0.34,
+        E[R] -0.27, risking three times what its whole thesis was worth) graded
+        B 81. See GRADE_BUDGET for the full measurement.
         """
         B = GRADE_BUDGET
         price, atr = ctx.price, ctx.atr
@@ -1162,398 +1581,190 @@ class Judgement:
             notes.append((axis, float(w), en, he))
 
         d150 = ((price / ctx.sma150 - 1) * 100) if ctx.sma150 else 0.0
+        best = self._best_option(options, action)
+        thesis_pct, thesis_atr = self._thesis(ctx, s, best, state)
 
-        # Computed early (normally a risk-axis concern, see below) because SETUP
-        # needs it too, for POTENTIAL — see that block for why.
-        best_early = self._best_option(options, action)
-        thesis_atr_early = None
-        thesis_pct_early = None
-        if best_early and state not in ('broken', 'avoid', 'nothing_yet'):
-            _e0 = best_early.get('entry') or price
-            _ups0 = [t['price'] for t in (s.targets or [])
-                    if t.get('price') and t['price'] > _e0]
-            # The DISPLAY ladder (`s.targets`) is capped at MAX_TARGET_STATIONS=3 by
-            # design — the panel shows "next station → next → ATH", not an exhaustive
-            # list. But that means a genuinely far target can be silently truncated
-            # off before POTENTIAL ever sees it whenever 3+ nearer candidates crowd it
-            # out: ROP/IBM-style charts with several intermediate resistance levels
-            # between spot and the real ceiling. Owner's report: gap-closes and the
-            # ATH specifically — his own recurring targets ("סגירת הגאפ", the prior
-            # high) — should count toward potential even when they didn't make the
-            # panel's top 3. So POTENTIAL reads its own, uncapped candidate set
-            # directly: the ATH, and the far edge of any unfilled DOWN gap (the one
-            # his "סגירת הגאפ" language means — a gap price fell through, sitting
-            # overhead, closed by rallying back up to fill it).
-            if s.ath and s.ath > _e0:
-                _ups0.append(float(s.ath))
-            for g in (s.overlays or {}).get('gaps') or []:
-                if g.get('dir') == 'down' and g.get('far') and g['far'] > _e0:
-                    _ups0.append(float(g['far']))
-            if _ups0:
-                thesis_pct_early = (max(_ups0) / _e0 - 1) * 100
-                if ctx.atr_pct:
-                    thesis_atr_early = thesis_pct_early / ctx.atr_pct
-
-        # ── SETUP: is there a real structure here? ─────────────────────────────
-        setup = 0.0
-        # Being above the 150 is the anchor — but "קרוב לממוצע" is a separate clause of
-        # his A-grade sentence, and it is the one that decides whether a stop exists at
-        # all. A great chart 5 ATR above its average is the CRD case: "המניה מעולה,
-        # פשוט רחוקה כרגע מהממוצעים" — excellent, and not a trade from here.
+        # ── STRUCTURE: is there a real chart here? ─────────────────────────────
+        # Written against the 45-point basis every literal here was designed on and
+        # rescaled onto B['structure'] at the end, same contract as EVENT and RISK.
+        structure = 0.0
         if ctx.above_150:
             # Three-way, not two: "close to the average" is the A-grade clause, but
             # 15% above and 52% above are not the same chart and used to differ by a
             # single point out of a hundred. FTNT (+52%) and CRWD (+42%) scored the
-            # same here as F (+9%) and TEAM (+9%) — the exact pair the reader called
-            # out. See FAR_FROM_MA_PCT for his wording and the drawdown measurement.
+            # same here as F (+9%) and TEAM (+9%). See FAR_FROM_MA_PCT.
             if self._near_ma(ctx):
-                setup += 12
-                note('setup', 12, f'above the 150MA and close to it ({d150:+.0f}%)',
+                structure += 12
+                note('structure', 12, f'above the 150MA and close to it ({d150:+.0f}%)',
                      f'מעל ממוצע 150 וקרובה אליו ({d150:+.0f}%)')
             elif self._far_from_ma(ctx):
-                setup += 3
-                note('setup', -9, f'{d150:+.0f}% above the 150 — no tight stop from up here',
+                structure += 3
+                note('structure', -9, f'{d150:+.0f}% above the 150 — no tight stop from up here',
                      f'{d150:+.0f}% מעל ממוצע 150 — אין מכאן סטופ צמוד')
             else:
-                setup += 7
-                note('setup', 7, f'above the 150MA ({d150:+.0f}%)',
+                structure += 7
+                note('structure', 7, f'above the 150MA ({d150:+.0f}%)',
                      f'מעל ממוצע 150 ({d150:+.0f}%)')
             # "she crossed the average - correct. My problem is she has run so much in
-            # recent days… 6 consecutive green days" (CRWD). Reclaiming the 150 is a
-            # trigger by the method's own rules, and he still passed, because the run
-            # into it WAS the move. Charged here rather than on the trigger axis: the
-            # trigger is real, it is the entry that has gone bad.
+            # recent days… 6 consecutive green days" (CRWD). The trigger is real; it
+            # is the ENTRY that has gone bad, which is why this is charged here and
+            # not against the event.
             if s.ext.get('ran_hot'):
-                setup -= 5
-                note('setup', -5,
+                structure -= 5
+                note('structure', -5,
                      f"ran {s.ext.get('run_pct') or 0:+.0f}% in the last few days — the run into "
                      f"the trigger was the move",
                      f"רצה {s.ext.get('run_pct') or 0:+.0f}% בימים האחרונים — הריצה אל הטריגר "
                      f"הייתה המהלך")
             # "קצת מתוחה" — the band below his cap. He still takes these ("אתם לא
-            # מאחרים" AAPL) but flags the entry ("זהירות עם הכניסה" LUNR), so it
-            # costs a little and shows up in the argument rather than capping.
+            # מאחרים" AAPL) but flags the entry ("זהירות עם הכניסה" LUNR).
             if s.ext.get('mild'):
-                setup -= 2
-                note('setup', -2, f'a bit stretched from the average ({d150:+.0f}%)',
+                structure -= 2
+                note('structure', -2, f'a bit stretched from the average ({d150:+.0f}%)',
                      f'קצת מתוחה מהממוצע ({d150:+.0f}%)')
         elif ctx.sma150 and (ctx.sma150 - price) / atr <= NEAR_ATR:
-            setup += 9
-            note('setup', -3, f'just under the 150MA ({d150:+.0f}%) — not above it yet',
+            structure += 9
+            note('structure', -3, f'just under the 150MA ({d150:+.0f}%) — not above it yet',
                  f'ממש מתחת לממוצע 150 ({d150:+.0f}%) — עוד לא מעליו')
         elif s.dir_change and s.dir_change.get('turning'):
-            setup += 5
-            note('setup', -7, 'below the 150MA, but starting to change direction',
+            structure += 5
+            note('structure', -7, 'below the 150MA, but starting to change direction',
                  'מתחת לממוצע 150, אבל מתחילה לשנות כיוון')
         else:
-            note('setup', -12, 'below the 150MA — the anchor of the whole method is missing',
+            note('structure', -12, 'below the 150MA — the anchor of the whole method is missing',
                  'מתחת לממוצע 150 — העוגן של כל השיטה חסר')
         if s.trend == 'uptrend':
-            setup += 10
-            note('setup', 10, 'rising highs and rising lows', 'שיאים ושפלים עולים')
+            structure += 10
+            note('structure', 10, 'rising highs and rising lows', 'שיאים ושפלים עולים')
         elif s.trend == 'sideways':
-            setup += 5
-            note('setup', -5, 'sideways — no directional structure yet',
+            structure += 5
+            note('structure', -5, 'sideways — no directional structure yet',
                  'דשדוש — עוד אין מבנה כיווני')
         else:
-            note('setup', -10, 'lower highs and lower lows', 'שיאים ושפלים יורדים')
+            note('structure', -10, 'lower highs and lower lows', 'שיאים ושפלים יורדים')
         has_rl = bool(s.dir_change and any(
             st['done'] for st in s.dir_change['stages'] if st['key'] == 'rising_lows'))
         if has_rl:
-            setup += 4
+            structure += 4
             # Only call it a LINE when the chart actually draws one — the stage is
             # also satisfied by rising weekly lows with no drawable segment.
             rl = drawn_line(s.overlays, 'rising_lows')
             if rl:
-                note('setup', 4, f"the rising-lows line is holding ({rl.get('touches') or 0} touches)",
+                note('structure', 4,
+                     f"the rising-lows line is holding ({rl.get('touches') or 0} touches)",
                      f"קו השפלים העולים מחזיק ({rl.get('touches') or 0} נגיעות)")
             else:
-                note('setup', 4, 'rising lows on the weekly', 'שפלים עולים בשבועי')
+                note('structure', 4, 'rising lows on the weekly', 'שפלים עולים בשבועי')
         if s.pattern:
-            setup += 4
-            note('setup', 4, f'{s.pattern[0]} on the chart', f'{s.pattern[1]} על הגרף')
+            structure += 4
+            note('structure', 4, f'{s.pattern[0]} on the chart', f'{s.pattern[1]} על הגרף')
         if s.vol.get('trend') == 'rising':
-            setup += 5
-            note('setup', 5, 'volume expanding into the move', 'ווליום מתרחב לתוך המהלך')
+            structure += 5
+            note('structure', 5, 'volume expanding into the move', 'ווליום מתרחב לתוך המהלך')
         elif s.vol.get('trend') == 'flat':
-            setup += 2.5
+            structure += 2.5
         else:
-            note('setup', -5,
+            note('structure', -5,
                  "volume isn't expanding into the move — without it this isn't a breakout",
                  'הווליום לא מתרחב לתוך המהלך — ובלי זה זו לא פריצה')
         if s.candle.get('found'):
-            setup += 5
-            note('setup', 5, s.candle.get('label') or 'buyers candle',
+            structure += 5
+            note('structure', 5, s.candle.get('label') or 'buyers candle',
                  s.candle.get('label_he') or 'נר קונים')
-        # "קפיטולציה בווליום גבוה ואז התייצבות — תחתית אפשרית" (micha._capitulation):
-        # a high-volume wash-out after a deep decline that has since stabilized. This
-        # already GATES `_is_value` (whether a deep pullback counts as a buyable value
-        # entry) but was never itself worth a point in the grade — a chart that flushed
-        # hard on volume and held scored identically to one that just quietly drifted
-        # down. Owner's directive (2026-08-20): this sharp, irregular reset IS the event
-        # this method is looking for — it is also the entry with the least overhead
-        # supply and the most room back up, so score it, not just gate on it.
-        #
-        # PROVENANCE: reasoned from the directive, not measured — same status as
-        # HEADROOM_MAX / POTENTIAL_MAX. Small and additive rather than a cap-mover, same
-        # size as the candle/pattern bonuses beside it.
-        if s.capitulation:
-            setup += 5
-            note('setup', 5,
-                 'a high-volume wash-out then stabilizing — the flush that resets the risk',
-                 'קפיטולציה בווליום גבוה ואז התייצבות — התיקון שמאפס את הסיכון')
-        # An unfilled gap-up left below price. He treats one as a liability — "I am
-        # aware it has a gap below, THAT is why there is a stop" (ALAB), "if it turns
-        # it can go toward the gap" (TSLA), quoting 80% (TSLA) / 96%-in-90-days (VIX)
-        # fill rates. Measured over 40k entries above the 150, the sign is the other
-        # way round: E(2R) is +0.279 with a gap inside 2 ATR, +0.230 at 2-5, +0.167
-        # beyond, against +0.079 with no gap at all — monotonic in closeness, and the
-        # measured fill rate is 36% in 120 bars, not 80-96%. A gap left behind is
-        # evidence of the momentum event that made it, not a debt. His instinct is
-        # not wrong about the risk though: drawdown IS worse (-14.1% vs -13.0%),
-        # which is why the gap box stays a stop anchor (`_gap_below`) — the cost
-        # belongs on the stop, the edge belongs here. Small, and bounded by the axis.
-        # Kept deliberately small and short-range. A gap sits below most charts in an
-        # uptrend, so a wider or larger bonus is not a discriminator — it is a
-        # constant added to the whole universe, which just redefines the letters: at
-        # +3/+2/+1 it re-inflated CSCO from B83 back to A86 and lifted every name 1-3
-        # points. The measured edge is +0.2R of expectancy and it is concentrated in
-        # the near band, so it is priced as a nudge that can break a tie, not as a
-        # term that moves grades on its own.
+        # An unfilled gap-up left BELOW price. He treats one as a liability — "I am
+        # aware it has a gap below, THAT is why there is a stop" (ALAB). Measured
+        # over 40k entries above the 150 the sign is the other way round: E(2R) is
+        # +0.279 with a gap inside 2 ATR against +0.079 with none, monotonic in
+        # closeness. A gap left behind is evidence of the momentum event that made
+        # it, not a debt. His instinct is right about the RISK though (drawdown
+        # -14.1% vs -13.0%), which is why the gap box stays a stop anchor: the cost
+        # belongs on the stop, the edge belongs here. Deliberately a nudge — a gap
+        # sits below most charts in an uptrend, so anything larger is a constant
+        # added to the whole universe, which just redefines the letters.
         gap_atr = self._gap_below_atr(s.overlays, price, atr)
         if gap_atr is not None and gap_atr < 5:
-            setup += 2.0 if gap_atr < 2 else 1.0
+            structure += 2.0 if gap_atr < 2 else 1.0
 
-        # ── The break that just happened, weighted by what it broke ────────────
-        # "פריצה משמעותית מעל 21.45$" — the adjective is his. Clearing a wall the
-        # price has been rejected from four or more times is the event the method is
-        # organised around; clearing a two-touch high is not the same event and used
-        # to score identically, because `break_level` is only a price and the touch
-        # history lives on the level it came from.
-        brk = self._break_strength(s, atr)
-        if brk and state in ('breakout_now', 'holding'):
-            if brk['hard']:
-                setup += BREAK_HARD_BONUS
-                note('setup', BREAK_HARD_BONUS,
-                     f"broke a well-defended level at {brk['price']:.2f} "
-                     f"({brk['touches']} touches)",
-                     f"פרצה רמה חזקה ב-{brk['price']:.2f} ({brk['touches']} נגיעות)")
-            else:
-                setup += BREAK_SOFT_BONUS
-
-        # ── HEADROOM: is there anywhere to go? ─────────────────────────────────
+        # ── HEADROOM: is there anywhere to go before the next wall? ────────────
         # "יש לה מקום לרוץ" against "הבעיה זה ההתנגדויות מעל הראש" (CRWD). Bounded
         # small on purpose — see HEADROOM_MAX: a hard wall overhead is mostly a
         # statement about WHEN, not about whether the chart is any good, and `_state`
         # already carries the "when" by routing these to "wait for the break".
-        #
-        # Two guards, both copied from the time adjustment because the same traps
-        # apply. Skipped entirely for the dead states: a broken setup in a downtrend
-        # has "room above" only because it already fell, and paying for that is how
-        # the time term once lifted META/ADP/ZS out of F. And the BONUS half is paid
-        # only where there is a live thesis, so blue sky on a chart doing nothing
-        # cannot manufacture a letter.
+        # Skipped for the dead states: a broken setup in a downtrend has "room above"
+        # only because it already fell. The BONUS half is paid only where there is a
+        # live thesis, so blue sky on a chart doing nothing cannot manufacture a letter.
         headroom = None
         hr = None
         if state not in ('broken', 'avoid', 'nothing_yet'):
             entry_ref = price
-            bo = self._best_option(options, action)
-            if bo and bo.get('entry'):
-                entry_ref = max(float(price), float(bo['entry']))
+            if best and best.get('entry'):
+                entry_ref = max(float(price), float(best['entry']))
             hr = self._headroom(ctx, s, entry_ref)
             lvl = hr.get('level')
             live = state in ('breakout_now', 'buyers_at_level', 'value_pullback',
-                             'at_trigger', 'holding')
+                             'at_trigger', 'holding', 'turning')
             if lvl == 'tight':
                 headroom = -HEADROOM_MAX
-                note('setup', -HEADROOM_MAX,
+                note('structure', -HEADROOM_MAX,
                      f"a {hr['touches']}-touch wall at {hr['price']:.2f} is only "
                      f"{hr['atr']:.1f} ATR overhead — no room to run",
                      f"רמה עם {hr['touches']} נגיעות ב-{hr['price']:.2f} רק "
                      f"{hr['atr']:.1f} ATR מעל — אין מקום לרוץ")
             elif lvl == 'close':
                 headroom = -HEADROOM_MAX / 2
-                note('setup', -HEADROOM_MAX / 2,
+                note('structure', -HEADROOM_MAX / 2,
                      f"the next wall at {hr['price']:.2f} is {hr['atr']:.1f} ATR up — "
                      f"the move is cramped",
                      f"הרמה הבאה ב-{hr['price']:.2f} במרחק {hr['atr']:.1f} ATR — "
                      f"מעט מקום למהלך")
             elif lvl == 'clear' and live:
                 headroom = HEADROOM_MAX / 2
-                note('setup', HEADROOM_MAX / 2,
+                note('structure', HEADROOM_MAX / 2,
                      f"clear to {hr['price']:.2f} — {hr['atr']:.1f} ATR of room",
                      f"פנוי עד {hr['price']:.2f} — {hr['atr']:.1f} ATR של מקום")
             elif lvl == 'open' and live:
                 headroom = HEADROOM_MAX
-                note('setup', HEADROOM_MAX,
+                note('structure', HEADROOM_MAX,
                      'no hard resistance overhead — room to run',
                      'אין התנגדות משמעותית מעל — יש מקום לרוץ')
             if headroom:
-                setup += headroom
+                structure += headroom
 
-        # ── POTENTIAL: how big is the move if the thesis plays out? ────────────
-        # Owner's directive, stated as the priority correction to this whole grade:
-        # a stock still far below its own highs, breaking out with room ahead, was
-        # graded WORSE than a mature name a few percent from its ATH with nowhere
-        # left to run — MRNA (target ladder reaching +167%, 29 ATR out) sat at a
-        # bare C while GILD (ladder tops out +10%, ~2-4 ATR — its only target IS
-        # its ATH, there being no resistance above one by definition) sat at A.
-        # HEADROOM already answers "is the row directly ahead clear" (and correctly
-        # gave GILD full marks there — blue sky is blue sky). It does NOT answer
-        # "how big is the room past that," which is a different question and
-        # exactly the gap the owner is naming: two stocks can both have open road
-        # in front of them while one road is 3 ATR long and the other is 30.
-        #
-        # Uses `thesis_atr_early` — the SAME farthest-upward-target distance the
-        # risk axis's time-adjustment already computes (see below), reused rather
-        # than re-derived so this can never disagree with what the time term is
-        # separately penalizing for being distant/unlikely soon. ATR-normalized,
-        # not raw %, so this rewards genuine structural distance rather than just
-        # picking out volatile names (the same reason nothing else in this file
-        # scores in raw %) — measured against the SAME quantile bands the time
-        # adjustment's own study establishes (target-odds: 4-6 ATR reached 72.7%
-        # of the time, 6-9 ATR 53.0%, 9-13 ATR 24.8%, 13-20 ATR 6.2%): the bands
-        # below start paying only once a move is BIGGER than what "normal and
-        # likely" already covers, so this is deliberately not a reward for an
-        # ordinary target — the time term already pays for that.
-        #
-        # PROVENANCE: reasoned from the owner's explicit instruction, not measured
-        # — an attempted measurement of a related idea (room-to-first-wall) failed
-        # its own control earlier the same day (see HEADROOM_MAX). This is a
-        # different question (magnitude of the prize, not odds of collecting it
-        # soon) and the owner has directed it be reflected regardless; flagged
-        # here exactly as HEADROOM_MAX was, so a future pass knows what this
-        # rests on.
-        # ATR-normalizing the target distance is right in principle — it's why
-        # POTENTIAL_MIN_ATR_PCT exists, to stop a sleepy, sub-1.5%-ATR name's
-        # ORDINARY move from reading as huge purely because its own denominator is
-        # tiny (see AES in that constant's comment). But the same normalization
-        # cuts the other way on a genuinely volatile name: LRCX's real +43% thesis
-        # to its own ATH — by far the largest raw prize of any A-grade the day
-        # this was measured — converts to only ~6 ATR at its own 7.15%-ATR, which
-        # NEVER reaches POTENTIAL_REAL_ATR (9). A raw-percent floor, checked
-        # alongside the ATR bands (whichever is more generous wins), catches the
-        # case the ATR conversion structurally can't see: a move that large is a
-        # big prize on ANY stock regardless of how it happens to trade day to day.
-        # PROVENANCE: reasoned from the LRCX case, not measured — same status as
-        # the ATR bands themselves.
-        potential = 0.0
-        if thesis_pct_early is not None and state not in ('broken', 'avoid', 'nothing_yet'):
-            ta = (thesis_atr_early if (ctx.atr_pct and ctx.atr_pct >= POTENTIAL_MIN_ATR_PCT)
-                  else None)
-            tp = thesis_pct_early
-            atr_en = f"{ta:.0f} ATR / " if ta is not None else ''
-            if (ta is not None and ta >= POTENTIAL_HUGE_ATR) or tp >= POTENTIAL_HUGE_PCT:
-                potential = POTENTIAL_MAX
-                note('setup', potential,
-                     f"the thesis reaches {atr_en}{tp:.0f}% out — an exceptional amount of room",
-                     f"התזה מגיעה ל-{atr_en}{tp:.0f}% מכאן — כמות עצומה של מקום")
-            elif (ta is not None and ta >= POTENTIAL_BIG_ATR) or tp >= POTENTIAL_BIG_PCT:
-                potential = POTENTIAL_MAX * 0.6
-                note('setup', potential,
-                     f"the thesis reaches {atr_en}{tp:.0f}% out — real room beyond the near target",
-                     f"התזה מגיעה ל-{atr_en}{tp:.0f}% מכאן — מקום ממשי מעבר ליעד הקרוב")
-            elif (ta is not None and ta >= POTENTIAL_REAL_ATR) or tp >= POTENTIAL_REAL_PCT:
-                potential = POTENTIAL_MAX * 0.3
-                note('setup', potential,
-                     f"the thesis reaches {atr_en}{tp:.0f}% out — more than the ordinary target",
-                     f"התזה מגיעה ל-{atr_en}{tp:.0f}% מכאן — יותר מיעד רגיל")
-            if potential:
-                setup += potential
-
-        setup = max(0.0, min(setup, B['setup']))
-
-        # ── TRIGGER: how close is the thing that starts the trade? ─────────────
-        if state in ('breakout_now', 'buyers_at_level', 'value_pullback'):
-            # "Happening right now" is only true if the decisive line is behind us.
-            # When the engine has itself named a wall overhead — and named it beyond
-            # arm's reach — this axis may not also claim the road is open. Paying the
-            # full 30 regardless is what let TXN grade A 92 while a 10-touch wall sat
-            # 6.1% above it. `at_hand` keeps the full award: inside 1 ATR the break
-            # genuinely is in progress. See TRIGGER_ENTERING_OVERHEAD.
-            over = (trigger and trigger.get('price') and float(trigger['price']) > price
-                    and (trigger.get('wall') or {}).get('touches'))
-            reduced = TRIGGER_ENTERING_OVERHEAD.get(trigger['tier']) if over else None
-            if reduced is not None:
-                trig = float(reduced)
-                tp, tpc = trigger['price'], trigger['distance_pct']
-                trig_detail_en = (f"it broke a level, but the wall that caps this move — "
-                                  f"{tp:.2f} — is still {tpc:+.0f}% overhead")
-                trig_detail_he = (f"פרצה רמה, אבל הרמה שחוסמת את המהלך — {tp:.2f} — עדיין "
-                                  f"{tpc:+.0f}% מעל")
-                note('trigger', reduced - 30.0, trig_detail_en, trig_detail_he)
-            elif not potential:
-                # No NAMED wall stands in the way, but there also isn't a real prize
-                # to collect once this break is bought — `potential` (computed above,
-                # zero whenever the thesis never reaches POTENTIAL_REAL_ATR) is the
-                # SAME signal the setup axis already uses, reused here rather than a
-                # second test so the two axes cannot quietly disagree about what "a
-                # real prize" means. Owner's directive (2026-08-20): "the trigger is
-                # happening right now" should require both the way being clear AND
-                # there being somewhere worth going. See TRIGGER_ENTERING_NO_PRIZE.
-                trig = TRIGGER_ENTERING_NO_PRIZE
-                trig_detail_en = "it broke out, but there isn't much room left to run from here"
-                trig_detail_he = "פרצה, אבל אין הרבה מקום לרוץ מכאן"
-                note('trigger', TRIGGER_ENTERING_NO_PRIZE - 30.0, trig_detail_en, trig_detail_he)
-            else:
-                trig = 30.0                     # it is happening now — on the 30-point basis; rescaled below
-                trig_detail_en, trig_detail_he = 'the trigger is happening right now', 'הטריגר קורה ממש עכשיו'
-                note('trigger', 30, trig_detail_en, trig_detail_he)
-        elif trigger:
-            trig = {'at_hand': 24.0, 'near': 17.0, 'moderate': 9.0, 'far': 3.0}[trigger['tier']]
-            tp, td, tpc = trigger['price'], trigger['distance_atr'], trigger['distance_pct']
-            if trigger['tier'] == 'at_hand':
-                trig_detail_en = f"{trigger['what']} at {tp:.2f} is right overhead ({td:.1f} ATR)"
-                trig_detail_he = f"{trigger['what_he']} ב-{tp:.2f} ממש מעל הראש ({td:.1f} ATR)"
-                note('trigger', 24, trig_detail_en, trig_detail_he)
-            elif trigger['tier'] == 'near':
-                trig_detail_en, trig_detail_he = f"the trigger {tp:.2f} is {tpc:+.0f}% away", f"הטריגר {tp:.2f} במרחק {tpc:+.0f}%"
-                note('trigger', 17, trig_detail_en, trig_detail_he)
-            elif trigger['tier'] == 'moderate':
-                trig_detail_en = f"the trigger {tp:.2f} is still {tpc:+.0f}% away"
-                trig_detail_he = f"הטריגר {tp:.2f} עוד {tpc:+.0f}% מכאן"
-                note('trigger', -8, trig_detail_en, trig_detail_he)
-            else:
-                trig_detail_en, trig_detail_he = f"the breakout is far off — {tpc:+.0f}% from here", f"הפריצה רחוקה — {tpc:+.0f}% מכאן"
-                note('trigger', -14, trig_detail_en, trig_detail_he)
-        else:
-            trig = 6.0                          # blue sky: nothing overhead to clear
-            trig_detail_en, trig_detail_he = 'nothing overhead left to clear', 'אין מעל הראש מה לפרוץ'
-            note('trigger', 6, trig_detail_en, trig_detail_he)
-        if state in ('broken', 'avoid'):
-            trig = min(trig, 5.0)
-
-        # Rescale from the 30-point basis every literal above is written against
-        # onto whatever GRADE_BUDGET['trigger'] actually is — see the comment on
-        # GRADE_BUDGET for why this lives here rather than in each literal. Notes
-        # rescale with it so the why-sentence's numbers stay truthful.
-        trig_scale = B['trigger'] / 30.0
-        trig *= trig_scale
-        notes = [(ax, w * trig_scale, en, he) if ax == 'trigger' else (ax, w, en, he)
+        struct_scale = B['structure'] / 45.0
+        structure = max(0.0, min(structure, 45.0)) * struct_scale
+        notes = [(ax, w * struct_scale, en, he) if ax == 'structure' else (ax, w, en, he)
                  for ax, w, en, he in notes]
 
-        # ── RISK: the decisive axis — is the stop tight, real and obvious? ─────
-        best = self._best_option(options, action)
+        # ── EVENT ─────────────────────────────────────────────────────────────
+        ev = self._event(ctx, s, state, trigger)
+        event_scale = B['event'] / 30.0
+        event = ev['points'] * event_scale
+        # A real event is a reason TO be here; a wait is the absence of one. Filing
+        # the wait as a negative clause is what makes the sentence read "nothing has
+        # happened yet" rather than listing it among the things going for the chart.
+        happened = ev['key'] not in ('waiting', 'none')
+        note('event', (event if happened and not ev['capped']
+                       else -(B['event'] - event)), ev['en'], ev['he'])
 
-        # How far the thesis target is, and how often a target that far is actually
-        # reached. Measured over 62k real levels across 70 names x 5y: 4-6 ATR is
-        # reached 72.7% of the time, 6-9 ATR 53.0%, 9-13 ATR only 24.8%, 13-20 ATR
-        # 6.2%. Hoisted above both the R/R term and the time term because both need
-        # it — R/R states the size of the prize, this states the odds of collecting.
-        # Reuses `thesis_atr_early` (computed at the top of `_grade`, for POTENTIAL)
-        # rather than re-deriving it — the two can never quietly disagree about
-        # what "the thesis target" is.
-        thesis_atr = thesis_hit = None
-        if thesis_atr_early is not None and ctx.atr_pct:
-            thesis_atr = thesis_atr_early
-            _d, thesis_hit = time_to_target(thesis_atr, ctx.atr_pct)
+        # ── REWARD ────────────────────────────────────────────────────────────
+        rw = self._reward(ctx, s, best, thesis_pct, thesis_atr, state)
+        reward = max(0.0, min(rw['ev'] + rw['prize'] + rw['room'] + rw['time'],
+                              float(B['reward'])))
+        for w, en, he in rw['notes']:
+            note('reward', w, en, he)
 
+        # ── RISK: is the stop real? ───────────────────────────────────────────
+        # Deliberately the smallest axis, and deliberately no longer holding the
+        # reward-to-risk term — that moved to REWARD, where the size of the prize
+        # belongs. Owner's directive: "it's okay when there is risk, it's swing
+        # trading and we are willing to do so." What is left here is the one
+        # question the stop alone answers: is there a real place to be wrong.
         risk_score, stop_flag = 6.0, None       # no plan yet = unknown, not condemned
         if best:
             d = best.get('stop_atr')
             pct = best.get('risk_pct')
-            # Drop the "(±0.5%)" his stop notation carries — it is right for the plan
-            # row, but inside a flowing sentence it is a parenthesis too many.
+            # Drop the "(±0.5%)" his stop notation carries — right for the plan row,
+            # one parenthesis too many inside a flowing sentence.
             sw = (best.get('stop_what') or 'the structure').replace(' (±0.5%)', '')
             swh = (best.get('stop_what_he') or 'המבנה').replace(' (±0.5%)', '')
             sp = best.get('stop')
@@ -1568,25 +1779,16 @@ class Judgement:
                          f'סטופ צמוד {d:.1f} ATR מתחת ל{swh} ({sp:.2f})')
                 elif d < STOP_NOISE_ATR:
                     # The NUMBER here is kept as-is — this was tried as (0.15, 1.0)
-                    # on his own stop-placement practice, reverted the same hour
+                    # on his own stop-placement practice and reverted the same hour
                     # because the +2R evidence for it was an artifact (see
-                    # STOP_IDEAL_ATR), and touching the number again without a
-                    # measurement that survives its own control would repeat that
-                    # mistake.
+                    # STOP_IDEAL_ATR). Touching it again without a measurement that
+                    # survives its own control would repeat that mistake.
                     #
-                    # The NOTE is a different question, and it had its own bug: the
-                    # anchored-stop bonus a few lines below (`stop_anchored` -> +6)
-                    # already brings this branch's total to 10+6=16 — numerically
-                    # IDENTICAL to the 'ideal' branch above — but this complaint was
-                    # filed regardless and unconditionally, so `_grade_sentence`
-                    # picked it as "what holds the grade back" even on a fully
-                    # neutralized score. MRNA (owner's report): risk graded a plain
-                    # 20/30 with no penalty in the number, while its own why-sentence
-                    # said "the stop sits inside a single average day — ordinary
-                    # noise takes you out" as THE reason for the grade. Numerically
-                    # honest, narratively false — an anchored stop this tight is his
-                    # best case ("tight against a real wall"), not a caveat, and the
-                    # sentence should say so rather than contradict its own score.
+                    # The NOTE is a different question. An anchored stop this tight
+                    # is his best case ("tight against a real wall"), not a caveat,
+                    # and the `stop_anchored` bonus below already brings this branch
+                    # to the same total as 'ideal' — so complaining regardless made
+                    # the sentence contradict its own score (MRNA).
                     risk_score, stop_flag = 10.0, 'tight'
                     if best.get('stop_anchored'):
                         note('risk', 16, f'a tight stop {d:.1f} ATR under {sw} ({sp:.2f})',
@@ -1609,137 +1811,25 @@ class Judgement:
                      'אין מבנה מתחת — הסטופ הוא הערכת ATR')
 
             # NOT graded here: the thickness of the wall being broken
-            # (`trigger['floor']` gives it). It is a genuine standalone signal —
-            # measured on forward 20-day return over 395 of his posts, a band of
+            # (`trigger['floor']` gives it). A genuine standalone signal — a band of
             # 0.15-0.35 ATR returns +5.82% / 65% win against +1.06% / 44% for a
-            # sub-0.15 ATR hairline — and it is drawn on the chart for that reason.
-            # But adding it to this axis made the LETTER worse, not better:
-            #     A bucket's forward return   +4.88%  ->  +3.59% (bonus + penalty)
-            #                                          ->  +3.65% (penalty only)
-            #     A-vs-D spread                6.92pp ->   5.07pp
-            # i.e. the information is already inside what the axis scores, and
-            # paying for it twice flattens the top of the scale. See
-            # GRADE_BAND_IDEAL_ATR for the full bucket table.
-            rr = best.get('risk_reward')
-            if rr is not None:
-                # Below 1 the trade risks more than the whole thesis is worth — that is
-                # not a bad trade, it is not a trade, so it takes points off rather
-                # than merely earning few.
-                #
-                # The top of this scale used to stop at `rr >= 3`, which made a 3R and
-                # a 10R setup score identically. Measured (config.expectancy), the
-                # highest-expectancy shape in this method is a TIGHT stop with a FAR
-                # target — 1.0 ATR/10R pays +0.40R at a 12% win rate, beating every
-                # 2-3R combination — so a ceiling at 3 hid precisely the trades worth
-                # preferring. Extended, but only rewarded when the stop is genuinely
-                # tight: a 10R target hung off a 3 ATR stop is the timeout trap
-                # (-0.25R measured), not a home run, and `d` gates it below.
-                #
-                # …and scored on EXPECTED R (rr x the odds of reaching that target),
-                # not the headline ratio. Raw R/R quotes a prize without saying how
-                # often it is collected, so a thesis 9-13 ATR out (reached 24.8% of
-                # the time) earned exactly what one 4-6 ATR out (72.7%) did. That is
-                # the FTNT/PANW/CRWD case the ratio could not see: their whole reward
-                # case is a measured-move projection ~9.5 ATR overhead — FTNT's R/R to
-                # its last REAL chart level is 0.86 — while F and TEAM carry the same
-                # ratio to real levels at ~5.8 ATR, ~3x more likely to pay. He prices
-                # it the same way: "each one of these is a resistance and is expected
-                # to serve as a place for a slight correction" (BX), and the potential
-                # runs only "up to the lows-line which will serve as resistance" (CELH).
-                rr_eff = rr * thesis_hit if thesis_hit is not None else rr
-                # rr_eff is linear in rr, so an extreme ratio survives any
-                # proportional discount: CSCO reached 4.63 as 16.77 x 0.276 and F
-                # reached 4.20 as 7.53 x 0.558 — the same score for a 1-in-4 shot and
-                # a coin-flip-plus. The top brackets therefore also require the thesis
-                # to be one the market actually reaches; measured, 9-13 ATR out pays
-                # 24.8% of the time, and full marks for that is the "I don't see the
-                # potential" complaint in one number. CSCO's 16.77 is itself built on
-                # a 0.71 ATR stop — under STOP_IDEAL_ATR's 0.75 floor — which the stop
-                # bracket above already docked 4 points for, so without this the same
-                # too-tight stop is punished once and paid for twice.
-                odds_ok = thesis_hit is None or thesis_hit >= TARGET_ODDS_FLOOR
-                rr_pts = (11.0 if rr_eff >= 4.0 and odds_ok and d is not None and d <= 2.0 else
-                          10.0 if rr_eff >= 3.0 and odds_ok and d is not None and d <= 2.5 else
-                          8.0 if rr_eff >= 2.0 else 6.0 if rr_eff >= 1.5 else
-                          4.0 if rr_eff >= 1.0 else 1.0 if rr_eff >= 0.6 else -6.0)
-                risk_score += rr_pts
-                if rr < 1.0:
-                    note('risk', -10,
-                         f'risking more than the whole thesis is worth (R/R {rr:.1f})',
-                         f'מסכנים יותר ממה שכל התזה שווה (יחס {rr:.1f})')
-                elif rr_pts >= 10.0:
-                    note('risk', rr_pts, f'reward-to-risk {rr:.1f} to a target the market really reaches',
-                         f'יחס סיכוי/סיכון {rr:.1f} ליעד שהשוק באמת מגיע אליו')
-                elif thesis_hit is not None and not odds_ok:
-                    note('risk', -5,
-                         f'the thesis is a long shot — a target that far is reached '
-                         f'{thesis_hit*100:.0f}% of the time',
-                         f'התזה רחוקה — יעד במרחק כזה מושג ב-{thesis_hit*100:.0f}% מהמקרים')
-                else:
-                    note('risk', rr_pts, f'reward-to-risk {rr:.1f}', f'יחס סיכוי/סיכון {rr:.1f}')
-        # Rescale the stop+R/R portion from the 30-point basis every literal above is
-        # written against onto whatever GRADE_BUDGET['risk'] actually is — see the
-        # comment on GRADE_BUDGET. Deliberately BEFORE the time adjustment below:
-        # TIME is a fixed, bounded ±TIME_EFFICIENCY_MAX nudge (same contract as
-        # HEADROOM_MAX/POTENTIAL_MAX), meant to stay that size regardless of how
-        # risk's own budget is retuned — rescaling it too would silently shrink it
-        # to ±2.7 the moment risk's budget dropped, with no comment anywhere
-        # explaining why the displayed cap and the actual contribution no longer
-        # agreed. Notes rescale with the stop+R/R portion so the why-sentence's
-        # numbers stay truthful; TIME's own note (filed below) is untouched.
-        risk_scale = B['risk'] / 30.0
-        risk_score *= risk_scale
+            # sub-0.15 ATR hairline over 395 of his posts — but adding it made the
+            # LETTER worse, not better (A bucket +4.88% -> +3.59%, A-vs-D spread
+            # 6.92pp -> 5.07pp): the information is already inside what the axis
+            # scores, and paying twice flattens the top of the scale.
+
+        # Rescaled against what this axis can ACTUALLY reach, not against 30. The
+        # literals above were written when risk also carried the reward-to-risk term
+        # (up to +11); with that moved to REWARD the best attainable total here is
+        # 16 (an ideal stop) + 6 (anchored under real structure) = 22. Dividing by 30
+        # regardless capped the axis at 11 of its own 15 points — measured across 208
+        # names it never once exceeded 11.0, so a full quarter of the axis was
+        # unreachable and "perfect stop" and "good stop" compressed into each other.
+        RISK_ATTAINABLE = 22.0
+        risk_scale = B['risk'] / RISK_ATTAINABLE
+        risk_score = max(0.0, min(risk_score, RISK_ATTAINABLE)) * risk_scale
         notes = [(ax, w * risk_scale, en, he) if ax == 'risk' else (ax, w, en, he)
                  for ax, w, en, he in notes]
-
-        # ── TIME: the half of "reward" the R/R ratio cannot see ────────────────
-        # R/R says how much per unit of risk, never how long the money is tied up for
-        # — so it scores a 60-day grind and a 12-day move identically. Measured, the
-        # distance to the first station in ATR sets both the wait AND the odds
-        # (config.time_to_target), so one term covers both. Bounded to
-        # ±TIME_EFFICIENCY_MAX and never able to lift a capped state (the caps below
-        # are applied with min() afterwards).
-        eff_days = eff = None
-        # Only where there is a live thesis to be timed. On a setup that is over,
-        # "the target is close" is not a virtue — it is the MSTR trap the growth
-        # model used to print ("+30% ≈ 4 days, fast" under a headline of "get out"),
-        # and without this gate it was lifting META/ADP/ZS out of F.
-        # measured against the same target `risk_reward` is, so the pair reads as one
-        # sentence: this much reward per unit risk, in this long
-        if thesis_atr is not None:
-            eff_days, _hit = time_to_target(thesis_atr, ctx.atr_pct)
-            if eff_days <= TIME_FAST_DAYS:
-                eff = TIME_EFFICIENCY_MAX
-            elif eff_days >= TIME_SLOW_DAYS:
-                eff = -TIME_EFFICIENCY_MAX
-            elif eff_days <= TIME_MEDIAN_DAYS:
-                eff = TIME_EFFICIENCY_MAX * (TIME_MEDIAN_DAYS - eff_days) / \
-                      (TIME_MEDIAN_DAYS - TIME_FAST_DAYS)
-            else:
-                eff = -TIME_EFFICIENCY_MAX * (eff_days - TIME_MEDIAN_DAYS) / \
-                      (TIME_SLOW_DAYS - TIME_MEDIAN_DAYS)
-            # "Fast" is only a virtue if there is something to collect. A thesis
-            # target half an ATR overhead is quick because the ladder is nearly
-            # exhausted (AMD: 3 days, ~0.5 ATR of room) — speed there is a
-            # symptom of no upside, not of a good trade. R/R already punishes it;
-            # this stops the time term from paying for it at the same moment.
-            # Penalties stay unconditional — a slow thesis is slow regardless.
-            thesis_rr = best.get('risk_reward')
-            if eff > 0 and (thesis_rr is None or thesis_rr < 1.0):
-                eff = 0.0
-            # …and a stretched name does not get paid for being quick either: "you can
-            # see it is starting to be stretched — that means from here the rises
-            # should be slower / consolidation" (GOOGL). The curve is fitted on all
-            # bars above the 150 and so understates the wait for an extended one.
-            if eff > 0 and (s.ext.get('stretched') or s.ext.get('ran_hot')):
-                eff = 0.0
-            risk_score += eff
-            if eff > 0:
-                note('risk', eff, f'the thesis is ~{eff_days:.0f} trading days out — quick at this volatility',
-                     f'היעד ~{eff_days:.0f} ימי מסחר מכאן — מהיר בתנודתיות הזו')
-            elif eff < 0:
-                note('risk', eff, f'the target is ~{eff_days:.0f} trading days out — a long wait',
-                     f'היעד ~{eff_days:.0f} ימי מסחר מכאן — המתנה ארוכה')
 
         # NOTE — an "overhead congestion" penalty was built here from his
         # "הבעיה זה ההתנגדויות מעל הראש" (CRWD) and BX's "each of these is a
@@ -1749,12 +1839,10 @@ class Judgement:
         # stations — the shape this method wants) from A90 to B83, while F escaped
         # untouched only because its ladder is a single far target. That is backwards.
         # Re-reading the sources, BX is descriptive — the stations are where the move
-        # PAUSES, which is why the ladder exists — and the CRWD remark is about a doji
-        # that had not cleared anything, a state `nothing_yet`/`needs_buyers` already
-        # scores. Do not reintroduce without a measurement that keeps TEAM above F.
-        risk_score = max(0.0, min(risk_score, B['risk']))
+        # PAUSES, which is why the ladder exists. Do not reintroduce without a
+        # measurement that keeps TEAM above F.
 
-        score = setup + trig + risk_score
+        score = event + reward + structure + risk_score
         idx = next(i for i, lo in GRADE_BANDS if score >= lo)
 
         # ── His hard ceilings ─────────────────────────────────────────────────
@@ -1782,65 +1870,54 @@ class Judgement:
                 'מתחת לממוצע 150 במגמה יורדת', 1)
         if state == 'nothing_yet':
             # "עוד לא עשתה שום דבר" (PGR) is by definition a watchlist item, so it
-            # tops out at C — "on the watchlist, not ripe". Without this the risk
-            # axis scores a hypothetical breakout entry's stop and lifts a chart with
-            # no setup on it to a B, directly contradicting its own headline.
+            # tops out at C. Without this the risk axis scores a hypothetical
+            # breakout entry's stop and lifts a chart with no setup on it to a B,
+            # directly contradicting its own headline.
             cap('no_setup', "it hasn't done anything yet — watchlist only",
                 'עוד לא עשתה שום דבר — רשימת מעקב בלבד', 2)
         if stop_flag == 'wide':
             cap('stop_wide', 'no sane stop from here — that is not a stop in this method',
                 'אין סטופ הגיוני מכאן — זה לא סטופ בשיטה הזו', 1)
         if hr is not None and hr.get('level') == 'tight':
-            # An A means "everything lines up — מה עוד נותר לבקש". A well-defended wall
-            # sitting inside HEADROOM_TIGHT_ATR of the entry is something left to ask
-            # for, so this is a CEILING rather than a penalty.
-            #
-            # A ceiling because a points deduction cannot do this job: at ±4 on a
-            # ~100-point scale the adjustment left A and B statistically identical on
-            # room (median headroom 0.99 vs 0.98 ATR, 53% vs 59% of them cramped), so
-            # "graded A while under a hard wall" survived it. Making the term big
-            # enough to separate them would have pushed well-built charts toward F,
-            # which is exactly what the owner asked not to happen. A cap does both:
-            # the letter stops at B, and a good structure is still a good B.
+            # An A means "everything lines up — מה עוד נותר לבקש". A well-defended
+            # wall inside HEADROOM_TIGHT_ATR of the entry is something left to ask
+            # for, so this is a CEILING rather than a penalty: at ±4 on a ~100-point
+            # scale the adjustment left A and B statistically identical on room
+            # (median 0.99 vs 0.98 ATR), and a term big enough to separate them
+            # would have pushed well-built charts toward F.
             cap('no_room',
                 f"a {hr['touches']}-touch wall {hr['atr']:.1f} ATR above the entry "
                 f"({hr['price']:.2f}) — no room to run yet",
                 f"רמה עם {hr['touches']} נגיעות {hr['atr']:.1f} ATR מעל הכניסה "
                 f"({hr['price']:.2f}) — אין עדיין מקום לרוץ", 3)
-        # Symmetric to `no_room` above: that one reserves A for a chart with
-        # somewhere to go WHEN a wall is what's blocking it; this reserves A for a
-        # chart with somewhere to go, full stop. `potential` (computed earlier, in
-        # the SETUP section) is zero whenever the thesis never reaches
-        # POTENTIAL_REAL_ATR — a target ladder that never gets past the ordinary.
-        # Owner's directive (2026-08-20), reversing an earlier stance: a clean,
-        # well-defended setup with only a small remaining prize (GILD-style — its
-        # only target IS its own ATH, a few percent out) used to be treated as a
-        # legitimate A on structure alone. Measured against the live A-grade list
-        # the day this was written: 6 of 17 current A's had under ~12% total
-        # remaining upside to the farthest real target, with zero potential credit
-        # — exactly this case.
-        #
-        # Gated on `idx >= 4` (i.e. only when the raw score would otherwise BE an
-        # A) rather than firing on every potential-less setup: `not potential` is
-        # the ORDINARY case — most setups are, by design, not exceptional — so an
-        # ungated call would land in `caps` on the large majority of C/D 'enter'
-        # actions too and silently disable the `action=='enter' and not caps`
-        # floor-to-B rule below for all of them, reintroducing the exact
-        # grade/recommendation mismatch that rule exists to prevent. A cap rather
-        # than a bigger deduction for the same reason `no_room` is a cap: a
-        # deduction large enough to separate these on a ~100-point scale would
-        # also push well-built, merely-modest charts toward F.
-        if idx >= 4 and state not in ('broken', 'avoid', 'nothing_yet') and not potential:
+        # Symmetric to `no_room`: that one reserves A for a chart with somewhere to
+        # go WHEN a wall is what blocks it; this reserves A for a chart with
+        # somewhere to go, full stop. Gated on `idx >= 4` (only when the raw score
+        # would otherwise BE an A) rather than firing on every prize-less setup:
+        # most setups are by design not exceptional, so an ungated call would land
+        # in `caps` for the large majority of C/D 'enter' actions and silently
+        # disable the floor-to-B rule below for all of them.
+        if idx >= 4 and state not in ('broken', 'avoid', 'nothing_yet') and not rw['prize']:
             cap('no_potential',
                 "the thesis never reaches real room beyond the ordinary target — a "
                 "fine setup, but not the exceptional one an A promises",
                 'התזה אף פעם לא מגיעה למקום ממשי מעבר ליעד הרגיל — סט-אפ תקין, אבל '
                 'לא החריג שא\' מבטיח', 3)
+        # New with the four-axis split: an A may not be issued on a setup that loses
+        # money at its own measured odds. Before REWARD existed this could not be
+        # expressed at all — KO graded B 81 on an E[R] of -0.27 — and now that it
+        # can, it is worth stating as a ceiling too, because a negative expectancy
+        # is not "one caveat", it is the whole case failing.
+        if (rw['ev_r'] is not None and rw['ev_r'] < 0
+                and state not in ('broken', 'avoid', 'nothing_yet')):
+            cap('negative_ev',
+                f"negative expectancy ({rw['ev_r']:+.2f}R) — the odds do not pay for "
+                f"the risk at this target",
+                f"תוחלת שלילית ({rw['ev_r']:+.2f}R) — הסיכויים לא מצדיקים את הסיכון ליעד הזה", 2)
         if s.ext.get('severe'):
-            # Clear of BOTH the 150 and the 200 — "מהממוצעים", plural. This is the
-            # one he declines rather than merely flags: "מתוחה ורחוקה מהממוצע. האם זו
-            # נקודת כניסה מתאימה כרגע - אני לא בטוח" (RDDT, on a cup-and-handle he
-            # otherwise liked). One average gone is a caveat; both is not an entry.
+            # Clear of BOTH the 150 and the 200 — "מהממוצעים", plural. The one he
+            # declines rather than merely flags: "מתוחה ורחוקה מהממוצע. האם זו נקודת
+            # כניסה מתאימה כרגע - אני לא בטוח" (RDDT, on a cup-and-handle he liked).
             cap('stretched_far',
                 'far from BOTH the 150 and the 200 — not an entry point here',
                 'רחוקה משני הממוצעים (150 ו-200) — זו לא נקודת כניסה', 2)
@@ -1856,17 +1933,14 @@ class Judgement:
             idx = max(0, idx - 1)
 
         # The letter must not contradict the recommendation. GRADE_MEANING defines
-        # C as "on the watchlist — not ripe" — the literal opposite of an unconditional
-        # "enter" — so a floor of C (idx=2) let the two keep contradicting each other.
-        # AMZN was the case that surfaced it: a genuine fresh break (state=breakout_now,
-        # itself gated on a real level + volume, not a low bar) with a further wall at
-        # 'moderate' tier and an unremarkable stop combined their penalties down to a
-        # raw 65 — "Enter around 259.45" sitting under a badge whose own dictionary
-        # calls a C "not ripe." B's meaning ("a real setup with one caveat") is the
-        # lowest letter compatible with a genuine, gated entry, so idx=3 is the floor,
-        # not idx=2. No cap present means nothing DISQUALIFIED the entry — the low raw
-        # score here is components stacking, not a structural problem the letter should
-        # still be allowed to reflect.
+        # C as "on the watchlist — not ripe" — the literal opposite of an
+        # unconditional "enter" — so a floor of C let the two keep contradicting
+        # each other. AMZN surfaced it: a genuine fresh break with a further wall at
+        # 'moderate' tier and an unremarkable stop combined down to a raw 65, i.e.
+        # "Enter around 259.45" under a badge whose own dictionary calls it "not
+        # ripe". B ("a real setup with one caveat") is the lowest letter compatible
+        # with a genuine, gated entry. No cap present means nothing DISQUALIFIED the
+        # entry — the low raw score is components stacking, not a structural problem.
         if action == 'enter' and not caps:
             idx = max(idx, 3)
 
@@ -1876,22 +1950,44 @@ class Judgement:
         why_en, why_he = self._grade_sentence(notes, caps, GRADES[idx])
         return GRADES[idx], {
             'score': float(shown),
+            # ── 1-10, the headline number ─────────────────────────────────────
+            # Owner's call (2026-08-21): "maybe switch to a 1-10 scale, it is more
+            # wide and more correct to our case." Five letters is a coarse ranking
+            # instrument for a watchlist — the measured universe put 85 names in C
+            # and 74 in B out of 246, so two buckets held two thirds of everything
+            # and the reader had no way to order inside them. Ten does.
+            #
+            # Derived from the same 0-100 score rather than banded separately, so it
+            # can never disagree with the letter or with the axis totals that
+            # produced both: every cap, floor and band boundary still operates on
+            # `score`, and this is a presentation of it. The letter is kept because
+            # the ceiling machinery (`cap()`) is defined in band indices and because
+            # `grade_if_break`, `reasons.py` and the scan filters all key on it.
+            'rating': _rating(score),
+            'rating_max': 10,
             # Two sentences saying WHY this letter, composed from the notes filed by
             # the scoring above — see `_grade_sentence`.
             'summary': why_en, 'summary_he': why_he,
             'components': [
-                {'key': 'setup', 'label': 'Setup', 'label_he': 'מבנה',
-                 'got': jnum(setup), 'max': B['setup'],
+                # Reuses the SAME strings the matching `note()` calls filed rather
+                # than re-deriving them from `state`. That re-derivation was the bug:
+                # the row said "the trigger is happening now" whenever state was an
+                # entering one, even on the branch that had just scored a reduced
+                # total for "the wall that caps this move is still overhead".
+                {'key': 'event', 'label': 'Event', 'label_he': 'אירוע',
+                 'got': jnum(event), 'max': B['event'],
+                 'detail': ev['en'], 'detail_he': ev['he']},
+                {'key': 'reward', 'label': 'Reward', 'label_he': 'תשואה',
+                 'got': jnum(reward), 'max': B['reward'],
+                 'detail': (f"expectancy {rw['ev_r']:+.2f}R"
+                            + (f", thesis {thesis_pct:.0f}% out" if thesis_pct else '')
+                            if rw['ev_r'] is not None else 'no thesis priced yet'),
+                 'detail_he': (f"תוחלת {rw['ev_r']:+.2f}R"
+                               + (f", התזה {thesis_pct:.0f}% מכאן" if thesis_pct else '')
+                               if rw['ev_r'] is not None else 'אין עדיין תזה מתומחרת')},
+                {'key': 'structure', 'label': 'Structure', 'label_he': 'מבנה',
+                 'got': jnum(structure), 'max': B['structure'],
                  'detail': 'structure on the chart', 'detail_he': 'המבנה על הגרף'},
-                # Reuses the SAME string the matching `note()` call above filed, rather
-                # than re-deriving it from `state` alone. That re-derivation was the
-                # bug: it said "the trigger is happening now" whenever state was an
-                # entering one, even on the branch that had just SCORED a reduced 15/30
-                # for "it broke a level, but the wall that caps this move is still
-                # overhead" — the row's own number and its own caption disagreed.
-                {'key': 'trigger', 'label': 'Trigger', 'label_he': 'טריגר',
-                 'got': jnum(trig), 'max': B['trigger'],
-                 'detail': trig_detail_en, 'detail_he': trig_detail_he},
                 {'key': 'risk', 'label': 'Risk / stop', 'label_he': 'סיכון / סטופ',
                  'got': jnum(risk_score), 'max': B['risk'],
                  'detail': (f"stop {best['risk_pct']:.1f}% / {best['stop_atr']:.1f} ATR"
@@ -1899,44 +1995,36 @@ class Judgement:
                  'detail_he': (f"סטופ {best['risk_pct']:.1f}% / {best['stop_atr']:.1f} ATR"
                                if best and best.get('risk_pct') is not None else 'אין סטופ מוגדר')},
             ] + ([
-                # same contract as `time` below — a bounded adjustment already counted
-                # inside `setup`, surfaced so the reader can see what the wall cost
-                # The wording has to follow the SIGN. An earlier version read
-                # "clear for 0.8 ATR" beside a -2.0, i.e. it described a penalty as
-                # though it were room.
+                # a bounded ± adjustment already counted inside `structure`, surfaced
+                # so the reader can see what the wall cost. The wording follows the
+                # SIGN: an earlier version read "clear for 0.8 ATR" beside a -2.0.
                 {'key': 'headroom', 'label': 'Room above', 'label_he': 'מקום מעל',
                  'got': jnum(headroom), 'max': HEADROOM_MAX, 'adjustment': True,
                  'detail': self._headroom_detail(hr, False),
                  'detail_he': self._headroom_detail(hr, True)},
             ] if headroom else []) + ([
-                # same contract as `headroom` above — a bounded adjustment already
-                # counted inside `setup`, surfaced so the size of the prize is
-                # visible on its own line rather than buried inside the setup total
-                # Mirrors whichever path (ATR-normalized or raw-percent) actually
-                # qualified the tier inside the POTENTIAL block above — showing
-                # `thesis_atr_early` unconditionally here used to state a distance
-                # that had nothing to do with the tier actually earned whenever the
-                # raw-percent floor was what fired (a volatile name's ATR-normalized
-                # distance can sit well under the ATR bands while its raw percent
-                # alone clears them — see POTENTIAL_REAL_PCT).
+                # counted inside `reward`, surfaced so the size of the prize is
+                # visible on its own line. Mirrors whichever path (ATR-normalized or
+                # raw-percent) actually qualified the tier — showing the ATR distance
+                # unconditionally used to state a number that had nothing to do with
+                # the tier earned whenever the raw-percent floor was what fired.
                 {'key': 'potential', 'label': 'Potential', 'label_he': 'פוטנציאל',
-                 'got': jnum(potential), 'max': POTENTIAL_MAX, 'adjustment': True,
-                 'detail': (f"the thesis target is {thesis_atr_early:.0f} ATR / "
-                            f"{thesis_pct_early:.0f}% out"
+                 'got': jnum(rw['prize']), 'max': REWARD_PRIZE_MAX, 'adjustment': True,
+                 'detail': (f"the thesis target is {thesis_atr:.0f} ATR / {thesis_pct:.0f}% out"
                             if ctx.atr_pct and ctx.atr_pct >= POTENTIAL_MIN_ATR_PCT
-                            else f"the thesis target is {thesis_pct_early:.0f}% out"),
-                 'detail_he': (f"יעד התזה במרחק {thesis_atr_early:.0f} ATR / {thesis_pct_early:.0f}%"
+                            and thesis_atr is not None
+                            else f"the thesis target is {thesis_pct:.0f}% out"),
+                 'detail_he': (f"יעד התזה במרחק {thesis_atr:.0f} ATR / {thesis_pct:.0f}%"
                                if ctx.atr_pct and ctx.atr_pct >= POTENTIAL_MIN_ATR_PCT
-                               else f"יעד התזה במרחק {thesis_pct_early:.0f}%")},
-            ] if potential else []) + ([
-                # not a fourth axis — a named, bounded adjustment already counted
-                # inside `risk`, shown separately so the letter stays auditable
-                {'key': 'time', 'label': 'Time to target',
-                 'label_he': 'זמן ליעד',
-                 'got': jnum(eff), 'max': TIME_EFFICIENCY_MAX, 'adjustment': True,
-                 'detail': f"~{eff_days:.0f} trading days to the thesis target",
-                 'detail_he': f"~{eff_days:.0f} ימי מסחר ליעד"},
-            ] if eff is not None else []),
+                               and thesis_atr is not None
+                               else f"יעד התזה במרחק {thesis_pct:.0f}%")},
+            ] if rw['prize'] else []) + ([
+                # counted inside `reward`; one-sided now — see TIME_EFFICIENCY_MAX
+                {'key': 'time', 'label': 'Time to target', 'label_he': 'זמן ליעד',
+                 'got': jnum(rw['time']), 'max': TIME_EFFICIENCY_MAX, 'adjustment': True,
+                 'detail': f"~{rw['days']:.0f} trading days to the thesis target",
+                 'detail_he': f"~{rw['days']:.0f} ימי מסחר ליעד"},
+            ] if rw['time'] else []),
             'caps': [{'key': k, 'label': e, 'label_he': h, 'bound': bool(b)}
                      for k, e, h, b in caps],
         }
@@ -2000,7 +2088,7 @@ class Judgement:
         # and it is also the only order that reads: sorting the whole list by weight
         # alone opened F with "the trigger is happening right now", which is the
         # punchline, before saying anything about the chart it happened on.
-        axis_order = {'setup': 0, 'trigger': 1, 'risk': 2}
+        axis_order = {'structure': 0, 'event': 1, 'reward': 2, 'risk': 3}
         pos = sorted([n for n in notes if n[1] > 0],
                      key=lambda n: (axis_order.get(n[0], 3), -n[1]))
         neg = sorted([n for n in notes if n[1] < 0], key=lambda n: n[1])
@@ -2253,6 +2341,12 @@ class Judgement:
         if state == 'holding':
             return ("Above the 150MA and holding its structure — the move is intact.",
                     "מעל ממוצע 150 ושומרת על המבנה — המהלך תקין.")
+        if state == 'turning':
+            n = (s.dir_change or {}).get('stages_done') or 4
+            return (f"Bearish to bullish — {n} of the four stages are done, breakout "
+                    f"included, and it is still under the 150MA. The average is the entry.",
+                    f"שינוי כיוון — {n} מתוך ארבעת השלבים הושלמו, כולל הפריצה, והמניה "
+                    f"עדיין מתחת לממוצע 150. הממוצע הוא נקודת הכניסה.")
         if state == 'broken':
             lvl = f" {s.lost_level:.2f}" if s.lost_level else ''
             return (f"It just lost the level{lvl} it was built on, and it is under the 150MA.",

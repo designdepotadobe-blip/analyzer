@@ -247,6 +247,9 @@ export class AnalyzerPageComponent implements OnInit {
     buyers_at_level: '#26a69a',
     value_pullback: '#42a5f5',
     at_trigger: '#ffa726',
+    // the turn is a bullish event, not a wait — coloured with the entries rather
+    // than with the ambers, since it is one of the three the method enters on
+    turning: '#42a5f5',
     needs_buyers: '#ffa726',
     holding: '#66bb6a',
     nothing_yet: '#787b86',

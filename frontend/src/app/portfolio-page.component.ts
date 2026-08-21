@@ -15,6 +15,8 @@ export interface PortfolioRow {
   sector_icon: string | null;
   grade: 'A' | 'B' | 'C' | 'D' | 'F';
   grade_score: number;
+  /** the 1-10 the card shows; the letter stays as the colour band behind it */
+  rating: number;
   state: string;
   action: string;
   price: number;
@@ -124,7 +126,7 @@ function fromAnalysis(tk: string, a: Analysis): PortfolioRow {
   return {
     ticker: tk, held: true,
     sector: a.meta.sector, sector_icon: a.meta.sector_icon,
-    grade: m.grade, grade_score: m.grade_score,
+    grade: m.grade, grade_score: m.grade_score, rating: m.rating,
     state: m.state, action: m.action,
     price: a.meta.price,
     entry: best?.entry ?? null, stop: best?.stop ?? null, stop_atr: best?.stop_atr ?? null,
@@ -140,7 +142,7 @@ function fromScanHit(h: ScanHit, why?: string): PortfolioRow {
   return {
     ticker: h.ticker, held: false,
     sector: h.sector, sector_icon: h.sector_icon,
-    grade: h.grade, grade_score: h.grade_score,
+    grade: h.grade, grade_score: h.grade_score, rating: h.rating,
     state: h.state, action: h.action,
     price: h.price,
     entry: h.entry, stop: h.stop, stop_atr: h.stop_atr,

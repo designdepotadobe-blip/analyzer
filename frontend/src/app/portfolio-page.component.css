@@ -645,3 +645,23 @@
   .pf-risk-step, .pf-sectors-step, .pf-review-step { padding: 18px 14px 32px; }
   .pf-review-card { padding: 14px 16px; }
 }
+
+/* ── Bidi isolation for every "N/10" ──────────────────────────────────────────
+   These live inside dir="rtl" containers, and "6" + "/10" in an RTL paragraph
+   reorders to "10/6" — the browser is right, the string really is neutral-ended
+   digits either side of a slash. Verified in a headless screenshot: the CMG badge
+   read "10/6". `direction: ltr` fixes the ordering and `unicode-bidi: isolate`
+   stops the fix leaking into the Hebrew around it. Same class of bug as the one
+   the portfolio page hit; anything numeric-with-punctuation inside RTL needs it. */
+.decision-grade,
+.micha-grade,
+.ifbreak-to,
+.ifbreak-from,
+.ifbreak-score,
+.rd-tile-grade,
+.rd-card-grade,
+.pf-card-grade,
+.ql-grade {
+  direction: ltr;
+  unicode-bidi: isolate;
+}

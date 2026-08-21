@@ -180,8 +180,13 @@
         <div class="decision-head">
           <!-- hovering the badge gives the real per-stock reasoning, not the fixed
                per-letter string that says the same thing about every B -->
+          <!-- The headline is the 1-10 now, not the letter. Five letters could not
+               order a watchlist: a 246-name sweep put two thirds of the universe in
+               B and C. The letter stays as the colour band behind the number, so the
+               at-a-glance read (green = good) is unchanged while the number itself
+               says where inside that band this stock sits. -->
           <span class="decision-grade" [style.background]="gradeColor(a.micha.grade)"
-                [title]="a.micha.grade_why_he">{{ a.micha.grade }}</span>
+                [title]="a.micha.grade_why_he">{{ a.micha.rating }}<span class="of-ten">/10</span></span>
           <span class="decision-action">{{ a.micha.action_label_he }}</span>
           <span class="decision-state">{{ a.micha.state_label_he }}</span>
         </div>
@@ -256,14 +261,15 @@
                  arrowhead pointed AT D — reading as "B becomes D", backwards. -->
             <span class="ifbreak-txt" dir="rtl" *ngIf="ib.moves">
               אם תפרוץ {{ ib.at_price | number: '1.2-2' }} —
-              <span class="ifbreak-to" [style.background]="gradeColor(ib.grade)">{{ ib.grade }}</span>
+              <span class="ifbreak-to" [style.background]="gradeColor(ib.grade)">{{ ib.rating }}/10</span>
               ←
-              <span class="ifbreak-from" [style.color]="gradeColor(a.micha.grade)">{{ a.micha.grade }}</span>
-              <span class="ifbreak-score">({{ ib.score | number: '1.0-0' }}{{ ib.delta > 0 ? '+' : '' }}{{ ib.delta | number: '1.0-0' }})</span>
+              <span class="ifbreak-from" [style.color]="gradeColor(a.micha.grade)">{{ a.micha.rating }}/10</span>
+              <span class="ifbreak-score">({{ ib.score | number: '1.0-0' }}, {{ ib.delta > 0 ? '+' : '' }}{{ ib.delta | number: '1.0-0' }})</span>
             </span>
             <span class="ifbreak-txt" dir="rtl" *ngIf="!ib.moves">
-              גם אם תפרוץ {{ ib.at_price | number: '1.2-2' }} — נשארת {{ ib.grade }}
-              ({{ ib.score | number: '1.0-0' }}{{ ib.delta >= 0 ? '+' : '' }}{{ ib.delta | number: '1.0-0' }})
+              גם אם תפרוץ {{ ib.at_price | number: '1.2-2' }} — נשארת
+              <span class="ifbreak-from">{{ ib.rating }}/10</span>
+              <span class="ifbreak-score">({{ ib.score | number: '1.0-0' }}, {{ ib.delta >= 0 ? '+' : '' }}{{ ib.delta | number: '1.0-0' }})</span>
             </span>
           </div>
           <!-- What the projected letter would rest on, in the same two sentences as
@@ -361,9 +367,12 @@
 
       <div class="micha-details">
         <div class="micha-head">
-          <span class="micha-grade" [style.background]="gradeColor(a.micha.grade)">{{ a.micha.grade }}</span>
+          <span class="micha-grade" [style.background]="gradeColor(a.micha.grade)">{{ a.micha.rating }}<span class="of-ten">/10</span></span>
           <div class="micha-grade-meaning" dir="rtl">
-            <span class="gm-sub">{{ a.micha.grade_score | number: '1.0-0' }}/100</span>
+            <!-- the letter and the raw score stay here, one level down: they are what
+                 every cap, band and scan filter is still written in terms of, and a
+                 reader auditing the four axis bars below needs the total they sum to -->
+            <span class="gm-sub">{{ a.micha.grade }} · {{ a.micha.grade_score | number: '1.0-0' }}/100</span>
           </div>
         </div>
 
@@ -380,9 +389,12 @@
              bug documented in the run skill. -->
         <p class="grade-why" *ngIf="a.micha.grade_why_he" dir="rtl">{{ a.micha.grade_why_he }}</p>
 
-        <!-- ── Why this grade: the three axes ────────────────────────────────
-             They are the three clauses of his own top-grade sentence: is there a
-             structure, is the trigger in hand, and is the stop right there. -->
+        <!-- ── Why this grade: the four axes ─────────────────────────────────
+             Three of them are the clauses of his own top-grade sentence — is there a
+             structure, did the thing happen, is the stop right there — and REWARD is
+             the one his posts assume rather than state: he only posts a chart when he
+             thinks it is worth something. Grading without it left the score
+             negatively correlated with the size of the prize. -->
         <div class="grade-bd" *ngIf="a.micha.grade_breakdown as bd" dir="rtl">
           <ng-container *ngFor="let c of bd.components">
             <!-- `time` is a signed ± already folded into `risk`, so it gets a

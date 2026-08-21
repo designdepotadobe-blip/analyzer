@@ -209,7 +209,7 @@
               <button type="button" class="rd-tile" *ngFor="let sg of enteringNowGroups"
                       (click)="openSector('enteringNow', sg.sector)">
                 <span class="rd-tile-top">
-                  <span class="rd-tile-grade" [style.background]="gradeColor(sg.rows[0].grade)">{{ sg.rows[0].grade }}</span>
+                  <span class="rd-tile-grade" [style.background]="gradeColor(sg.rows[0].grade)">{{ sg.rows[0].rating }}</span>
                   <span class="rd-tile-icon">{{ sg.icon }}</span>
                 </span>
                 <span class="rd-tile-sector">{{ sg.sector }}</span>
@@ -232,7 +232,7 @@
               <button type="button" class="rd-tile" *ngFor="let sg of readyGroups"
                       (click)="openSector('ready', sg.sector)">
                 <span class="rd-tile-top">
-                  <span class="rd-tile-grade" [style.background]="gradeColor(sg.rows[0].grade)">{{ sg.rows[0].grade }}</span>
+                  <span class="rd-tile-grade" [style.background]="gradeColor(sg.rows[0].grade)">{{ sg.rows[0].rating }}</span>
                   <span class="rd-tile-icon">{{ sg.icon }}</span>
                 </span>
                 <span class="rd-tile-sector">{{ sg.sector }}</span>
@@ -290,7 +290,7 @@
     (click)="onCardTap(h.ticker)"
   >
     <div class="rd-card-top">
-      <span class="rd-card-grade" [style.background]="gradeColor(h.grade)">{{ h.grade }}</span>
+      <span class="rd-card-grade" [style.background]="gradeColor(h.grade)">{{ h.rating }}</span>
       <span class="rd-card-tk">{{ h.ticker }}</span>
     </div>
 

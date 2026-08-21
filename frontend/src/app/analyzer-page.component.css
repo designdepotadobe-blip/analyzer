@@ -359,7 +359,10 @@ button:disabled {
   font-size: 13px;
   font-weight: 800;
   color: #0e1117;
-  width: 24px;
+  /* was a 24px square holding one letter; it now holds "7/10", so it grows on the
+     long axis only and keeps the same height as the action text beside it */
+  min-width: 24px;
+  padding: 0 6px;
   height: 24px;
   flex-shrink: 0;
   display: inline-flex;
@@ -863,7 +866,8 @@ button:disabled {
   font-size: 20px;
   font-weight: 800;
   color: #0e1117;
-  width: 34px;
+  min-width: 34px;
+  padding: 0 7px;
   height: 34px;
   flex-shrink: 0;
   display: inline-flex;
@@ -1491,4 +1495,34 @@ button:disabled {
     max-height: 38vh;
     padding: 10px 12px;
   }
+}
+
+/* "/10" rides along with the rating but must not compete with it — the number is
+   the reading, the denominator is only there so a 7 is not mistaken for a 7%. */
+.decision-grade .of-ten,
+.micha-grade .of-ten {
+  font-size: 0.62em;
+  font-weight: 700;
+  opacity: 0.72;
+  margin-inline-start: 1px;
+}
+
+/* ── Bidi isolation for every "N/10" ──────────────────────────────────────────
+   These live inside dir="rtl" containers, and "6" + "/10" in an RTL paragraph
+   reorders to "10/6" — the browser is right, the string really is neutral-ended
+   digits either side of a slash. Verified in a headless screenshot: the CMG badge
+   read "10/6". `direction: ltr` fixes the ordering and `unicode-bidi: isolate`
+   stops the fix leaking into the Hebrew around it. Same class of bug as the one
+   the portfolio page hit; anything numeric-with-punctuation inside RTL needs it. */
+.decision-grade,
+.micha-grade,
+.ifbreak-to,
+.ifbreak-from,
+.ifbreak-score,
+.rd-tile-grade,
+.rd-card-grade,
+.pf-card-grade,
+.ql-grade {
+  direction: ltr;
+  unicode-bidi: isolate;
 }

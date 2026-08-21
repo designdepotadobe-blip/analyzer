@@ -18,3 +18,6 @@ scratch_*
 # harvested Discord corpus — raw messages + chart images, pulled by
 # discord_harvest.py. Large, and it is someone else's content: keep it local.
 corpus/
+
+# validation harness caches (history pickles, scored runs)
+.harness/

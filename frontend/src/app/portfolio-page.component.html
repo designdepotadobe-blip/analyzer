@@ -133,7 +133,7 @@
                   (mouseenter)="onCardEnter(c.ticker, $event)" (mouseleave)="onCardLeave()"
                   (click)="onCardTap(c.ticker)">
             <div class="pf-card-top">
-              <span class="pf-card-grade" [style.background]="gradeColor(c.grade)">{{ c.grade }}</span>
+              <span class="pf-card-grade" [style.background]="gradeColor(c.grade)">{{ c.rating }}</span>
               <span class="pf-card-tk">{{ c.ticker }}</span>
             </div>
             <div class="pf-card-meta">
@@ -264,7 +264,7 @@
           (mouseenter)="onCardEnter(h.ticker, $event)" (mouseleave)="onCardLeave()"
           (click)="onCardTap(h.ticker)">
     <div class="pf-card-top">
-      <span class="pf-card-grade" [style.background]="gradeColor(h.grade)">{{ h.grade }}</span>
+      <span class="pf-card-grade" [style.background]="gradeColor(h.grade)">{{ h.rating }}</span>
       <span class="pf-card-tk">{{ h.ticker }}</span>
     </div>
 

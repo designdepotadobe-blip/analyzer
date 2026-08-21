@@ -41,7 +41,8 @@ for p in (os.path.join(ROOT, "backend"), ROOT):
 REQUIRED_TOP = ("ticker", "meta", "bars", "indicators", "overlays", "setups", "micha")
 REQUIRED_META = ("sector", "industry", "logo_url", "sector_icon")
 REQUIRED_MICHA = (
-    "state", "action", "grade", "grade_score", "grade_breakdown", "report",
+    "state", "action", "grade", "grade_score", "rating", "rating_max",
+    "grade_breakdown", "report",
     "reasons", "options", "trigger", "alert", "hold_level", "targets", "scenarios",
     "notes", "chart_focus", "level_context",
     # micha.py rebuilds its output dict field by field, so a key computed correctly
@@ -89,7 +90,8 @@ def cmd_analyze(args) -> int:
         rep = m["report"]
         out(f"\n{'=' * 76}")
         out(f"{tk}  ${meta['price']}  150MA={meta['sma150']}  ATR%={meta['atr_pct']}")
-        out(f"  STATE  {m['state']:16} ACTION {m['action']:13} GRADE {m['grade']} {m['grade_score']}")
+        out(f"  STATE  {m['state']:16} ACTION {m['action']:13} "
+            f"RATING {m['rating']}/10  (grade {m['grade']} {m['grade_score']})")
         for c in m["grade_breakdown"]["components"]:
             out(f"     {c['key']:8} {c['got']:>5}/{c['max']:<4} {c['detail']}")
         caps = m["grade_breakdown"]["caps"]

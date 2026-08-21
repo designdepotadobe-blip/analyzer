@@ -217,6 +217,8 @@ def scan(
                 'action': m['action'],
                 'grade': m['grade'],
                 'grade_score': m['grade_score'],
+                # the headline 1-10 the cards lead with — see verdict._rating
+                'rating': m.get('rating'), 'rating_max': m.get('rating_max'),
                 'call_he': m['report']['call_he'],
                 # The WHY. `call_he` restates the entry and the stop, which the row
                 # already prints as prices — on a card the two together said the

@@ -125,7 +125,11 @@ export interface Meta {
 /** The state machine in verdict.py — every one of his posts lands in one of these. */
 export type MichaState =
   | 'breakout_now' | 'buyers_at_level' | 'value_pullback' | 'at_trigger'
-  | 'needs_buyers' | 'holding' | 'nothing_yet' | 'broken' | 'avoid';
+  | 'needs_buyers' | 'holding' | 'nothing_yet' | 'broken' | 'avoid'
+  /** bearish->bullish, all four stages of "שינוי כיוון" done including the break,
+   *  while still under the 150. Before this existed the same chart was filed as
+   *  `broken` or `avoid` and capped at D/F. */
+  | 'turning';
 
 /** What to actually do. `out` = the setup ended, assume the stop was hit. */
 export type MichaAction =
@@ -367,19 +371,26 @@ export interface MichaDirectionChange {
   stages: MichaDcStage[];
 }
 
-/** One axis of the grade. The three match the three clauses of his own A-grade
- *  sentence: "מעל נקודת הפריצה (trigger). מעל ממוצע 150 (setup). קרוב לממוצע (risk —
- *  the stop is right there). מה עוד נותר לבקש" (GEV). */
+/** One axis of the grade.
+ *
+ *  Four now, not three. Three of them are the three clauses of his own top-grade
+ *  sentence — "מעל נקודת הפריצה (event). מעל ממוצע 150 (structure). קרוב לממוצע
+ *  (risk — the stop is right there). מה עוד נותר לבקש" (GEV) — and `reward` is the
+ *  one his posts assume rather than state: he only posts a chart at all when he
+ *  thinks it is worth something. Grading without it inverted the whole scale (a
+ *  universe sweep measured the score NEGATIVELY correlated with the size of the
+ *  prize); see backend config.GRADE_BUDGET for the measurement. */
 export interface MichaGradeComponent {
-  key: 'setup' | 'trigger' | 'risk' | 'time';
+  key: 'event' | 'reward' | 'structure' | 'risk' | 'time' | 'headroom' | 'potential';
   label: string;
   label_he: string;
   got: number;
   max: number;
-  /** True for `time` (counted inside `risk`) and `headroom` (counted inside
-   *  `setup`): a signed ± adjustment ALREADY included in its axis, listed separately
-   *  so the letter stays auditable. Neither is a fourth axis — do not add them to
-   *  the others or the total will double-count. */
+  /** True for the named sub-terms — `headroom` (counted inside `structure`),
+   *  `potential` and `time` (both counted inside `reward`): a signed ± adjustment
+   *  ALREADY included in its axis, listed separately so the letter stays auditable.
+   *  None of them is a fifth axis — do not add them to the others or the total will
+   *  double-count. */
   adjustment?: boolean;
   detail?: string;
   detail_he?: string;
@@ -398,6 +409,8 @@ export interface MichaGradeCap {
 
 export interface MichaGradeBreakdown {
   score: number;
+  rating: number;
+  rating_max: number;
   /** The same two sentences as `Micha.grade_why` — see there. */
   summary: string;
   summary_he: string;
@@ -420,6 +433,9 @@ export interface MichaGradeIfBreak {
   grade: 'A' | 'B' | 'C' | 'D' | 'F';
   score: number;
   delta: number;
+  /** the projected 1-10, and its change from today's */
+  rating: number;
+  rating_delta: number;
   /** True when the projected LETTER differs from today's — the case worth flagging */
   moves: boolean;
   at_price: number;
@@ -497,6 +513,16 @@ export interface Micha {
   alert: MichaAlert | null;
   grade: 'A' | 'B' | 'C' | 'D' | 'F';
   grade_score: number;
+  /** The headline number the panel and the cards lead with: 1-10.
+   *
+   *  Five letters could not order a watchlist — a 246-name sweep put 85 in C and 74
+   *  in B, so two thirds of the universe sat in two indistinguishable piles. This is
+   *  derived from the SAME 0-100 `grade_score`, not banded separately, so it can
+   *  never disagree with the letter; the letter is kept because the ceiling
+   *  machinery and the scan filters are written in terms of it. */
+  rating: number;
+  rating_max: number;
+
   grade_meaning: string;
   grade_meaning_he: string;
   /** Why THIS stock earned THIS letter, in two sentences: what carries the grade,
@@ -591,6 +617,16 @@ export interface ScanHit {
   action: MichaAction;
   grade: 'A' | 'B' | 'C' | 'D' | 'F';
   grade_score: number;
+  /** The headline number the panel and the cards lead with: 1-10.
+   *
+   *  Five letters could not order a watchlist — a 246-name sweep put 85 in C and 74
+   *  in B, so two thirds of the universe sat in two indistinguishable piles. This is
+   *  derived from the SAME 0-100 `grade_score`, not banded separately, so it can
+   *  never disagree with the letter; the letter is kept because the ceiling
+   *  machinery and the scan filters are written in terms of it. */
+  rating: number;
+  rating_max: number;
+
   call_he: string;
   /** The WHY — the half of his post that isn't a price. `call_he` restates the
    *  entry and stop, which a card already prints as numbers. */

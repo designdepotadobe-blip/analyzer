@@ -63,7 +63,7 @@
     <ng-container *ngIf="!loading && analysis as a">
       <div class="ql-head">
         <span class="ql-grade" [style.background]="gradeColor(a.micha.grade)"
-              [title]="a.micha.grade_why_he">{{ a.micha.grade }}</span>
+              [title]="a.micha.grade_why_he">{{ a.micha.rating }}<span class="of-ten">/10</span></span>
         <span class="ql-price">{{ a.meta.price | number: '1.2-2' }}</span>
         <span class="ql-sector" *ngIf="a.meta.sector_icon">{{ a.meta.sector_icon }}</span>
         <span class="ql-state">{{ a.micha.state_label_he }}</span>
