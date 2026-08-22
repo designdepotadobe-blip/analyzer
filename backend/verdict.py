@@ -52,7 +52,9 @@ from config import (
     EVENT_SOFT_BREAK,
     EVENT_STALE_BARS,
     EVENT_STALE_FLOOR,
-    EVENT_TIERS,
+    EVENT_WAIT_FAR,
+    EVENT_WAIT_NEAR,
+    EVENT_WAIT_SPAN_ATR,
     EVENT_TURNING,
     EVENT_UNDER_WALL,
     HEADROOM_CLEAR_ATR,
@@ -85,6 +87,7 @@ from config import (
     STOP_NOISE_ATR,
     STOP_POSITION_WIDEN,
     STOP_RISK_BUDGET_PCT,
+    STOP_SUPPORT_MAX_ATR,
     STOP_WIDE_ATR,
     REWARD_PRIZE_CAP_PCT,
     REWARD_PRIZE_FLOOR_PCT,
@@ -1193,6 +1196,19 @@ class Judgement:
             cands.append((float(lo), "the signal candle's low", 'הנמוך של נר הקונים'))
         if s.recent_low and s.recent_low < entry:
             cands.append((float(s.recent_low), 'the recent low', 'הנמוך האחרון'))
+        # ── The previous support level ────────────────────────────────────────
+        # Owner (2026-08-22): "the stop doesn't have to be very tight, it can be the
+        # previous support level if it's not that far." It was barely reachable:
+        # measured over 245 names, 157 stops anchored to the bottom of the line
+        # being broken and exactly 4 to a support level, because the only support
+        # that ever became a candidate was whatever `_hold_level` happened to pick.
+        # A tested support below the entry is the most obvious "am I wrong" line on
+        # the chart and belongs in the running.
+        for lv in (s.sup_levels or []):
+            b = _edge(lv, 'sup')
+            if b and b < entry and (entry - b) <= STOP_SUPPORT_MAX_ATR * atr:
+                cands.append((float(b), f"the support at {lv['price']:.2f}",
+                              f"התמיכה ב-{lv['price']:.2f}"))
 
         # Among real structures he takes the TIGHTEST one that still gives the trade
         # room to breathe — "סטופ די קרוב" (CHRD), "סטופ קרוב למניעת טעויות" (BBAI),
@@ -1213,8 +1229,20 @@ class Judgement:
         if floor and float(floor) < entry:
             fl = float(floor)
             if not usable or fl > max(c[0] for c in usable):
-                usable = [c for c in cands if c[0] == fl] or usable
-                anchored = True
+                # ...but not when the band floor is a HAIRLINE and a real support
+                # sits just below it. The exemption exists so his own 0.43-ATR
+                # placement is not vetoed by the noise floor, not to force a stop
+                # tighter than the chart's own structure: measured, it was pulling
+                # 34% of names under 0.5 ATR, which the grade then complained about.
+                # A support within STOP_SUPPORT_MAX_ATR is the better line whenever
+                # the floor alone would be inside the noise band.
+                sup_alt = max((c for c in cands if c[0] < noise_floor
+                               and 'support' in c[1]), key=lambda c: c[0], default=None)
+                if (entry - fl) < STOP_NOISE_ATR * atr and sup_alt:
+                    usable, anchored = [sup_alt], True
+                else:
+                    usable = [c for c in cands if c[0] == fl] or usable
+                    anchored = True
         if usable:
             anchor, anchor_en, anchor_he = max(usable, key=lambda c: c[0])
         elif cands:
@@ -1417,7 +1445,12 @@ class Judgement:
                 en += f' ({age} bars ago)'
                 he += f' (לפני {age} נרות)'
         elif trigger:
-            pts = EVENT_TIERS[trigger['tier']]
+            # Continuous in distance — see EVENT_WAIT_NEAR. Nothing has happened
+            # either way, so the whole range sits below any real event; what varies
+            # is how close the decision is.
+            d = max(0.0, float(trigger.get('distance_atr') or 0.0))
+            f = min(1.0, d / EVENT_WAIT_SPAN_ATR)
+            pts = EVENT_WAIT_NEAR - (EVENT_WAIT_NEAR - EVENT_WAIT_FAR) * f
             key = 'waiting'
             tp, tpc, td = trigger['price'], trigger['distance_pct'], trigger['distance_atr']
             if trigger['tier'] == 'at_hand':
@@ -1788,68 +1821,53 @@ class Judgement:
         if best:
             d = best.get('stop_atr')
             pct = best.get('risk_pct')
-            # Drop the "(±0.5%)" his stop notation carries — right for the plan row,
-            # one parenthesis too many inside a flowing sentence.
             sw = (best.get('stop_what') or 'the structure').replace(' (±0.5%)', '')
             swh = (best.get('stop_what_he') or 'המבנה').replace(' (±0.5%)', '')
             sp = best.get('stop')
+            anchored = bool(best.get('stop_anchored'))
+            # ── Width is not the question; REALITY is ─────────────────────────
+            # Owner (2026-08-22): "the stop doesn't have to be very tight, it can be
+            # the previous support level if it's not that far", and "a far stop is
+            # not so bad a thing". This axis used to grade the WIDTH on a four-step
+            # curve — ideal 16, hairline 10, ≤3 ATR 12, wider 7 — which is a
+            # judgement the method does not actually make. His own doctrine is the
+            # opposite: the stop is the price of admission, and a stop under a real
+            # level is a good stop whether it sits 0.4 ATR away or 2.5.
+            #
+            # It was also incoherent with `_stop`, which picks the TIGHTEST
+            # structural candidate: measured, 34% of names came back under the 0.5
+            # ATR noise floor, i.e. the engine chose a hairline and then docked the
+            # grade for it being one.
+            #
+            # So the axis is now close to binary — is there a real place to be
+            # wrong — and the width only matters at the extreme where it stops
+            # being a stop at all (STOP_WIDE_ATR / STOP_MAX_RISK_PCT), which still
+            # caps the letter below.
             if d is not None and pct is not None:
                 if d > STOP_WIDE_ATR or pct > STOP_MAX_RISK_PCT:
                     risk_score, stop_flag = 0.0, 'wide'
                     note('risk', -16, f'no sane stop from here — {pct:.0f}% of the position',
                          f'אין סטופ הגיוני מכאן — {pct:.0f}% מהכניסה')
-                elif STOP_IDEAL_ATR[0] <= d <= STOP_IDEAL_ATR[1]:
-                    risk_score = 16.0           # exactly what he wants
-                    note('risk', 16, f'a tight stop {d:.1f} ATR under {sw} ({sp:.2f})',
-                         f'סטופ צמוד {d:.1f} ATR מתחת ל{swh} ({sp:.2f})')
+                elif anchored:
+                    risk_score = 16.0
+                    note('risk', 16, f'the stop sits under {sw} ({sp:.2f}) — {d:.1f} ATR / {pct:.0f}%',
+                         f'הסטופ מתחת ל{swh} ({sp:.2f}) — {d:.1f} ATR / {pct:.0f}%')
                 elif d < STOP_NOISE_ATR:
-                    # The NUMBER here is kept as-is — this was tried as (0.15, 1.0)
-                    # on his own stop-placement practice and reverted the same hour
-                    # because the +2R evidence for it was an artifact (see
-                    # STOP_IDEAL_ATR). Touching it again without a measurement that
-                    # survives its own control would repeat that mistake.
-                    #
-                    # The NOTE is a different question. An anchored stop this tight
-                    # is his best case ("tight against a real wall"), not a caveat,
-                    # and the `stop_anchored` bonus below already brings this branch
-                    # to the same total as 'ideal' — so complaining regardless made
-                    # the sentence contradict its own score (MRNA).
-                    risk_score, stop_flag = 10.0, 'tight'
-                    if best.get('stop_anchored'):
-                        note('risk', 16, f'a tight stop {d:.1f} ATR under {sw} ({sp:.2f})',
-                             f'סטופ צמוד {d:.1f} ATR מתחת ל{swh} ({sp:.2f})')
-                    else:
-                        note('risk', -6,
-                             f'the stop sits inside a single average day ({d:.1f} ATR) — ordinary '
-                             f'noise takes you out',
-                             f'הסטופ בתוך יום ממוצע אחד ({d:.1f} ATR) — רעש רגיל יוציא אותך')
+                    # unanchored AND hairline: nothing behind it, and inside a day's
+                    # noise. That is the one width complaint that survives.
+                    risk_score, stop_flag = 8.0, 'tight'
+                    note('risk', -8,
+                         f'the stop sits inside a single average day ({d:.1f} ATR) with no '
+                         f'structure behind it',
+                         f'הסטופ בתוך יום ממוצע אחד ({d:.1f} ATR) ובלי מבנה מאחוריו')
                 else:
-                    risk_score = 12.0 if d <= 3.0 else 7.0
-                    stop_flag = 'loose' if d > 3.0 else None
-                    note('risk', -4 if d <= 3.0 else -9,
-                         f'the stop is wide — {pct:.0f}% / {d:.1f} ATR from the entry',
-                         f'הסטופ רחב — {pct:.0f}% / {d:.1f} ATR מהכניסה')
-            if best.get('stop_anchored'):
+                    risk_score = 12.0
+            if anchored:
                 risk_score += 6.0               # under a real structure, not an ATR guess
             else:
                 note('risk', -6, 'nothing structural below — the stop is an ATR guess',
                      'אין מבנה מתחת — הסטופ הוא הערכת ATR')
 
-            # NOT graded here: the thickness of the wall being broken
-            # (`trigger['floor']` gives it). A genuine standalone signal — a band of
-            # 0.15-0.35 ATR returns +5.82% / 65% win against +1.06% / 44% for a
-            # sub-0.15 ATR hairline over 395 of his posts — but adding it made the
-            # LETTER worse, not better (A bucket +4.88% -> +3.59%, A-vs-D spread
-            # 6.92pp -> 5.07pp): the information is already inside what the axis
-            # scores, and paying twice flattens the top of the scale.
-
-        # Rescaled against what this axis can ACTUALLY reach, not against 30. The
-        # literals above were written when risk also carried the reward-to-risk term
-        # (up to +11); with that moved to REWARD the best attainable total here is
-        # 16 (an ideal stop) + 6 (anchored under real structure) = 22. Dividing by 30
-        # regardless capped the axis at 11 of its own 15 points — measured across 208
-        # names it never once exceeded 11.0, so a full quarter of the axis was
-        # unreachable and "perfect stop" and "good stop" compressed into each other.
         RISK_ATTAINABLE = 22.0
         risk_scale = B['risk'] / RISK_ATTAINABLE
         risk_score = max(0.0, min(risk_score, RISK_ATTAINABLE)) * risk_scale

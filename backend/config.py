@@ -579,7 +579,16 @@ TRIGGER_ENTERING_NO_PRIZE = 20.0
 # Same rescale contract as before: literal point values inside `_grade`'s EVENT and
 # RISK sections are written against a 30-point basis and rescaled to whatever these
 # say. Change the numbers here; nothing else needs to change to stay in sync.
-GRADE_BUDGET = {'event': 30, 'reward': 30, 'structure': 25, 'risk': 15}
+# Rebalanced 2026-08-22, after the owner's "the stop doesn't have to be very tight"
+# and "a far stop is not so bad a thing" were applied. Once width stops being
+# graded, RISK has almost nothing left to say — it becomes "is there a real place
+# to be wrong", which is nearly always yes: measured over 245 names it returned
+# 15.0 for the p10 AND the p90, i.e. a constant. An axis that pays everyone the
+# same is not an axis, it is a 15-point offset, and it was crowding out the two
+# that actually discriminate (EVENT sd 7.3, REWARD sd 6.4). Cut to 8 and the
+# difference given to the two the owner cares about. RISK still vetoes through
+# `stop_wide`, which caps the letter rather than shaving points.
+GRADE_BUDGET = {'event': 33, 'reward': 34, 'structure': 25, 'risk': 8}
 # Recalibrated with the four-axis budget, because the old boundaries were fitted to
 # a scale that no longer exists. Under the three-axis split `setup` and `trigger`
 # moved together — a tidy chart coiled under a wall scored well on both — so totals
@@ -621,7 +630,16 @@ EVENT_CAPITULATION = 18.0    # the high-volume flush, then stabilizing
 EVENT_TURNING = 14.0         # 3 of the 4 stages — turning, not yet turned
 # Nothing has happened yet; this is the WAIT, priced as a wait. The old trigger axis
 # paid 28/35 here, which is why a coiled mega-cap outranked a confirmed turn.
-EVENT_TIERS = {'at_hand': 12.0, 'near': 8.0, 'moderate': 4.0, 'far': 2.0}
+# Continuous, not tiered. Measured over 245 names, the tiered version returned
+# 12.0 for SEVENTY-ONE of them and 16.0 for another 35 — two constants covering
+# 43% of the universe on the axis carrying the most weight. That is most of the
+# reason the ratings piled into 5 and 6 (63% of names): with EVENT quantised and
+# RISK nearly constant, only REWARD and STRUCTURE were moving, ~10 points of
+# spread on a 100-point scale. A wait is still a wait; it just now says HOW
+# close, and a wall 0.2 ATR overhead stops scoring identically to one 1.0 away.
+EVENT_WAIT_NEAR = 14.0       # trigger essentially touching
+EVENT_WAIT_FAR = 2.0         # trigger at the far end of reach
+EVENT_WAIT_SPAN_ATR = 4.0    # ...over this many ATR of distance
 EVENT_NONE = 3.0             # blue sky: nothing overhead to clear, nothing done yet
 # How long an event stays THE event. A break 30 bars ago is history, not news, and
 # without a decay the catalogue above would keep paying full marks for it long after
@@ -967,3 +985,9 @@ FIB_EXT_RATIOS = (1.272, 1.618, 2.0)
 # a couple of percent overhead — true, useless, and 68% of the universe.
 FIB_EXT_MIN_DROP_PCT = 10.0  # a correction shallower than this is noise
 FIB_EXT_MIN_ROOM_PCT = 8.0   # ...and the 1.618 must sit at least this far above
+
+# How far below the entry a previous support level may sit and still be the stop.
+# Owner (2026-08-22): "it can be the previous support level if it's not that far",
+# and separately "a far stop is not so bad a thing" — so this is generous. Past it
+# the level stops being this trade's invalidation and becomes a different trade's.
+STOP_SUPPORT_MAX_ATR = 3.0
