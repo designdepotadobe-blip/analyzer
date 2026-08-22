@@ -625,6 +625,20 @@ EVENT_HARD_BREAK = 30.0      # a 4+-touch wall, or a multi-touch descending line
 EVENT_DIR_CHANGE = 30.0      # all four stages of "שינוי כיוון", breakout included
 EVENT_MA150_RECLAIM = 26.0   # back above the anchor of the whole method
 EVENT_SOFT_BREAK = 21.0      # a real level, but a 2-3 touch one — not the same event
+# The break, and then the pullback back to it holding — "יש לנו את הקאפ, יש לנו את
+# הפריצה, יש לנו את הבדיקת תמיכה ... יש לנו את הכל מה שאנחנו צריכים" (community live
+# 2026-04-23, said again over NVDA on 05-05 and over the 04-28 cup). This is the one
+# entry he calls "מצוינת" rather than "מעניינת", and it outranks the bare break in
+# his own commentary: at the break he warns "חכו לפריצה שלא סתם תעופו בסטופ"; at the
+# retest the line has been proved and the stop is back under it.
+#
+# Sits AT the top of the basis rather than above it: every literal in this block is
+# written against 30 points and rescaled to GRADE_BUDGET['event'] by `_event`, so a
+# 32 here would have emitted 35.2 out of a 33-point axis (it did, on LRCX, before
+# this was corrected). It ties with EVENT_HARD_BREAK on points and outranks it on
+# EVENT_PRIORITY below, which is the honest relationship: the break and the retest
+# are the same event one beat apart, and only the naming differs.
+EVENT_RETEST = 30.0          # broke the wall, came back to it, buyers held it
 EVENT_BOUNCE = 20.0          # buyers stepped in ON a floor: a confirmed candle at the level
 EVENT_CAPITULATION = 18.0    # the high-volume flush, then stabilizing
 EVENT_TURNING = 14.0         # 3 of the 4 stages — turning, not yet turned
@@ -637,15 +651,56 @@ EVENT_TURNING = 14.0         # 3 of the 4 stages — turning, not yet turned
 # RISK nearly constant, only REWARD and STRUCTURE were moving, ~10 points of
 # spread on a 100-point scale. A wait is still a wait; it just now says HOW
 # close, and a wall 0.2 ATR overhead stops scoring identically to one 1.0 away.
+# The events are alternatives, and two of them can legitimately tie on points. The
+# tie-break is which one DESCRIBES the chart best, not which happens to be earlier in
+# the candidate list — a retest is always accompanied by the break that created the
+# line, so on a bare `max()` the retest sentence could never be the one shown. Higher
+# wins; anything unlisted sorts last, which only affects the wording.
+EVENT_PRIORITY = {'retest': 5, 'dir_change': 4, 'hard_break': 3, 'ma150_reclaim': 2,
+                  'soft_break': 1}
+# No event may score more than the basis every literal above is written against. A
+# defensive invariant, not a tuning knob: EVENT_RETEST was briefly set to 32 and
+# emitted 35.2 out of a 33-point axis, because the rescale multiplies rather than
+# clamps. Keep this equal to the largest legal event value.
+EVENT_BASIS = 30.0
 EVENT_WAIT_NEAR = 14.0       # trigger essentially touching
 EVENT_WAIT_FAR = 2.0         # trigger at the far end of reach
 EVENT_WAIT_SPAN_ATR = 4.0    # ...over this many ATR of distance
 EVENT_NONE = 3.0             # blue sky: nothing overhead to clear, nothing done yet
 # How long an event stays THE event. A break 30 bars ago is history, not news, and
 # without a decay the catalogue above would keep paying full marks for it long after
-# the entry it describes has gone. Full value while fresh, then straight-line to
-# half by the time it is this old.
-EVENT_FRESH_BARS = 5
+# the entry it describes has gone. Full value through the CONFIRMATION window, then
+# straight-line to half by the time it is this old.
+#
+# Owner's question (2026-08-22): does a fresh break actually outperform a break that
+# has already held for a couple of weeks? Tested directly — the real pipeline run
+# twice per call (once as shipped, once with this constant raised to 15, nothing
+# else touched) against 361 of his live calls, forward 15 and 20 trading days:
+#
+#     spearman(score, exc)   15b: +0.059 -> +0.069     20b: +0.010 -> +0.023
+#     AB-vs-DF median spread 15b: +1.55  -> +1.64       20b: +0.99  -> +1.05
+#
+# Small — only 39 of 361 names move at all, since most events are either already
+# fresh or already past the stale cutoff under both settings — but consistently in
+# the right direction at both horizons with no observed downside. Was 5: a breakout
+# 6-14 bars old was already decaying under the old value despite still being well
+# inside the window this method actually trades on ("20 דק' 20 מניות" is read in
+# days, not hours). This is Variant A (just the window's start pushed out); a fuller
+# version — reduced credit in the first 0-4 bars specifically, since those scored
+# WORSE than the 5-15 window on the same sample — was scoped but not built; flag for
+# a follow-up if the smaller effect here is worth chasing further.
+# Where "pending" becomes "confirmed" for display — a SEPARATE question from
+# EVENT_FRESH_BARS, which decides scoring. The same real-pipeline test that
+# justified raising EVENT_FRESH_BARS to 15 (see there) measured the turning
+# point directly, in bands: age 0-5 median exc_20 -3.21%, 5-8 -3.92%, 8-12
+# -0.69%, 12-18 +0.87%, 18-25 +17.55%. Forward performance turns positive
+# between 8 and 12 bars, not at 5 (an early guess, made before this was
+# measured) and not at 15 (EVENT_FRESH_BARS's OWN threshold, chosen for how
+# much the SCORE should decay, which is a different question from when a
+# reader should trust the event as proven). 8 is the conservative edge of the
+# measured turn — the last band that is still net negative.
+EVENT_CONFIRM_BARS = 8
+EVENT_FRESH_BARS = 15
 EVENT_STALE_BARS = 25
 EVENT_STALE_FLOOR = 0.5
 # What a NON-break event may score while an unbroken, touch-tested wall still sits
@@ -673,8 +728,25 @@ EVENT_UNDER_WALL = 16.0
 #       argument on a longer horizon. Both were computable and neither was scored.
 #
 # EV carries the most because it is the only one of the three that is measured.
-REWARD_EV_MAX = 14.0
-REWARD_PRIZE_MAX = 12.0
+#
+# ── Why these don't sum to GRADE_BUDGET['reward'] (34) ─────────────────────────
+# They didn't, for a while, and it was a bug of the exact shape as REWARD_EV_FULL
+# and REWARD_PRIZE_CAP_PCT above: 14+12+4 = 30, four points of the 34-point axis
+# unreachable by any stock, because TIME (below) only ever SUBTRACTS — its "BONUS
+# half is gone entirely" per the 2026-08-21 rewrite — so nothing fills the gap the
+# original budget left for it. Measured: the 245-name live sweep's observed REWARD
+# maximum was 29.8, a hair under the 30-point structural ceiling and nowhere near
+# 34, and the whole grade's observed maximum topped out at 92 for the same reason
+# (33 EVENT + 30 REWARD + 25 STRUCTURE + 8 RISK ≈ 96, not 100). That is why "8-10"
+# read as underused — not a display problem, a budget that was never fully spent.
+#
+# Fixed by folding the four spare points into EV and PRIZE, proportionally, so the
+# 14:12 ratio (the same one "EV carries the most" argues for) is preserved at
+# 16:14 — ROOM stays deliberately small, per its own docstring, rather than being
+# inflated to hit a round number. Recompute if EV_FULL, the prize ramp, or ROOM
+# itself changes again; this is arithmetic, not a fresh calibration.
+REWARD_EV_MAX = 16.0
+REWARD_PRIZE_MAX = 14.0
 REWARD_ROOM_MAX = 4.0
 
 # ── The prize, in PERCENT, on a continuous ramp ───────────────────────────────
@@ -704,11 +776,67 @@ REWARD_ROOM_MAX = 4.0
 # quotes out loud: 14, 25, 47, 50, 59, 74, 80, 96, 103%. Below the floor it is not a
 # prize; at the cap it is his "כמעט להכפיל את השווי".
 REWARD_PRIZE_FLOOR_PCT = 10.0
-REWARD_PRIZE_CAP_PCT = 100.0
-# E[R] bands, in R. The grid tops out at R=10 (see `expectancy`), so a perfect score
-# here means "as good as anything we have measured", not "unbounded".
-REWARD_EV_BANDS = ((1.20, 1.00), (0.80, 0.85), (0.50, 0.70),
-                   (0.30, 0.55), (0.15, 0.40), (0.00, 0.22))
+# ── The cap is his TYPICAL prize, not his largest ─────────────────────────────
+# 100.0 was read off the top of the list of potentials he says out loud, which put
+# the saturation point at his 90th percentile and left the ramp's whole usable
+# range above anything he normally posts. Measured properly, from 2,945 posts in
+# the setup channel (2025-01 .. 2026-08) plus the potentials spoken in 29 of the
+# community lives:
+#
+#     his stated potential:   p10 12%   p25 15%   p50 30%   p75 50%   p90 100%
+#     our own computed thesis: p10 13%   p25 18%   p50 31%   p75 58%   p90 102%
+#
+# The two distributions agree almost exactly, which is a good independent check on
+# `_thesis` — and it means the MEDIAN setup he thinks is worth posting scored
+# (30-10)/90 = 2.8 out of 12 here, i.e. 23% of the prize term for a completely
+# ordinary Micha trade. "פוטנציאל של 44%" (KRE) paid 4.5/12. The ramp was
+# measuring his outliers and calling everything else nothing.
+#
+# Set at his p75-p80, so a typical posted setup lands mid-scale and only the cases
+# he describes as "כמעט להכפיל את השווי" saturate. Above the cap the differences
+# stop being meaningful anyway: a 96% thesis and a 162% one are the same trade with
+# the same plan, and the odds discount inside `expectancy` is what separates them.
+REWARD_PRIZE_CAP_PCT = 60.0
+# ── The EV scale is DERIVED from the grid, never written down beside it ───────
+# This term was a table of six bands asking for E[R] >= 1.20 to pay full marks.
+# It could not pay full marks to anything, ever. `expectancy()` clamps the reward
+# ratio to the last measured knot (r_eff = min(rr, 10)) — added later, to kill the
+# AES artifact where a flat probability tail manufactured E[R] = +1.59 out of
+# nothing — and once R is clamped the whole measured surface has a maximum:
+#
+#     stop 1.0 ATR, R = 8  ->  p = .152  ->  E[R] = +0.368   <- the best there is
+#
+# Measured over a 245-name live sweep after the clamp went in, the EV term took
+# exactly FOUR values in the entire universe — {0.00, 3.08, 5.60, 7.70} — and its
+# ceiling was 7.70 of 14.0. Every stock in the market was losing 6.3 points of a
+# 100-point grade to a constant that had gone stale, and the top three bands were
+# unreachable code. That is most of the reason the ratings piled up at 5 and 6:
+# the axis carrying the most weight was a 4-position switch whose top position
+# paid 55%.
+#
+# So the scale is no longer a literal. `REWARD_EV_FULL` is computed FROM
+# `expectancy()` by scanning its own domain, which means re-measuring the P(win)
+# grid or changing the clamp automatically re-scales the term instead of silently
+# capping it again. Continuous rather than banded, for the reason already stated
+# at REWARD_PRIZE_FLOOR_PCT: three steps over a range this narrow quantise setups
+# that are not alike.
+def _ev_attainable_max() -> float:
+    """The best E[R] `expectancy()` can return, found by scanning its own domain."""
+    best = 0.0
+    for i in range(1, 61):                    # 0.05 .. 3.0 ATR, past the grid's edge
+        s = i * 0.05
+        for j in range(1, 121):               # R 0.1 .. 12.0, past the R=10 clamp
+            _, e = expectancy(s, j * 0.1)
+            if e is not None and e > best:
+                best = e
+    return round(best, 3)
+
+
+REWARD_EV_FULL = _ev_attainable_max()       # ≈ 0.368 R on the current grid
+# Where the copy switches from praising the expectancy to complaining about it.
+# Fractions of REWARD_EV_FULL, so they follow the scale like everything else.
+REWARD_EV_GOOD_FRAC = 0.70
+REWARD_EV_THIN_FRAC = 0.40
 # Below zero the setup loses money at its own measured odds. That is not a weak
 # trade, it is a negative one, so it takes the axis to nothing rather than scoring
 # a small positive — KO's real case: R/R 0.34, E[R] -0.27, graded B 81.
@@ -761,6 +889,19 @@ TRIGGER_ZONE_ATR = 0.6
 # strongest walls on the way. Clearing the first wall of a cluster is not a
 # breakout; declaring three separate walls one cluster is not a wall.
 TRIGGER_MAX_SPAN_ATR = 0.6
+
+# ...but the span cap must not end up defending a line nobody has tested. When it
+# rejects a wall, `_trigger` re-anchors the quote onto that wall instead of naming
+# the weak one — but ONLY when the wall is this many times better defended than the
+# best line currently in the zone. See the block in `_trigger` for the measurement
+# (14 of 159 names, ten of them quoting a 0-2 touch line under a 10-45 touch wall)
+# and for why this cannot reintroduce the IONQ chain the span cap exists to stop:
+# IONQ's rungs got progressively WEAKER (20 -> 18 -> 13), so a "materially stronger"
+# test never fires there. 2.0 is deliberately conservative — where the quoted line is
+# already a real wall and the one above is only somewhat better tested (AOS 22 -> 33,
+# ALLE 16 -> 17, SHOP 10 -> 12) naming the lower line is the correct call and this
+# leaves those alone.
+TRIGGER_REANCHOR_TOUCH_MULT = 2.0
 
 # "קרוב לממוצע" is a clause of his A-grade sentence, and distance from it is a
 # spectrum he grades explicitly: RDDT — "where it was last time: close to the

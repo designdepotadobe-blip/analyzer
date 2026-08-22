@@ -138,6 +138,15 @@ class MichaAnalyzer:
             'state_label': j['state_label'], 'state_label_he': j['state_label_he'],
             'action': j['action'],
             'action_label': j['action_label'], 'action_label_he': j['action_label_he'],
+            # the 4-value ENTER/WAIT/WATCH/AVOID bucket a top-level panel button
+            # can key off directly — see verdict.HEADLINE_ACTION
+            'headline_action': j['headline_action'],
+            # unconfirmed / pending / confirmed — see verdict._confirmation
+            'confirmation': j['confirmation'],
+            # the full pattern projection, labeled — see verdict._macro_target.
+            # `target`/`targets` below stay the near-station ladder; this is the
+            # separate "what is it worth" number
+            'macro_target': j['macro_target'],
             'report': j['report'],
             # the full argument, grouped and quantified — all computed from today's
             # data, nothing carried over from a previous run
@@ -307,9 +316,21 @@ class MichaAnalyzer:
                 'dist_pct': jnum((p / price - 1) * 100) if price else None,
             })
 
-        trig = j.get('trigger') or {}
-        add(trig.get('price'), 'trigger', 'Trigger', 'קו הפריצה',
-            trig.get('what'), trig.get('what_he'))
+        # The trigger earns the chart's ONE white "decision" line only when it IS
+        # the decision — i.e. the reader is still waiting on it. For an `enter`
+        # action `j['trigger']` is routinely still populated (it is "the next
+        # obstacle above spot", computed the same way regardless of state — see
+        # `Judgement._trigger`), describing a SEPARATE, optional add-on plan, not
+        # today's call. Drawing it anyway put the chart's only prominent line on
+        # ARM at 270.03 — 11% above spot — under a panel that said ENTER at
+        # 243.32: the trigger line looked like the thing gating the entry when it
+        # was a further wall past an entry already in hand. Gated the same way
+        # `_report`'s `call` line already treats a bound cap: don't show a fact as
+        # the decision when it isn't the decision this call is about.
+        if j.get('action') != 'enter':
+            trig = j.get('trigger') or {}
+            add(trig.get('price'), 'trigger', 'Trigger', 'קו הפריצה',
+                trig.get('what'), trig.get('what_he'))
 
         best = Judgement._best_option(j.get('options') or [], j.get('action'))
         if best:

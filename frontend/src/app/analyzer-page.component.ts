@@ -61,10 +61,12 @@ export class AnalyzerPageComponent implements OnInit {
   // (150/200 MA, S/R levels, trend lines, Fib, breakout markers, entry & stop).
   michaMode = true;
 
-  // On phone-width screens the Micha panel collapses to a compact "peek" (just
-  // the decision banner + grade) so the chart gets priority by default; tapping
-  // the expand toggle reveals the full analysis. No effect on tablet/desktop,
-  // where the panel is always fully shown regardless of this flag (CSS-gated).
+  // The Micha panel opens on a compact "peek" — grade + why, headline action,
+  // trigger/stop/target, key warnings — at EVERY width, not just phone. Tapping
+  // the expand toggle reveals the rest (axis bars, full reasons list, option
+  // cards, expected gain, the if-it-breaks projection). Was phone-only; desktop
+  // used to render all of it unconditionally (measured 1,253-1,491 Hebrew
+  // characters for one stock — see the CSS's own note on `.micha-expand-toggle`).
   michaExpanded = false;
 
   // Desktop/tablet only (CSS-gated the other way from michaExpanded above):
@@ -136,10 +138,11 @@ export class AnalyzerPageComponent implements OnInit {
     trendlines: true,
     channels: true,
     triangles: true,
-    fib: true,
+    // off by default in both modes — see `syncMichaToggles`
+    fib: false,
     markers: false,
     gaps: true,
-    cup: true,
+    cup: false,
   };
 
   // Micha mode has its own independent toggle set, defaulted each load from the
@@ -148,7 +151,7 @@ export class AnalyzerPageComponent implements OnInit {
   michaToggles: Toggles = {
     sma20: false, sma50: false, sma150: true, sma200: false,
     levels: true, trendlines: false, channels: false, triangles: false,
-    fib: false, markers: false, gaps: false, cup: true,
+    fib: false, markers: false, gaps: false, cup: false,
   };
 
   readonly toggleKeys: { key: keyof Toggles; label: string }[] = [
@@ -317,6 +320,11 @@ export class AnalyzerPageComponent implements OnInit {
     near: 'מתחילה להתקרב',
   };
 
+  /** ENTER/READY/WAIT/WATCH/AVOID, in one word — see verdict._headline_action. */
+  readonly headlineHe: { [k: string]: string } = {
+    ENTER: 'כניסה', READY: 'מוכנה', WAIT: 'המתנה', WATCH: 'מעקב', AVOID: 'להימנע',
+  };
+
   /** Which reason groups are expanded. The two that carry the decision — where the
    *  stop is and what has to happen — start open; the rest are one tap away, so the
    *  panel stays short by default. */
@@ -384,11 +392,17 @@ export class AnalyzerPageComponent implements OnInit {
       // relevant on far fewer charts than `chart_focus` turns them on for. The
       // checkbox stays available whenever the stock HAS a gap — it just does not
       // start checked. Owner's call.
-      triangles: f.triangles, fib: f.fib, markers: false, gaps: false,
-      // on by default wherever a cup exists: the projection IS the potential the
-      // panel is quoting, and a target you cannot see on the chart is a number
-      // the reader has to take on faith
-      cup: true,
+      //
+      // `fib` and `cup` join them (owner's call, 2026-08-22). Both are the busiest
+      // things the chart can draw — Fib puts five labelled bands across the whole
+      // price range, the cup an arc plus a projection arrow — and they were the
+      // last two overlays still turning themselves on. The cup was hard-ON wherever
+      // one existed, on the argument that "a target you cannot see is a number the
+      // reader has to take on faith"; the panel now quotes that target in percent
+      // beside the grade, so the chart no longer has to carry it. Both checkboxes
+      // stay available on every chart that has the overlay.
+      triangles: f.triangles, fib: false, markers: false, gaps: false,
+      cup: false,
     };
   }
 

@@ -5,9 +5,9 @@ import { ApiService } from './api.service';
 import { ScanHit } from './models';
 
 type SortKey = 'expectancy' | 'risk' | 'gain' | 'rr' | 'grade';
+type RadarPreset = 'aggressive' | 'ready' | 'conservative' | 'reversal' | null;
 type Grade = 'A' | 'B' | 'C' | 'D' | 'F';
 
-const ACTIONABLE_NOW = new Set(['breakout_now', 'buyers_at_level', 'value_pullback']);
 const MOBILE_BREAKPOINT = 768;
 
 interface SectorGroup {
@@ -50,6 +50,19 @@ export class RadarPageComponent implements OnInit, OnDestroy {
     { key: 'gain', label: 'רווח' },
     { key: 'rr', label: 'יחס R' },
     { key: 'grade', label: 'ציון' },
+  ];
+
+  /** A distinct trading profile, not another grade floor — sorting by grade alone
+   *  converges on the same calm large-caps every time, since they satisfy every
+   *  axis at once. `null` is today's existing behaviour (unchanged): the
+   *  `actionable`-only sweep. See api.py's `_preset_ok` for what each one means. */
+  preset: RadarPreset = null;
+  readonly presetOptions: { key: RadarPreset; label: string }[] = [
+    { key: null, label: 'הכל' },
+    { key: 'aggressive', label: '🔥 אגרסיבי' },
+    { key: 'ready', label: '🔔 מוכן עכשיו' },
+    { key: 'conservative', label: '🛡️ סווינג שמרני' },
+    { key: 'reversal', label: '↩️ מהפך' },
   ];
 
   /** How many cards render per bucket, live — as better hits stream in and get
@@ -131,7 +144,12 @@ export class RadarPageComponent implements OnInit, OnDestroy {
     this.refreshBuckets();
     this.scanSub = this.api.scanStream({
       limit: this.limit,
-      actionable: true,
+      // A preset already defines its own population (e.g. `reversal` wants
+      // `turning`, which the `actionable` sweep's own "at_trigger + imminent"
+      // definition of "ready" does not cover) — forcing `actionable` on top
+      // would silently exclude exactly the names a preset exists to surface.
+      actionable: this.preset == null,
+      preset: this.preset ?? undefined,
       minGrade: this.minGrade,
       sort: this.sort === 'grade' ? 'grade' : this.sort,
       workers: 8,
@@ -179,6 +197,12 @@ export class RadarPageComponent implements OnInit, OnDestroy {
     this.runScan();
   }
 
+  setPreset(p: RadarPreset): void {
+    if (p === this.preset) return;
+    this.preset = p;
+    this.runScan();
+  }
+
   setDisplayCap(n: number): void {
     this.displayCap = n;
     this.refreshBuckets();
@@ -216,7 +240,12 @@ export class RadarPageComponent implements OnInit, OnDestroy {
   }
 
   private refreshBuckets(): void {
-    this.enteringNow = this.sortRows(this.results.filter((h) => ACTIONABLE_NOW.has(h.state))).slice(0, this.displayCap);
+    // `headline_action` is the single source of truth for "is this an entering
+    // card" (verdict.HEADLINE_ACTION) — this used to re-declare the same three
+    // states independently as `ACTIONABLE_NOW`, which is exactly the kind of
+    // duplicated decision that drifts the day one of them changes and the other
+    // doesn't.
+    this.enteringNow = this.sortRows(this.results.filter((h) => h.headline_action === 'ENTER')).slice(0, this.displayCap);
     this.ready = this.sortRows(this.results.filter((h) => this.isReady(h))).slice(0, this.displayCap);
     this.enteringNowCtx = { list: this.enteringNow };
     this.readyCtx = { list: this.ready };
@@ -232,6 +261,13 @@ export class RadarPageComponent implements OnInit, OnDestroy {
     const d = hit.alert?.distance_atr;
     if (d == null) return 0;
     return Math.max(4, Math.min(100, (1 - d / 2) * 100));
+  }
+
+  /** A short instruction for the same tier `verdict._alert` already computed —
+   *  "READY" rather than a bare percentage, so a card this close to its trigger
+   *  does not read as inactive under a blanket WAIT styling. */
+  readyLabel(tier: 'imminent' | 'close' | 'near'): string {
+    return { imminent: 'מוכנה — ממש קרוב', close: 'מוכנה — קרוב', near: 'מתקרבת' }[tier];
   }
 
   private sortRows(rows: ScanHit[]): ScanHit[] {

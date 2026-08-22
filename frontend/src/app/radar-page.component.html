@@ -11,7 +11,7 @@
       </div>
       <div class="rd-nav">
         <a routerLink="/portfolio" class="rd-back rd-back-alt">
-          <span>📊</span>
+          <span>🏗️</span>
           <span class="rd-back-label">בניית תיק</span>
         </a>
         <a routerLink="/" class="rd-back">
@@ -23,6 +23,21 @@
 
     <!-- ── Controls ────────────────────────────────────────────────────── -->
     <div class="rd-controls">
+      <!-- A distinct trading profile, not another grade floor — sorting by grade
+           alone converges on the same calm large-caps every scan, since they
+           satisfy every axis at once. See api.py's `_preset_ok`. -->
+      <div class="rd-ctrl-group">
+        <span class="rd-ctrl-label">מצב סריקה</span>
+        <div class="rd-chips">
+          <button
+            *ngFor="let p of presetOptions"
+            class="rd-chip"
+            [class.active]="preset === p.key"
+            [disabled]="loading"
+            (click)="setPreset(p.key)"
+          >{{ p.label }}</button>
+        </div>
+      </div>
       <div class="rd-ctrl-group">
         <span class="rd-ctrl-label">היקף</span>
         <div class="rd-chips">
@@ -299,9 +314,23 @@
       <span class="rd-card-price">{{ h.price | number: '1.2-2' }}</span>
     </div>
 
+    <!-- How proven the event behind the grade is — reuses the SAME winning
+         candidate the EVENT axis already scored (verdict._confirmation), so it
+         can never disagree with the grade next to it. -->
+    <span class="rd-confirm" *ngIf="h.confirmation as c" [ngClass]="'confirm-' + c.status">
+      {{ c.label_he }}
+    </span>
+
     <!-- proximity gauge — only the "ready" bucket carries an alert at all
-         (verdict._alert returns null whenever action === 'enter') -->
+         (verdict._alert returns null whenever action === 'enter'). The tier
+         label is new: a bare "1.1% · 0.3 ATR" reads as a data point, not an
+         instruction — a card this close to its trigger is exactly the one a
+         reader treats as inactive under a blanket "WAIT" styling and misses.
+         `readyLabel()` maps the SAME `al.tier` the alert system already
+         computes to a short instruction rather than inventing a new threshold
+         to decide "is this ready" a second time. -->
     <div class="rd-gauge" *ngIf="h.alert as al">
+      <span class="rd-ready" [ngClass]="'ready-' + al.tier">{{ readyLabel(al.tier) }}</span>
       <div class="rd-gauge-track">
         <div class="rd-gauge-fill" [style.width.%]="fillPct(h)"></div>
       </div>
@@ -322,12 +351,29 @@
          flex containers with multiple element children), and it is required:
          Hebrew mixed with several separate numbers in one unmarked node lets
          bidi reorder them and visibly reverse "סטופ". -->
+    <!-- `h.trigger` is "the next obstacle above spot", populated the same way
+         whatever `h.action` is — for an entering card it describes an optional
+         further breakout, not the price this card is about (that decision is
+         already `h.entry`). Showing "פריצה מעל" unconditionally on an `enter`
+         card is the exact contradiction the main panel had for ARM (a far wall
+         presented as the requirement next to a card already styled `act-enter`)
+         — see `verdict._key_levels` for the same fix on the chart's own line. -->
     <div class="rd-card-plan">
-      <div class="rd-plan-row" *ngIf="h.trigger != null" dir="rtl">
+      <div class="rd-plan-row" *ngIf="h.action === 'enter' && h.entry != null" dir="rtl">
+        <span class="rd-plan-k">כניסה</span>
+        <b class="rd-plan-v trig">{{ h.entry | number: '1.2-2' }}</b>
+      </div>
+      <div class="rd-plan-row" *ngIf="h.action !== 'enter' && h.trigger != null" dir="rtl">
         <span class="rd-plan-k">פריצה מעל</span>
         <b class="rd-plan-v trig">{{ h.trigger | number: '1.2-2' }}</b>
+        <!-- The mechanical consequence of clearing that price — the SAME
+             projection the main panel merges into its "במקרה של פריצה" box (see
+             verdict._grade_if_break). Slim here on purpose: just the rating a
+             reader would otherwise have to open the full panel to see. -->
+        <span class="rd-ifbreak" *ngIf="h.if_break_rating != null" [class.moves]="h.if_break_moves">
+          ← {{ h.if_break_rating }}/10</span>
       </div>
-      <div class="rd-plan-row" *ngIf="h.trigger == null && h.entry != null" dir="rtl">
+      <div class="rd-plan-row" *ngIf="h.action !== 'enter' && h.trigger == null && h.entry != null" dir="rtl">
         <span class="rd-plan-k">כניסה</span>
         <b class="rd-plan-v trig">{{ h.entry | number: '1.2-2' }}</b>
       </div>

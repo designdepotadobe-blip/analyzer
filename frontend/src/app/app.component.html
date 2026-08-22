@@ -1,0 +1,35 @@
+<router-outlet></router-outlet>
+
+<!-- Persistent legal footer — every route, every width. In normal document flow
+     (NOT position:fixed): a fixed bar competing with three pages' own carefully
+     tuned viewport-height layouts is exactly the bug class the git log shows was
+     just fixed ("mobile viewport-height instability and chart pinch-zoom
+     conflict") — reintroducing it to save one more line of chrome is not worth
+     it. One line, small type, so it costs as little vertical space as a legal
+     requirement can. -->
+<footer class="legal-footer" dir="rtl">
+  המידע, הניתוחים והאיתותים המוצגים באפליקציה זו נועדו למטרות מחקר, לימוד ואינדיקציה טכנית בלבד,
+  ואינם מהווים ייעוץ השקעות, שיווק השקעות או המלצה לביצוע עסקאות בניירות ערך. הנתונים מופקים על
+  ידי אלגוריתם אוטומטי ואינם מתחשבים בצרכיו האישיים של אף משתמש. המסחר בשוק ההון כרוך בסיכון כספי.
+  כל הפועל על פי המידע עושה זאת על אחריותו הבלעדית.
+</footer>
+
+<!-- First-visit clickwrap. Blocks interaction with everything behind it
+     (backdrop, no close-on-click-outside) until acknowledged — that is the
+     whole point of a clickwrap, an easy-to-dismiss version would not do what
+     this exists to do. Acceptance is per-BROWSER (localStorage), not
+     per-account: there is no login in this app, and the requirement is that
+     THIS installation's user has seen it, not that anyone has anywhere. -->
+<div class="legal-modal-backdrop" *ngIf="!legalAccepted">
+  <div class="legal-modal" dir="rtl" role="dialog" aria-modal="true">
+    <p class="legal-modal-text">
+      המידע, הניתוחים והאיתותים המוצגים באפליקציה זו נועדו למטרות מחקר, לימוד ואינדיקציה טכנית
+      בלבד, ואינם מהווים ייעוץ השקעות, שיווק השקעות או המלצה לביצוע עסקאות בניירות ערך. הנתונים
+      מופקים על ידי אלגוריתם אוטומטי ואינם מתחשבים בצרכיו האישיים של אף משתמש. המסחר בשוק ההון
+      כרוך בסיכון כספי. כל הפועל על פי המידע עושה זאת על אחריותו הבלעדית.
+    </p>
+    <button type="button" class="legal-modal-btn" (click)="acceptLegal()">
+      הבנתי, איתותים אלגוריתמיים למחקר בלבד
+    </button>
+  </div>
+</div>

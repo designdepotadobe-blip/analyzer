@@ -778,16 +778,17 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
       // below already carries the trigger, the stop and the target, and drawing the
       // option on top of it stacked a second line in the same pixel row.
 
-      // the ladder of stations, thinnest first — "3 יעדים על הגרף" (NFLX)
-      for (let i = 0; i < m.targets.length; i++) {
-        const t = m.targets[i];
-        if (t.price == null) { continue; }
-        const title = i === 0 ? 'Target' : `T${i + 1}`;
-        // Cyan, like his target line on MARA — the same family as the trigger,
-        // because both are prices the trade is aiming AT.
-        addPlanLine(`t${i}`, t.price, i === 0 ? MICHA_CYAN : MICHA_CYAN + '88', 1,
-                    LineStyle.Dotted, title);
-      }
+      // ── The target ladder is NOT drawn on the chart ─────────────────────
+      // It used to be: up to four cyan dotted lines (`t0..t3`), unconditional —
+      // no toggle gated them, so they rendered on every chart in Micha mode
+      // regardless of any other setting. Owner's report: on a chart already
+      // carrying the white decision line and a red stop, four more horizontals
+      // in a fifth colour was exactly the clutter this file's own design
+      // principle argues against ("the chart should not need a legend to be
+      // read" — see MICHA_LINE above). The numbers themselves are not lost:
+      // they are already the target ladder in the side panel and in
+      // `report`'s own text — removing the chart lines removes a duplicate
+      // presentation of the same numbers, not the numbers.
 
       // ── The trigger: the line the stock has to CROSS ────────────────────
       // `key_levels` (micha._key_levels) is the backend's statement of which
@@ -804,6 +805,13 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
       const EPS = Math.max(1e-6, (a.meta.atr || 0) * 0.05);
       for (const k of (m.key_levels || [])) {
         if (k.price == null) { continue; }
+        // The target ladder is deliberately not drawn (see above) — `key_levels`
+        // can still carry its OWN single `target` entry, which is real room past
+        // the trigger rather than a full ladder, but it is exactly the same "blue
+        // target line" the ladder removal was for. Skip it here too, or removing
+        // the ladder just moved the same clutter into this fallback loop instead
+        // of actually removing it.
+        if (k.role === 'target') { continue; }
         if (planPrices.some((p) => Math.abs(p - k.price) <= EPS)) { continue; }
         const style = k.role === 'trigger' ? LineStyle.Dashed : LineStyle.Dotted;
         const color = k.role === 'stop' ? '#ef5350' : MICHA_CYAN;

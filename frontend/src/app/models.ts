@@ -175,6 +175,35 @@ export type MichaAction =
   | 'enter' | 'wait_trigger' | 'wait_buyers' | 'wait_pullback' | 'wait_event'
   | 'hold' | 'watch' | 'out' | 'avoid';
 
+/** The bucket a top-level button keys off — `MichaAction`'s 9 states collapsed,
+ *  not a second opinion of the decision. See verdict._headline_action.
+ *  `READY` is a WAIT whose own `alert` tier is already imminent/close — reuses
+ *  that gate rather than a second "how close" threshold. */
+export type HeadlineAction = 'ENTER' | 'READY' | 'WAIT' | 'WATCH' | 'AVOID';
+
+/** The full pattern projection, labeled — the SAME price the REWARD axis's
+ *  prize term is already scored against (`_opportunity_top`), separate from
+ *  `targets[0]`/`target`, which stay the near station the ladder leads with.
+ *  See verdict._macro_target. */
+export interface MacroTarget {
+  price: number;
+  pct: number;
+  label: string;
+  label_he: string;
+}
+
+/** How proven the EVENT behind the grade is — see verdict._confirmation. Reuses
+ *  the SAME winning event candidate the EVENT axis already scored, so this can
+ *  never disagree with the grade; it is a label on an existing decision. */
+export interface Confirmation {
+  status: 'unconfirmed' | 'pending' | 'confirmed';
+  /** Bars since the event, or null for `unconfirmed` (either nothing has
+   *  happened, or the axis already aged the candidate out). */
+  age: number | null;
+  label: string;
+  label_he: string;
+}
+
 /** One tradeable way into this chart. He routinely names two — "אפשרות 1: כניסה
  *  וסטופ מתחת לקו · אפשרות 2: לחכות לפריצה" — and each carries its OWN stop, because
  *  the breakout entry is higher but its invalidation is tighter. */
@@ -545,6 +574,9 @@ export interface Micha {
   action: MichaAction;
   action_label: string;
   action_label_he: string;
+  headline_action: HeadlineAction;
+  confirmation: Confirmation;
+  macro_target: MacroTarget | null;
   report: MichaReport;
   reasons: MichaReasonGroup[];
   options: MichaOption[];
@@ -652,8 +684,12 @@ export interface ScanHit {
   price: number;
   above_150: boolean;
   sma150_dist_pct: number | null;
+  market_cap: number | null;
   state: MichaState;
   action: MichaAction;
+  headline_action: HeadlineAction | null;
+  confirmation: Confirmation | null;
+  macro_target: MacroTarget | null;
   grade: 'A' | 'B' | 'C' | 'D' | 'F';
   grade_score: number;
   /** The headline number the panel and the cards lead with: 1-10.
@@ -700,6 +736,11 @@ export interface ScanHit {
    *  almost every post he writes ("פריצה מעל 21.45$"). */
   trigger: number | null;
   trigger_what_he: string | null;
+  /** The rating the trigger clearing would mechanically produce — a slim cut of
+   *  `grade_if_break` (full breakdown is the single-stock view's job). See
+   *  verdict._grade_if_break. */
+  if_break_rating: number | null;
+  if_break_moves: boolean | null;
 }
 
 export interface ScanResponse {

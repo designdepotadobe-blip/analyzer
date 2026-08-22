@@ -19,6 +19,10 @@ export interface ScanOpts {
   minGrade?: 'A' | 'B' | 'C' | 'D' | 'F';
   sort?: 'setups' | 'alert' | 'grade' | 'expectancy' | 'rr' | 'gain' | 'risk';
   workers?: number;
+  /** A distinct trading profile (api.py's `_preset_ok`), not another grade
+   *  floor — the same sort-by-grade otherwise converges on the same calm
+   *  large-caps every time, since they satisfy every axis at once. */
+  preset?: 'aggressive' | 'ready' | 'conservative' | 'reversal';
 }
 
 @Injectable({ providedIn: 'root' })
@@ -49,6 +53,7 @@ export class ApiService {
     if (opts.actionable) p.set('actionable', 'true');
     if (opts.minGrade) p.set('min_grade', opts.minGrade);
     if (opts.sort) p.set('sort', opts.sort);
+    if (opts.preset) p.set('preset', opts.preset);
     return p;
   }
 

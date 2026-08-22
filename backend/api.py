@@ -41,6 +41,7 @@ for _p in (_HERE, _ROOT):
         sys.path.insert(0, _p)
 
 from analyzer import StockAnalyzer  # noqa: E402
+from config import ATR_PCT_HIGH, ATR_PCT_LOW, STOP_IDEAL_ATR  # noqa: E402
 from ticker_finder import TickerFinder  # noqa: E402
 from verdict import Judgement  # noqa: E402
 
@@ -132,6 +133,61 @@ def micha(ticker: str):
 ACTIONABLE_NOW = ('breakout_now', 'buyers_at_level', 'value_pullback')
 GRADE_RANK = {'F': 0, 'D': 1, 'C': 2, 'B': 3, 'A': 4}
 
+# ── Scanner presets ─────────────────────────────────────────────────────────
+# A scan sorted purely by grade converges on the same handful of large, calm,
+# already-clean names every time — they satisfy every axis at once, so they
+# always win the sort, and a reader gets one flavour of idea regardless of what
+# they're actually looking for today. Four presets, one per trading profile he
+# names distinctly rather than grading the same way: the momentum chase, the
+# name about to decide, the clean swing, and the base still under its 150.
+#
+# Each is a PREDICATE over fields the scan hit already carries — no new
+# per-ticker computation, just a different question asked of the same numbers.
+# Thresholds reuse constants already calibrated elsewhere in this codebase
+# (ATR_PCT_HIGH/LOW are the exact watermark-circle cutoffs on his own charts,
+# MIN_MARKET_CAP is his own screen) rather than inventing a fifth opinion of
+# "what counts as volatile" or "what counts as small".
+def _preset_ok(preset: str, m: dict, meta: dict, best: dict | None, al: dict | None) -> bool:
+    atr_pct = meta.get('atr_pct') or 0
+    if preset == 'aggressive':
+        # explosive potential, wider risk — a real momentum setup, not merely a
+        # volatile ticker sitting there doing nothing
+        return bool(
+            (m.get('market_cap') or 0) < 50_000_000_000
+            and atr_pct >= ATR_PCT_HIGH
+            and m['state'] in ACTIONABLE_NOW + ('at_trigger',))
+    if preset == 'ready':
+        # imminent, specifically — not already in hand (that's `enter`) and not
+        # merely on the radar (that's a wider `alerting` sweep); reuses the SAME
+        # tiers verdict._headline_action already resolves to READY, so this list
+        # and that badge can never name a different set of tickers
+        return m.get('headline_action') == 'READY'
+    if preset == 'conservative':
+        # clean confirmation, calm volatility, a real entry in hand — the
+        # opposite profile from `aggressive`, not just "high grade". Measured:
+        # requiring `confirmation.status == 'confirmed'` specifically (an event
+        # 8+ bars old — EVENT_CONFIRM_BARS) alongside the other four conditions
+        # left 2 of 517 names standing, which does not give a reader a list to
+        # browse. Loosened to excluding only 'unconfirmed' (nothing has
+        # happened at all) — a fresh but real event is still a clean one, it
+        # just has not aged into the "confirmed" label yet.
+        return bool(
+            m['state'] in ACTIONABLE_NOW
+            and GRADE_RANK.get(m['grade'], 0) >= GRADE_RANK['B']
+            and atr_pct <= ATR_PCT_LOW
+            and (m.get('confirmation') or {}).get('status') != 'unconfirmed'
+            and (best or {}).get('stop_atr') is not None
+            and best['stop_atr'] <= STOP_IDEAL_ATR[1])
+    if preset == 'reversal':
+        # `turning` is by construction only ever returned while still under the
+        # 150 (`Judgement._state`: "if turned and not ctx.above_150: return
+        # 'turning'") — a confirmed bearish-to-bullish sequence, no extra check
+        # needed. `value_pullback`/`buyers_at_level` are the mirror case his own
+        # phrase names — a bounce back to the average as support, not away from
+        # a downtrend, but the same "reclaiming structure" shape.
+        return m['state'] in ('turning', 'value_pullback', 'buyers_at_level')
+    return True
+
 
 @app.get("/api/scan")
 def scan(
@@ -149,6 +205,8 @@ def scan(
     alerting: bool = Query(False, description="only names close to their trigger"),
     actionable: bool = Query(False, description="only names tradeable today or ready"),
     min_grade: str | None = Query(None, description="A | B | C | D | F — floor, inclusive"),
+    preset: str | None = Query(None, description="aggressive | ready | conservative | reversal — "
+                                                  "a distinct trading profile, not another grade floor"),
     sort: str = Query("setups", description="setups | alert | grade | expectancy | rr | gain | risk"),
     stream: bool = Query(False, description="server-sent events: one hit per line, "
                                             "as it completes, instead of one blob at the end"),
@@ -207,14 +265,23 @@ def scan(
                 return None
             best = Judgement._best_option(m['options'], m['action'])
             g = m.get('growth')
+            if preset and not _preset_ok(preset, m, r['meta'], best, al):
+                return None
             return {
                 'ticker': tk,
                 'price': r['meta']['price'],
                 'above_150': r['meta']['above_150'],
+                'market_cap': m.get('market_cap'),
                 'sma150_dist_pct': r['meta']['sma150_dist_pct'],
                 # the verdict, so a scan row is readable without a second request
                 'state': m['state'],
                 'action': m['action'],
+                # the 4-value ENTER/WAIT/WATCH/AVOID bucket — see verdict.HEADLINE_ACTION
+                'headline_action': m.get('headline_action'),
+                # unconfirmed / pending / confirmed — see verdict._confirmation
+                'confirmation': m.get('confirmation'),
+                # the full pattern projection, labeled — see verdict._macro_target
+                'macro_target': m.get('macro_target'),
                 'grade': m['grade'],
                 'grade_score': m['grade_score'],
                 # the headline 1-10 the cards lead with — see verdict._rating
@@ -263,6 +330,12 @@ def scan(
                 # "E +0.53R" where he would have written a price.
                 'trigger': (m.get('trigger') or {}).get('price'),
                 'trigger_what_he': (m.get('trigger') or {}).get('what_he'),
+                # what the rating becomes if the trigger clears — slim on purpose:
+                # a scan row is 60-517 of these, and the full grade_if_break
+                # breakdown (axis-by-axis, caps, why text) is the single-stock
+                # view's job. See verdict._grade_if_break.
+                'if_break_rating': (m.get('grade_if_break') or {}).get('rating'),
+                'if_break_moves': (m.get('grade_if_break') or {}).get('moves'),
             }
         except Exception:
             return None

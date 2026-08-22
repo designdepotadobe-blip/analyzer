@@ -128,16 +128,12 @@ button:disabled {
   border-color: #ab47bc;
   color: #fff;
 }
-.radar-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #ab47bc;
-  box-shadow: 0 0 6px rgba(171, 71, 188, 0.9);
+.radar-icon {
+  font-size: 13px;
+  line-height: 1;
   flex-shrink: 0;
 }
 .portfolio-link:hover { border-color: #66bb6a; }
-.portfolio-dot { background: #66bb6a; box-shadow: 0 0 6px rgba(102, 187, 106, 0.9); }
 
 /* ── Main ────────────────────────────────────────────────────────────── */
 .main {
@@ -370,6 +366,28 @@ button:disabled {
   justify-content: center;
   border-radius: 5px;
 }
+/* The single unambiguous word — filled pill, same visual weight as the grade
+   badge beside it, deliberately louder than `.decision-action` below (which
+   still carries the full 9-value nuance for a reader who wants it).
+   font-weight 700, not 800: this is the only place in the file that put actual
+   HEBREW TEXT at 800 — every other 800-weight rule renders digits ("7/10"),
+   which look fine at any weight. Hebrew glyphs at 800 hit a weight most fonts
+   don't ship and the browser synthesizes instead, and synthetic-bold Hebrew
+   reads as chunky/malformed rather than just "bold". Every other bold Hebrew
+   label in this file (`.decision-action`, `.grade-why-label`, etc.) is already
+   700 for the same reason — this one was the one inconsistency. */
+.decision-headline {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 5px;
+  direction: rtl;
+}
+.decision-headline.hl-ENTER  { background: rgba(38, 166, 154, 0.18); color: #26a69a; }
+.decision-headline.hl-READY  { background: rgba(255, 167, 38, 0.18); color: #ffa726; }
+.decision-headline.hl-WAIT   { background: rgba(120, 123, 134, 0.16); color: #9aa0aa; }
+.decision-headline.hl-WATCH  { background: rgba(120, 123, 134, 0.16); color: #9aa0aa; }
+.decision-headline.hl-AVOID  { background: rgba(239, 83, 80, 0.16); color: #ef5350; }
 .decision-action {
   font-size: 15px;
   font-weight: 700;
@@ -459,27 +477,15 @@ button:disabled {
   color: #c7ccd4;
 }
 
-/* ── "and if it DOES break?" — the grade's projection past the trigger ────── */
-.ifbreak {
-  margin-top: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px dashed rgba(120, 123, 134, 0.4);
-  background: rgba(120, 123, 134, 0.06);
-}
-.ifbreak.moves {
-  border-style: solid;
-  border-color: rgba(38, 166, 154, 0.5);
-  background: rgba(38, 166, 154, 0.08);
-}
-.ifbreak-top {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  flex-wrap: wrap;
+/* ── "and if it DOES break?" — merged into the "במקרה של פריצה" box in `.keylv`
+   rather than its own floating card (owner's call, 2026-08-22). No border/
+   background of its own any more — it's a continuation of the trigger row
+   above it, not a separate fact. */
+.keylv-ifbreak {
+  margin-top: 4px;
+  padding: 4px 2px 0;
   font-size: 12px;
 }
-.ifbreak-icon { font-size: 12px; }
 .ifbreak-txt { color: #c7ccd4; line-height: 1.5; }
 .ifbreak-from, .ifbreak-to {
   font-weight: 800;
@@ -641,6 +647,15 @@ button:disabled {
 .hl:hover,
 .hl.active {
   background: rgba(66, 165, 245, 0.14);
+}
+
+/* The headline target now reuses `.cup-proj`'s existing styling (see the peek
+   markup) rather than this custom block — kept only for `.targets-label`. */
+.targets-label {
+  display: block;
+  font-size: 10px;
+  color: #787b86;
+  margin: 0 0 3px;
 }
 
 /* ── Target ladder ───────────────────────────────────────────────────────── */
@@ -841,6 +856,35 @@ button:disabled {
    hidden at every width and restored by the same toggle. */
 .decision .opts { display: none; }
 .micha.expanded .decision .opts { display: flex; }
+/* `.ep-row.growth` (expected gain: %, days, hit-rate, pace, first-station) is
+   real analysis outside the panel's required-fields list — grade+why, headline
+   action, trigger, stop, the macro target, and warnings only. The old
+   `.ep-row.hold` (stop condition) and standalone `.ifbreak` card were removed
+   outright, not just hidden: the condition duplicated the stop already in
+   `.keylv`, and the break-projection is now merged into `.keylv-ifbreak`,
+   inside the "במקרה של פריצה" row itself. Same treatment as `.opts` above:
+   hidden at every width, not just phone, restored by the same toggle. */
+.decision .ep-row.growth { display: none; }
+.micha.expanded .decision .ep-row.growth { display: flex; }
+
+/* Owner's third and most explicit pass at the required-fields list (2026-08-22):
+   "ONLY" grade+why, headline action, trigger, stop, macro target, warnings.
+   `.badges` (ATR/150MA/earnings status), `.call-line`/`.read-line` (prose
+   restating the entry/stop/chart-read already stated as structured fields
+   elsewhere in the peek), and `.decision-action`/`.decision-state` (the 9-value
+   nuance behind the single `.decision-headline` word) are all real information
+   and none of them are on the list — hidden the same way, not deleted, so
+   nothing is lost, just no longer the default view. */
+.decision .badges,
+.decision .call-line,
+.decision .read-line,
+.decision .decision-action,
+.decision .decision-state { display: none; }
+.micha.expanded .decision .badges { display: flex; }
+.micha.expanded .decision .call-line,
+.micha.expanded .decision .read-line,
+.micha.expanded .decision .decision-action,
+.micha.expanded .decision .decision-state { display: block; }
 .micha-head {
   display: flex;
   align-items: center;
@@ -898,14 +942,26 @@ button:disabled {
    Slightly larger and lighter than the surrounding detail rows because it is the
    thing most readers will actually read. */
 .grade-why {
-  font-size: 12.5px;
-  line-height: 1.65;
-  color: #d1d4dc;
   margin: 0 0 9px;
   padding: 8px 10px;
   background: #131722;
   border: 1px solid #2a2e39;
   border-radius: 6px;
+}
+.grade-why-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #787b86;
+  margin-bottom: 4px;
+}
+.grade-why p {
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: #d1d4dc;
+  margin: 0;
 }
 .micha-head.sub { margin-top: 6px; margin-bottom: 8px; }
 .micha-timing {
@@ -982,8 +1038,6 @@ button:disabled {
 .ep-row.ready .ep-txt { color: #d1d4dc; }
 .ep-row.growth.pace-fast .ep-tag { background: rgba(38, 166, 154, 0.14); color: #26a69a; }
 .ep-row.growth.pace-slow .ep-tag { background: rgba(255, 167, 38, 0.12); color: #ffa726; }
-.ep-row.hold .ep-tag { background: rgba(66, 165, 245, 0.14); color: #42a5f5; }
-.ep-row.hold .ep-txt b { color: #42a5f5; }
 .ep-row.warn .ep-tag { background: rgba(255, 167, 38, 0.14); color: #ffa726; }
 .ep-row.warn .ep-txt { color: #c7ccd4; }
 .ep-txt { line-height: 1.45; }
@@ -1329,12 +1383,10 @@ button:disabled {
   /* `.read-line` is no longer hidden on phone: it is the "why" half of his
      why / when / stop shape, and the space it needs was just freed by collapsing
      the 7 reason groups behind the toggle at every width. */
-  .decision .ep-row.hold,
   .decision .ep-row.growth {
     display: none;
   }
   .micha.expanded .decision .opts,
-  .micha.expanded .decision .ep-row.hold,
   .micha.expanded .decision .ep-row.growth {
     display: flex;
   }

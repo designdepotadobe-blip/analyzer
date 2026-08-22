@@ -516,6 +516,34 @@
   min-width: 0;
 }
 
+/* Confirmation badge. Plain inline-block, no flex/grid/percentage-width and no
+   `dir` attribute on this element — this page has hit three separate variants
+   of the headless invisible-text bug (see the run skill's Gotchas), all three
+   traced to exactly those three ingredients. Keep it that way. */
+.rd-confirm {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.rd-confirm.confirm-confirmed { color: #26a69a; background: rgba(38, 166, 154, 0.12); }
+.rd-confirm.confirm-pending { color: #ffa726; background: rgba(255, 167, 38, 0.1); }
+.rd-confirm.confirm-unconfirmed { color: #787b86; background: rgba(120, 123, 134, 0.1); }
+
+/* Same construction as .rd-confirm above (plain inline-block, no flex/grid/
+   percentage-width, no `dir`) for the same reason. */
+.rd-ready {
+  display: inline-block;
+  margin-bottom: 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.rd-ready.ready-imminent { color: #ffa726; }
+.rd-ready.ready-close { color: #ffb74d; }
+.rd-ready.ready-near { color: #ce93d8; }
+
 /* the proximity gauge — a fuel-gauge read on "how close" */
 .rd-gauge-track {
   height: 5px;
@@ -594,6 +622,10 @@
    the one that means you were wrong. */
 .rd-plan-v.trig { color: #22d3ee; }
 .rd-plan-v.stop { color: #ef5350; }
+/* The if-it-breaks rating — muted unless it actually moves, matching the
+   panel's own "only nag when it's a real change" rule (verdict._grade_if_break). */
+.rd-ifbreak { font-size: 11px; font-weight: 700; color: #787b86; }
+.rd-ifbreak.moves { color: #26a69a; }
 
 .rd-card-call {
   margin: 0;

@@ -31,17 +31,22 @@
       </button>
       <!-- Links to the other two pages — the shell carries no nav chrome of its
            own (see app.component.ts), so each page owns getting to the others. -->
+      <!-- Icons, not the plain colour dots this used to be — on phone width
+           `.radar-link-label` hides (see the mobile media query), which left a
+           bare, meaningless coloured circle as the ENTIRE tap target. 📡 and 🏗️
+           read as "Radar" and "Builder" on their own, so the icon-only mobile
+           state now says something instead of nothing. -->
       <a routerLink="/radar" class="radar-link" title="Radar — stocks close to a decision">
-        <span class="radar-dot"></span>
+        <span class="radar-icon">📡</span>
         <span class="radar-link-label">Radar</span>
       </a>
       <a routerLink="/portfolio" class="radar-link portfolio-link" title="Portfolio — build a diverse basket">
-        <span class="radar-dot portfolio-dot"></span>
+        <span class="radar-icon portfolio-icon">🏗️</span>
         <span class="radar-link-label">Portfolio</span>
       </a>
       <label class="micha-toggle">
         <input type="checkbox" [(ngModel)]="michaMode" (ngModelChange)="onMichaModeChange()" />
-        <span>📊 <span class="toggle-en">Micha Analyze</span> <span class="he">מיכה אנלייז</span></span>
+        <span>📊 <span class="toggle-en">Analyze</span> <span class="he">ניתוח</span></span>
       </label>
     </div>
 
@@ -79,7 +84,7 @@
              on desktop it stays up in the topbar as its own control. -->
         <label class="tgl mode-tgl">
           <input type="checkbox" [(ngModel)]="michaMode" (ngModelChange)="onMichaModeChange()" />
-          📊 מיכה
+          📊 ניתוח
         </label>
         <ng-container *ngFor="let t of toggleKeys">
           <label class="tgl" *ngIf="hasOverlay(t.key)">
@@ -91,7 +96,7 @@
       <div class="toggles" *ngIf="michaMode && analysis as a">
         <label class="tgl mode-tgl">
           <input type="checkbox" [(ngModel)]="michaMode" (ngModelChange)="onMichaModeChange()" />
-          📊 מיכה
+          📊 ניתוח
         </label>
         <label class="tgl">
           <input type="checkbox" [(ngModel)]="michaToggles.sma150" (ngModelChange)="onMichaToggleChange()" />
@@ -197,6 +202,12 @@
                says where inside that band this stock sits. -->
           <span class="decision-grade" [style.background]="gradeColor(a.micha.grade)"
                 [title]="a.micha.grade_why_he">{{ a.micha.rating }}<span class="of-ten">/10</span></span>
+          <!-- The ONE unambiguous word — `action_label_he` still carries the full
+               9-value nuance below it, but a reader scanning fast needs a single
+               answer before the detail, not instead of it. Same field the Radar
+               badge and the alert-band title already key off — see
+               verdict._headline_action. -->
+          <span class="decision-headline" [ngClass]="'hl-' + a.micha.headline_action">{{ headlineHe[a.micha.headline_action] }}</span>
           <span class="decision-action">{{ a.micha.action_label_he }}</span>
           <span class="decision-state">{{ a.micha.state_label_he }}</span>
         </div>
@@ -225,86 +236,68 @@
              draws, so the two can never disagree. -->
         <div class="keylv" *ngIf="a.micha.key_levels?.length">
           <div class="keylv-row" *ngFor="let k of a.micha.key_levels" [ngClass]="'role-' + k.role">
-            <span class="keylv-label">{{ k.label_he }}</span>
+            <!-- "במקרה של פריצה" — a trigger row IS a condition, not a fact yet, for
+                 every state except the ones already past it. Only the label changes;
+                 the price and everything else is untouched. -->
+            <span class="keylv-label">{{ k.role === 'trigger' && a.micha.headline_action !== 'ENTER' ? 'במקרה של פריצה' : k.label_he }}</span>
             <span class="keylv-price">{{ k.price | number: '1.2-2' }}</span>
             <span class="keylv-dist" *ngIf="k.dist_pct != null">
               {{ k.dist_pct > 0 ? '+' : '' }}{{ k.dist_pct | number: '1.1-1' }}%</span>
             <span class="keylv-what" *ngIf="k.what_he">{{ k.what_he }}</span>
           </div>
-        </div>
 
-        <!-- ── The projection: what the pattern is worth, in percent ────────
-             The number he actually says out loud ("פוטנציאל של 96%", "היעד הגדול
-             הוא 80% שזה כל הקאפ הזה") and the one the chart usually cannot show,
-             because a target 50-70% above spot sits far outside the visible range.
-             Percent leads; the price follows in the smaller type. Shown only when
-             a cup was found — see the toolbar note. -->
-        <div class="cup-proj" *ngIf="a.overlays.cup as c" dir="rtl">
-          <span class="cup-tag">{{ c.label_he }}</span>
-          <span class="cup-big">+{{ c.target_big_pct | number: '1.0-0' }}%</span>
-          <span class="cup-px">{{ c.target_big | number: '1.2-2' }}</span>
-          <span class="cup-small" *ngIf="c.target_small">
-            · יעד ראשון +{{ c.target_small_pct | number: '1.0-0' }}%
-            ({{ c.target_small | number: '1.2-2' }})
-          </span>
-          <span class="cup-depth">עומק {{ c.depth_pct | number: '1.0-0' }}% · שפה {{ c.rim | number: '1.2-2' }}</span>
-        </div>
-
-        <!-- "מתקרב להכרעה. שימו התראה" — a low grade and a nearby trigger are two
-             different facts, and the second one is the reason to keep watching a
-             stock the first one just dismissed. Sits right under the call so a D
-             that is a third of a daily range from its trigger can't be missed. -->
-        <div class="alert-band" *ngIf="a.micha.alert as al" [ngClass]="'tier-' + al.tier">
-          <div class="alert-top">
-            <span class="alert-bell">🔔</span>
-            <span class="alert-title">{{ alertTitleHe[al.tier] }}</span>
-            <span class="alert-price">{{ al.price | number: '1.2-2' }}</span>
-            <span class="alert-dist">+{{ al.distance_pct | number: '1.1-1' }}%
-              · {{ al.distance_atr | number: '1.2-2' }} ATR</span>
-          </div>
-          <div class="alert-txt">{{ al.label_he }}</div>
-        </div>
-
-        <!-- "and if it DOES break?" — the grade answers what the chart IS today,
-             which is right and also easy to misread: GILD sits D below its 150MA
-             for a real reason (setup 18/40, the anchor is failing), but clears
-             134.88 and the same chart is a B. Not always good news — a break can
-             also make R/R worse once the entry moves. Shown only when the letter
-             actually moves, so this never nags on a break that changes nothing. -->
-        <div class="ifbreak" *ngIf="a.micha.grade_if_break as ib" [class.moves]="ib.moves">
-          <div class="ifbreak-top">
-            <span class="ifbreak-icon">{{ ib.moves ? '⚡' : 'ℹ' }}</span>
-            <!-- dir="rtl" required here: Hebrew words mixed with several separate
-                 interpolated numbers in one text node, no ancestor sets direction
-                 (see the bidi-corruption fix on the Radar/Portfolio cards) — without
-                 it the numbers and even Hebrew letters can visibly reorder. -->
-            <!-- The arrow (←) never mirrors with bidi context — it always points
-                 physically left. To read as "current grade becomes the projected
-                 one" the projected grade (arrowhead side) must be the FIRST span
-                 and the current grade (tail side) the SECOND — empirically verified
-                 by screenshot, not derived from bidi theory (which misled once
-                 already here): with [from, ←, to] in source order, "D" landed
-                 physically left of the arrow and "B" physically right, i.e. the
-                 arrowhead pointed AT D — reading as "B becomes D", backwards. -->
-            <span class="ifbreak-txt" dir="rtl" *ngIf="ib.moves">
+          <!-- What clearing that price actually does to the grade — merged into
+               THIS box rather than a separate floating card, since it is an
+               elaboration of the "במקרה של פריצה" row right above it, not an
+               independent fact. Was its own `.ifbreak` card; owner's call
+               (2026-08-22) to fold it in here instead. -->
+          <div class="keylv-ifbreak" *ngIf="a.micha.grade_if_break as ib" [class.moves]="ib.moves" dir="rtl">
+            <span class="ifbreak-txt" *ngIf="ib.moves">
               אם תפרוץ {{ ib.at_price | number: '1.2-2' }} —
               <span class="ifbreak-to" [style.background]="gradeColor(ib.grade)">{{ ib.rating }}/10</span>
               ←
               <span class="ifbreak-from" [style.color]="gradeColor(a.micha.grade)">{{ a.micha.rating }}/10</span>
               <span class="ifbreak-score">({{ ib.score | number: '1.0-0' }}, {{ ib.delta > 0 ? '+' : '' }}{{ ib.delta | number: '1.0-0' }})</span>
             </span>
-            <span class="ifbreak-txt" dir="rtl" *ngIf="!ib.moves">
+            <span class="ifbreak-txt" *ngIf="!ib.moves">
               גם אם תפרוץ {{ ib.at_price | number: '1.2-2' }} — נשארת
               <span class="ifbreak-from">{{ ib.rating }}/10</span>
               <span class="ifbreak-score">({{ ib.score | number: '1.0-0' }}, {{ ib.delta >= 0 ? '+' : '' }}{{ ib.delta | number: '1.0-0' }})</span>
             </span>
+            <p class="ifbreak-why" *ngIf="ib.moves && ib.why_he">{{ ib.why_he }}</p>
           </div>
-          <!-- What the projected letter would rest on, in the same two sentences as
-               the grade's own explanation. Only when the letter actually moves —
-               otherwise it restates today's reasoning under a different heading.
-               Hidden in the mobile peek (shown once expanded), like every other
-               second-order row. -->
-          <p class="ifbreak-why" *ngIf="ib.moves && ib.why_he" dir="rtl">{{ ib.why_he }}</p>
+        </div>
+
+        <!-- ── The full pattern projection — the realistic reward, not the near
+             station the ladder (in "לניתוח המלא") leads with. Owner's call
+             (2026-08-22): this is what a client reads as THE Target, so it belongs
+             in the always-visible peek, not two taps away. Replaces `.cup-proj`,
+             which showed the same idea (percent leads, price follows) but only for
+             a detected cup — `macro_target` is the superset: cup, Fib extension,
+             ATH or an unfilled gap, whichever is farthest, the SAME price the
+             REWARD axis's prize term is already scored against. -->
+        <div class="cup-proj" *ngIf="a.micha.macro_target as mt" dir="rtl">
+          <span class="cup-tag">יעד מלא לתבנית</span>
+          <span class="cup-big">+{{ mt.pct | number: '1.0-0' }}%</span>
+          <span class="cup-px">{{ mt.price | number: '1.2-2' }}</span>
+        </div>
+
+        <!-- "מתקרב להכרעה. שימו התראה" — a low grade and a nearby trigger are two
+             different facts, and the second one is the reason to keep watching a
+             stock the first one just dismissed. Sits right under the call so a D
+             that is a third of a daily range from its trigger can't be missed.
+             Title swaps to the READY phrasing when `_headline_action` has already
+             resolved to it — same underlying tier, so the badge and this card can
+             never name a different state. -->
+        <div class="alert-band" *ngIf="a.micha.alert as al" [ngClass]="'tier-' + al.tier">
+          <div class="alert-top">
+            <span class="alert-bell">🔔</span>
+            <span class="alert-title">{{ a.micha.headline_action === 'READY' ? 'מוכנה — קרוב לפריצה' : alertTitleHe[al.tier] }}</span>
+            <span class="alert-price">{{ al.price | number: '1.2-2' }}</span>
+            <span class="alert-dist">+{{ al.distance_pct | number: '1.1-1' }}%
+              · {{ al.distance_atr | number: '1.2-2' }} ATR</span>
+          </div>
+          <div class="alert-txt">{{ al.label_he }}</div>
         </div>
 
         <!-- The plan: one row per way in. He names two often enough that a single
@@ -360,10 +353,6 @@
         </div>
 
         <div class="ep">
-          <div class="ep-row hold" *ngIf="a.micha.report.invalidation_he as inv">
-            <span class="ep-tag">תנאי</span>
-            <span class="ep-txt">{{ inv }}</span>
-          </div>
           <div class="ep-row growth" *ngIf="a.micha.growth as g"
                [ngClass]="'pace-' + g.pace">
             <span class="ep-tag">רווח צפוי</span>
@@ -414,7 +403,10 @@
              `dir="rtl"` belongs here — it is a plain text-only leaf, which is
              the safe case; on a flex container it triggers the invisible-text
              bug documented in the run skill. -->
-        <p class="grade-why" *ngIf="a.micha.grade_why_he" dir="rtl">{{ a.micha.grade_why_he }}</p>
+        <div class="grade-why" *ngIf="a.micha.grade_why_he" dir="rtl">
+          <span class="grade-why-label">למה הציון הזה?</span>
+          <p>{{ a.micha.grade_why_he }}</p>
+        </div>
 
         <!-- ── Why this grade: the four axes ─────────────────────────────────
              Three of them are the clauses of his own top-grade sentence — is there a
@@ -564,8 +556,19 @@
           <span class="mtag" *ngIf="a.micha.momentum_days >= 5">{{ a.micha.momentum_days }} ימים ירוקים ברצף</span>
           <span class="mtag" *ngIf="a.micha.market_cap">{{ marketCapLabel(a.micha.market_cap) }}</span>
           <span class="mtag warn" *ngIf="a.micha.small_cap">מתחת ל-1B$</span>
+          <!-- `micha.trigger` is "the next obstacle above spot", computed the same
+               way whatever the action is — for an entering state it describes an
+               OPTIONAL further breakout, not the price gating today's call (that
+               call is already made; see the `options[]` 'breakout' card for the
+               add-on plan). The 🎯 framing means "this is what you're waiting
+               for", which is only true in a waiting state; showing it unchanged
+               is what put a bare "270.03" chip beside an ENTER badge and read as
+               a contradiction, even though the underlying decision was correct.
+               Relabeled (⛰, "a further wall") rather than removed — it is real,
+               useful information about the room above an entry already in hand,
+               just not the decision this call is about. -->
           <span class="mtag potential" *ngIf="a.micha.trigger as t" [title]="t.label_he">
-            🎯 {{ t.what_he }} {{ t.price | number: '1.2-2' }} · {{ t.distance_atr | number: '1.1-1' }} ATR
+            {{ a.micha.action === 'enter' ? '⛰' : '🎯' }} {{ t.what_he }} {{ t.price | number: '1.2-2' }} · {{ t.distance_atr | number: '1.1-1' }} ATR
             <!-- How well-defended this exact price is — informational only, never
                  scored (measured: touch count predicted neither breakout
                  follow-through nor stop reliability). Only a horizontal level
@@ -590,9 +593,11 @@
 
         <div class="micha-body">
           <!-- the numbers behind the call -->
-          <!-- Target ladder — its own block rather than rows of `.micha-plan`,
-               because that grid uses `display:contents` on its rows (they generate
-               no box, so they can't be hovered or given a highlight background). -->
+          <!-- The full pattern projection now lives in the always-visible peek
+               (`.cup-proj`, reusing that block's styling) — see there. This ladder
+               is the detail behind it: the stations on the way, not the headline
+               number itself. -->
+          <span class="targets-label" *ngIf="a.micha.macro_target" dir="rtl">בדרך לשם</span>
           <div class="targets" dir="rtl">
             <div class="tgt-row" *ngFor="let t of a.micha.targets; let i = index"
                  [class.active]="chartHighlight === 't' + i"

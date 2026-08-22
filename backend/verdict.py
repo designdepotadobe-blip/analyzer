@@ -42,13 +42,17 @@ from typing import Optional
 
 from config import (
     ALERT_CLOSE_ATR,
+    EVENT_BASIS,
     EVENT_BOUNCE,
     EVENT_CAPITULATION,
+    EVENT_CONFIRM_BARS,
     EVENT_DIR_CHANGE,
     EVENT_FRESH_BARS,
     EVENT_HARD_BREAK,
     EVENT_MA150_RECLAIM,
     EVENT_NONE,
+    EVENT_PRIORITY,
+    EVENT_RETEST,
     EVENT_SOFT_BREAK,
     EVENT_STALE_BARS,
     EVENT_STALE_FLOOR,
@@ -91,8 +95,10 @@ from config import (
     STOP_WIDE_ATR,
     REWARD_PRIZE_CAP_PCT,
     REWARD_PRIZE_FLOOR_PCT,
-    REWARD_EV_BANDS,
+    REWARD_EV_FULL,
+    REWARD_EV_GOOD_FRAC,
     REWARD_EV_MAX,
+    REWARD_EV_THIN_FRAC,
     REWARD_EV_NEGATIVE,
     REWARD_GAP_NEAR_ATR,
     REWARD_OFF_HIGH_BIG_PCT,
@@ -107,6 +113,7 @@ from config import (
     TRIGGER_ENTERING_OVERHEAD,
     TRIGGER_MAX_SPAN_ATR,
     TRIGGER_REACH_ATR,
+    TRIGGER_REANCHOR_TOUCH_MULT,
     TRIGGER_ZONE_ATR,
     VALUE_NEAR_150_ATR,
     expectancy,
@@ -139,6 +146,21 @@ ACTION_LABELS = {
     'watch':        ('Watchlist + alert',    'מעקב + התראה'),
     'out':          ('Out',                  'בחוץ'),
     'avoid':        ('Do not enter',         'לא להיכנס'),
+}
+
+# ── The 4-bucket headline a client panel can key a single button off ───────────
+# `action` already carries the real decision — this is not a second opinion, it is
+# the same 9 values folded into the shape a top-level UI needs: one word, not nine,
+# and not the letter grade either (a B69 "enter" and an A92 "enter" are the same
+# instruction with different confidence, which is what the grade next to it is
+# for). `out` reads as AVOID rather than its own bucket because both tell the
+# reader the same thing here — do not be in this name — and a 5th bucket for one
+# state would just move the ambiguity from "9 values" to "is OUT different from
+# AVOID enough to matter", which for a top-level button it is not.
+HEADLINE_ACTION = {
+    'enter': 'ENTER', 'wait_trigger': 'WAIT', 'wait_buyers': 'WAIT',
+    'wait_pullback': 'WAIT', 'wait_event': 'WAIT', 'hold': 'WAIT',
+    'watch': 'WATCH', 'out': 'AVOID', 'avoid': 'AVOID',
 }
 
 GRADE_MEANING = {
@@ -233,6 +255,97 @@ def _rating(score: float) -> int:
     return max(1, min(10, int(round(float(score) / 10.0))))
 
 
+def _confirmation(breakdown: dict) -> dict:
+    """
+    unconfirmed / pending / confirmed — how proven the EVENT behind the grade is.
+
+    Built for the Radar view, which surfaces names by urgency and needs a single
+    word for "how solid is this" that a card-grid can badge without the reader
+    opening the full breakdown. Reuses `breakdown['event_key']`/`['event_age']` —
+    the SAME winning candidate `_event` already picked for the grade — so this can
+    never disagree with the axis that scored it; it is a label on an existing
+    decision, not a second opinion.
+
+    Bands are EVENT_CONFIRM_BARS (see config for the measurement: forward 20-day
+    excess turns from negative to positive between 8 and 12 bars old, not at 5).
+    'unconfirmed' covers both "nothing happened yet" (`event_key` in
+    waiting/none — the axis is pricing proximity, not an event) and a past-events
+    candidate the axis itself already dropped as too old
+    (`event_age is not None` would never reach here past EVENT_STALE_BARS,
+    because `_event` excludes it from `cands` entirely — so age has already been
+    filtered before this function ever sees it).
+    """
+    key = breakdown.get('event_key')
+    age = breakdown.get('event_age')
+    if key in (None, 'waiting', 'none') or age is None:
+        return {'status': 'unconfirmed', 'age': None,
+                'label': 'No confirmed event yet', 'label_he': 'עדיין אין אירוע מאושר'}
+    if age < EVENT_CONFIRM_BARS:
+        return {'status': 'pending', 'age': age,
+                'label': f'Pending confirmation ({age}d)',
+                'label_he': f'ממתין לאישור ({age} ימים)'}
+    return {'status': 'confirmed', 'age': age,
+            'label': f'Confirmed ({age}d)', 'label_he': f'מאושר ({age} ימים)'}
+
+
+def _headline_action(action: str, alert: Optional[dict]) -> str:
+    """
+    ENTER / READY / WAIT / WATCH / AVOID.
+
+    Owner's directive (2026-08-22): a stock a fraction of a daily range from its
+    trigger must not resolve to the same flat "WAIT" as one that is nowhere close
+    — a reader treats a blanket WAIT as inactive and the near ones are exactly
+    the setups worth active monitoring today. `alert` already answers "how
+    close" in the gated, volatility-normalized way this codebase always measures
+    proximity (ALERT_IMMINENT_ATR / ALERT_CLOSE_ATR, both ATR- AND percent-
+    gated — see config.py) — READY reuses those SAME tiers rather than a fresh
+    1.5%-flat threshold, so this can never disagree with the alert card the
+    reader is already looking at. `imminent`/`close` cover "≤1 ATR", which is
+    the tighter of the two thresholds named ("1.5% or 1 ATR"); the ATR gate is
+    the one degrading gracefully across a 2%-ATR mega-cap and a 10%-ATR miner,
+    which a flat percent does not.
+
+    Deliberately narrow: only WAIT-family actions upgrade. `enter` is already
+    the strongest word this scale has; `watch`/`avoid` have nothing pending to
+    be imminent about.
+    """
+    head = HEADLINE_ACTION[action]
+    if head == 'WAIT' and alert and alert.get('tier') in ('imminent', 'close'):
+        return 'READY'
+    return head
+
+
+def _macro_target(breakdown: dict) -> Optional[dict]:
+    """
+    The full pattern projection, clearly labeled — not the near station the
+    ladder leads with.
+
+    Owner's directive (2026-08-22), reversing an earlier answer in the same
+    conversation: the panel's headline "Target" should be the realistic full
+    reward — cup measured move, Fibonacci extension, the record, whichever is
+    farthest — not `targets[0]`, the nearest resistance. Both numbers are real
+    and both stay on the panel (the ladder still shows the near station first,
+    labelled its own way); this is a NEW field naming the other one, not a
+    replacement, since "what do I have to clear next" and "what is this worth if
+    it works" are different questions and he answers both — "היעד הראשוני הוא
+    פתח הגאפ. אחרי זה סגירת הגאפ" names the near one; "יש פה פוטנציאל של 25%"
+    names this one.
+
+    Reuses `breakdown['thesis_price']`/`['thesis_pct']` — the SAME number
+    `_opportunity_top` already computes and the REWARD axis's prize term is
+    already scored against — so the panel's headline number and the grade's own
+    reward reasoning can never point at two different prices.
+    """
+    price, pct = breakdown.get('thesis_price'), breakdown.get('thesis_pct')
+    if price is None or pct is None:
+        return None
+    return {
+        'price': price, 'pct': pct,
+        'label': f'full pattern target: {price:.2f} ({pct:+.0f}%)',
+        'label_he': f'יעד מלא לתבנית: {price:.2f} ({pct:+.0f}%)',
+    }
+
+
 def _edge(lvl, side: str) -> Optional[float]:
     """A zone is cleared above its TOP and held above its BOTTOM — he quotes zones as
     bands ("58.83 - 60.35" LMND), so collapsing one to its midpoint fakes a breakout."""
@@ -260,6 +373,8 @@ class Judgement:
         action = self._action(state, s, earn, options)
         grade, breakdown = self._grade(ctx, s, state, trigger, options, action,
                                        small_cap, earn)
+        confirmation = _confirmation(breakdown)
+        macro_target = _macro_target(breakdown)
         alert = self._alert(ctx, s, trigger, action)
         if_break = self._grade_if_break(ctx, s, state, trigger, options, grade,
                                         breakdown, small_cap, earn)
@@ -272,6 +387,12 @@ class Judgement:
         return {
             'state': state, 'state_label': st_en, 'state_label_he': st_he,
             'action': action, 'action_label': ac_en, 'action_label_he': ac_he,
+            # the 4-value bucket a top-level panel button keys off — see
+            # HEADLINE_ACTION for why 9 states collapse to 4 without inventing a
+            # second opinion of the decision `action` already made
+            'headline_action': _headline_action(action, alert),
+            'confirmation': confirmation,
+            'macro_target': macro_target,
             'grade': grade, 'grade_score': breakdown['score'],
             # the headline number — see `_rating`. `grade`/`grade_score` stay for the
             # scan filters, the caps machinery and `grade_if_break`'s delta.
@@ -333,13 +454,29 @@ class Judgement:
         tp = trigger['price']
         # A break of the 150 is a different chart; a break of a flag top is the same
         # chart one level higher. Only the former earns the structural upgrade.
+        s2 = s
         if trigger.get('kind') == 'ma150' and not ctx.above_150:
             ctx2 = replace(ctx, price=tp * 1.001, above_150=True,
                            above_200=bool(ctx.sma200 and tp >= ctx.sma200))
+            # `ctx2` now says the reclaim happened; `s` still doesn't. `_event()`
+            # reads the reclaim off `s.ma150_reclaim`, a Signals field this shim
+            # never touched, so the EVENT axis — the largest single budget, 33 of
+            # 100 — projected the EXACT SAME "nothing yet, the 150MA is right
+            # overhead" text after the break as before it (confirmed on INTU:
+            # 14.03/33 both sides, byte-identical). The projection's own
+            # `structure` term moved (+2.78, the near_ma bonus) while the axis
+            # that should carry most of "you just cleared the anchor of the whole
+            # method" sat frozen — which is most of why a chart 0.4 ATR from a
+            # clean reclaim projected a 2-point move instead of the ~26 a fresh
+            # `ma150_reclaim` event is worth. Shimmed the same shape the real
+            # signal returns (`micha._ma150_reclaim`): 0 bars old, at today's
+            # average — a reclaim that just happened, which is exactly the
+            # mechanical consequence being projected.
+            s2 = replace(s, ma150_reclaim={'bars': 0, 'price': ctx.sma150})
         else:
             ctx2 = replace(ctx, price=tp * 1.001)
 
-        g2, bd2 = self._grade(ctx2, s, 'breakout_now', trigger, [brk], 'enter',
+        g2, bd2 = self._grade(ctx2, s2, 'breakout_now', trigger, [brk], 'enter',
                               small_cap, earn)
         delta = bd2['score'] - breakdown['score']
         # Tracked on the RATING, not the letter: the rating is what the panel leads
@@ -475,26 +612,93 @@ class Judgement:
         # So: absorb any resistance sitting within TRIGGER_ZONE_ATR above the pick and
         # quote the top of the zone, which is the price that actually has to give.
         zone_top, zone_lo, absorbed = p, p, 0
+        zone_touches = (wall or {}).get('touches') or 0
+
+        def describe(r):
+            return {'strength': r.get('strength'), 'touches': r.get('touches'),
+                    'quality': r.get('quality'), 'flipped': bool(r.get('flipped')),
+                    'freshness': r.get('freshness')}
+
         # ascending: the zone chains upward one wall at a time, so an unsorted list
         # would silently skip a rung and merge across a gap it should have stopped at
         for r in sorted((r for r in (s.res_levels or []) if r.get('price')),
                         key=lambda r: r['price']):
             rp = r.get('price')
-            if rp <= p:
+            if rp <= zone_top:
                 continue
+            # ── Adjacency is EDGE to EDGE, not centre to centre ───────────────
+            # A level is a band everywhere else in this file: `_trigger` quotes
+            # `zone_top` as the price to clear, anchors the stop under `zone_lo`'s
+            # own bottom, and `_headroom` measures the room to the band's LOWER
+            # edge on the explicit argument that "a rally does not run to the
+            # middle of a supply band before meeting sellers, it meets them at the
+            # edge". This test was the last one still comparing midpoints, and the
+            # two readings disagree exactly where it matters — on a wide band.
+            #
+            # ADSK is the clearest case: the quoted trigger 254.30 is a TWO-touch
+            # level whose own band runs 246.08-262.52, and a 23-touch wall sits at
+            # 260.07 with a band starting at 255.00 — 0.07 ATR above the quote, and
+            # physically INSIDE the quoted level's band. Centre to centre they are
+            # 0.60 ATR apart, so the gate skipped it and the engine named the
+            # 2-touch line. Same shape on ODFL (0-touch cup rim quoted, 32-touch
+            # wall's band 0.29 ATR above, centres 0.69 apart) and MSFT (0-touch rim,
+            # 10-touch wall, band 0.19 / centres 0.61 — missed by one hundredth).
+            bot = float(r.get('bottom') or rp)
+            step = (bot - zone_top) / atr
+            if step > TRIGGER_ZONE_ATR:
+                continue                     # a genuinely separate wall, not this one
+            tch = r.get('touches') or 0
             # Two conditions, not one: the gap to the last admitted wall (a cluster
             # is walls sitting on top of each other), AND the total width of what
             # has been merged (see TRIGGER_MAX_SPAN_ATR — without it the first
             # condition chains, and three distinct walls become one 10%-wide "zone").
-            if ((rp - zone_top) / atr <= TRIGGER_ZONE_ATR
-                    and (rp - zone_lo) / atr <= TRIGGER_MAX_SPAN_ATR):
+            if (float(rp) - zone_lo) / atr <= TRIGGER_MAX_SPAN_ATR:
                 zone_top, absorbed = float(rp), absorbed + 1
                 # the strongest wall in the zone is the one being described
-                if (r.get('touches') or 0) > ((wall or {}).get('touches') or 0):
-                    wall = {'strength': r.get('strength'), 'touches': r.get('touches'),
-                            'quality': r.get('quality'), 'flipped': bool(r.get('flipped')),
-                            'freshness': r.get('freshness')}
-                    kind = 'level'
+                if tch > zone_touches:
+                    zone_touches, wall, kind = tch, describe(r), 'level'
+            elif tch >= max(zone_touches * TRIGGER_REANCHOR_TOUCH_MULT,
+                            HEADROOM_HARD_TOUCHES):
+                # ── Re-anchor rather than quote the weaker line ────────────────
+                # The span cap is doing its job — this wall is too far from the
+                # BOTTOM of the zone to be part of it — but the thing it is
+                # protecting turns out to be a barely-tested line, and dropping a
+                # well-defended wall to keep quoting that line names the wrong
+                # price. IREN is the owner's case: the trigger read "break above
+                # 43.41" while a 19-touch band ran 43.64-46.00, i.e. one wall to
+                # any human eye, split because `zone_lo` was pinned to a ZERO-touch
+                # consolidation edge at 42.31 that ate the whole 0.6 ATR budget.
+                #
+                # Measured over 159 names: 14 (9%) quoted a trigger with a stronger
+                # wall inside a third of an ATR above it, and in ten of the fourteen
+                # the quoted line had 0-2 touches against 10-45 on the wall above
+                # (AIG: 2 touches quoted, a 45-touch wall 1.1% overhead).
+                #
+                # The absolute floor is HEADROOM_HARD_TOUCHES, not MIN_LEVEL_TOUCHES.
+                # The multiple alone collapses when the quoted line has NO touch
+                # history at all (a cup rim, a trendline, the 150MA): zone_touches
+                # is 0, so `0 x 2` lets the weakest thing that still counts as a
+                # level move the quote. Measured, that is exactly where it went
+                # wrong — NXPI re-anchored 4.7% higher onto a TWO-touch wall and
+                # lost 24 points; ALGN, FANG and AMZN did the same onto 3-touch
+                # walls. Only a wall he would actually call "התנגדות מעל הראש" —
+                # one price has been rejected from repeatedly — may overrule the
+                # line the engine picked first.
+                #
+                # This cannot reintroduce the IONQ failure TRIGGER_MAX_SPAN_ATR was
+                # added for. There the chain ran 47.90 (20 touches) -> 49.03 (18) ->
+                # 50.87 (13): each rung WEAKER than the last, so the "materially
+                # stronger" test below never fires and the span cap still stops it.
+                # Re-anchoring only ever moves the quote onto a better-defended line.
+                zone_lo = zone_top = float(rp)
+                absorbed, zone_touches, wall, kind = 0, tch, describe(r), 'level'
+                p = float(rp)
+                # the quote now describes a DIFFERENT line, so the copy has to be
+                # rebuilt from it — otherwise a re-anchor onto a plain wall keeps
+                # calling itself "the breakout price" because the line it replaced
+                # happened to be flipped
+                en = 'the breakout price' if wall['flipped'] else 'resistance'
+                he = 'מחיר הפריצה' if wall['flipped'] else 'ההתנגדות'
         if absorbed:
             en = f'the breakout zone {zone_lo:.2f}-{zone_top:.2f}'
             he = f'אזור הפריצה {zone_lo:.2f}-{zone_top:.2f}'
@@ -752,9 +956,33 @@ class Judgement:
                 and not turned and not recovering):
             return 'broken'
 
+        # A base sitting RIGHT AT the 150, with the shorter-term structure already
+        # reclaimed, is not the same chart as a genuine downtrend the method
+        # declines. Owner's report: INTU — 0.4 ATR under the 150 (1.6%), already
+        # above BOTH the 20 and the 50 — graded a flat F26 because `_trend`'s
+        # two-year regression still read 'downtrend' and none of `turning`/
+        # `turned`/`recovering` fired (no pattern, no fresh buyers candle, no
+        # confirmed direction-change — the escapes already built for a fresher
+        # bounce don't cover a slow reclaim from below). The state cap ignored
+        # what the STRUCTURE axis was already trying to say more gently a few
+        # lines below (near_ma's own NEAR_ATR test pays a base this close +9
+        # instead of the full -12) — a graduated sub-score meant nothing while
+        # `avoid` still forced the letter to D/F regardless.
+        #
+        # Deliberately NOT gated on a detected pattern (cup/VCP/etc): INTU itself
+        # has none (`overlays['cup']` is None on it), so requiring one would not
+        # have helped the case this was written for. What actually distinguishes
+        # "testing the anchor from below" from "still falling away from it" is
+        # measurable directly — the SAME closeness test structure already uses,
+        # plus proof the shorter-term trend has already turned (above both the 20
+        # and the 50, which a name still genuinely falling has not managed).
+        near_150_reclaim = bool(
+            ctx.sma150 and atr and (ctx.sma150 - price) / atr <= NEAR_ATR
+            and ctx.sma20 and ctx.sma50 and price > ctx.sma20 and price > ctx.sma50)
+
         if not ctx.above_150 and s.trend == 'downtrend':
             turning = bool(s.dir_change and s.dir_change.get('turning'))
-            if not turning and not turned and not recovering:
+            if not turning and not turned and not recovering and not near_150_reclaim:
                 return 'avoid'
 
         if turned and not ctx.above_150:
@@ -1106,10 +1334,13 @@ class Judgement:
         return out
 
     def _option(self, kind, entry, stop, ctx, s, note, note_he) -> dict:
-        rr, rr_first = self._rr(entry, stop.get('price'), s.targets)
+        rr, rr_first = self._rr(ctx, s, entry, stop.get('price'))
         risk = stop.get('risk_pct')
-        # The one number that can rank a 12%/10R home run against a 55%/1R scalp.
-        p_win, exp_r = expectancy(stop.get('atr'), rr)
+        # The one number that can rank a 12%/10R home run against a 55%/1R scalp —
+        # priced at the best exit the ladder offers, not at the thesis target. See
+        # `_expectancy_at_best_exit`.
+        p_win, exp_r, exp_rr = self._expectancy_at_best_exit(
+            ctx, s, entry, stop.get('price'), stop.get('atr'))
         return {
             'kind': kind, 'entry': jnum(entry), 'note': note, 'note_he': note_he,
             'risk_reward_first': rr_first,
@@ -1127,27 +1358,121 @@ class Judgement:
             # home run, not a defect: 12% at 10R beats 55% at 1R.
             'p_win': p_win,
             'expectancy_r': exp_r,
+            # the R the expectancy was actually measured at — usually below
+            # `risk_reward`, which runs to the whole opportunity. Carried so the copy
+            # can never quote the odds of one target beside the ratio of another.
+            'expectancy_rr': exp_rr,
         }
 
     @staticmethod
-    def _rr(entry, stop, targets):
+    def _exit_prices(ctx, s: Signals, entry: float) -> list:
+        """Every price this trade could be closed at, ascending. See
+        `_opportunity_top` for where the five sources come from and why."""
+        ups = [t['price'] for t in (s.targets or [])
+               if t.get('price') and t['price'] > entry]
+        if s.ath and s.ath > entry:
+            ups.append(float(s.ath))
+        ov = s.overlays or {}
+        for g in ov.get('gaps') or []:
+            if g.get('dir') == 'down' and g.get('far') and g['far'] > entry:
+                ups.append(float(g['far']))
+        cup = ov.get('cup') or {}
+        for k in ('target_big', 'target_small'):
+            if cup.get(k) and cup[k] > entry:
+                ups.append(float(cup[k]))
+        for lv in ((ov.get('fib_ext') or {}).get('levels') or []):
+            if lv.get('price') and lv['price'] > entry:
+                ups.append(float(lv['price']))
+        return sorted(set(float(u) for u in ups))
+
+    @classmethod
+    def _expectancy_at_best_exit(cls, ctx, s: Signals, entry, stop, stop_atr) -> tuple:
         """
-        Reward-to-risk against the TOP of the ladder, not the first station.
+        (P(win), E[R], the R it was measured at) at the BEST exit on the ladder —
+        not at the thesis target.
+
+        `config.expectancy` is a 120-trading-day measurement. The thesis target is
+        routinely a multi-year price: ADBE sits 56.9% under its own record and its
+        thesis is that record, +123%. Asking a 120-day model whether that happens
+        returns p = 4.8%, and because `expectancy` clamps R at the grid's last knot
+        (R=10) while the reward keeps growing, E = p*R - (1-p) starts DECREASING in
+        upside. Measured on a 245-name sweep the moment `_rr` was pointed at the
+        thesis: names scoring a negative E[R] went 6 -> 18, `negative_ev` capped 4
+        letters, and the fallers' median distance below their own high was 43.3%
+        against 19.4% for the universe. That is `spearman(score, potential) = -0.10`
+        coming back — the exact inversion GRADE_BUDGET was rewritten to remove. The
+        same 123% was simultaneously paying ADBE a full 12/12 on the prize term.
+        So: the PRIZE is the whole opportunity, and the ODDS are the best exit that
+        opportunity actually offers. Both halves still read one target list
+        (`_exit_prices`), which is what made them agree; they just ask different
+        questions of it. It is also how the trade is managed rather than a modelling
+        convenience — his 2022 pre-entry checklist has TP1 and TP2, and "היעד
+        הראשוני הוא פתח הגאפ. אחרי זה סגירת הגאפ". Nobody holds for the record or
+        nothing.
+        """
+        if not (entry and stop) or entry <= stop or not stop_atr:
+            return None, None, None
+        risk = float(entry) - float(stop)
+        best = (None, None, None)
+        for t in cls._exit_prices(ctx, s, entry):
+            r = (t - float(entry)) / risk
+            p, e = expectancy(stop_atr, r)
+            if e is not None and (best[1] is None or e > best[1]):
+                best = (p, e, jnum(r))
+        return best
+
+    @classmethod
+    def _opportunity_top(cls, ctx, s: Signals, entry: float) -> Optional[float]:
+        """
+        The highest price this trade can reach from `entry` — the whole opportunity.
+
+        THE SINGLE TARGET LIST. `_rr` and `_thesis` both answer "how far does this
+        go" and they used to answer it from different lists: `_thesis` read this full
+        set while `_rr` read only `s.targets`, which `MAX_TARGET_STATIONS` truncates
+        to four rungs. Measured over 160 priced plans, 107 (67%) had a top above the
+        ladder's, so two halves of the REWARD axis were pricing different trades —
+        EBAY scored its prize to 123.13 (a Fib extension) and its odds to 117.88.
+
+        The four sources beyond the ladder are all prices he quotes by name, and all
+        four are exactly what the display cap drops first, because the biggest target
+        is by construction last in the list: the prior high ("מגיעה שוב לשיאים שלה"),
+        the far side of an unfilled gap ("סגירת הגאפ"), the cup's measured move
+        ("לוקחים את עומק הספל, קופי-פסטה, מדביקים") and the reverse-Fibonacci
+        projection ("ניקח את אחד התיקונים שלה, נמתח פיבונצ'י הפוך").
+
+        Note what shares this list and what does not: the SIZE of the prize is this
+        top, while the ODDS are priced at the best rung in the same list — see
+        `_expectancy_at_best_exit` for the measurement that forced that split.
+        """
+        ups = cls._exit_prices(ctx, s, entry)
+        return max(ups) if ups else None
+
+    @classmethod
+    def _rr(cls, ctx, s: Signals, entry, stop):
+        """
+        Reward-to-risk against the whole opportunity, not the first station.
 
         The number he quotes is the whole opportunity — "יש פה פוטנציאל של 25%" (PM),
         "תשואה פוטנציאלית של 50%" (KRE), "היעד לקאפ הוא $97" (IREN) — while the near
         station is only the first obstacle on the way ("היעד הראשוני הוא פתח הגאפ.
         אחרי זה סגירת הגאפ"). Measuring risk against a +2% first station produced
         nonsense like 0.3 on trades whose actual thesis was +30%.
-        Returns (rr_to_thesis, rr_to_first_station).
+
+        The top now comes from `_opportunity_top`, the same resolver `_thesis` uses —
+        this docstring already claimed "the whole opportunity" while the code read a
+        list truncated to four rungs. Returns (rr_to_thesis, rr_to_first_station);
+        the first station stays the ladder's own next rung, which is what it means.
         """
-        if not (entry and stop) or entry <= stop or not targets:
+        if not (entry and stop) or entry <= stop:
             return None, None
-        ups = [t['price'] for t in targets if t.get('price') and t['price'] > entry]
-        if not ups:
+        top = cls._opportunity_top(ctx, s, entry)
+        if top is None:
             return None, None
+        stations = [t['price'] for t in (s.targets or [])
+                    if t.get('price') and t['price'] > entry]
         risk = entry - stop
-        return jnum((max(ups) - entry) / risk), jnum((ups[0] - entry) / risk)
+        first = stations[0] if stations else top
+        return jnum((top - entry) / risk), jnum((first - entry) / risk)
 
     # ── 5. The stop — anchored to whatever the thesis IS ──────────────────────
 
@@ -1324,45 +1649,62 @@ class Judgement:
 
     def _thesis(self, ctx, s: Signals, best, state) -> tuple:
         """
-        How far the farthest upward target is, in percent and in ATR.
+        How far the farthest upward target is, in percent and in ATR — and its
+        price, for `Judgement._macro_target` (the panel's labeled "full pattern
+        target," as opposed to the near station the ladder leads with).
 
-        Read from its OWN uncapped candidate set rather than the display ladder.
-        `s.targets` is capped at MAX_TARGET_STATIONS=3 by design — the panel shows
-        "next station -> next -> ATH" — which means a genuinely far target is
-        silently truncated off whenever 3+ nearer candidates crowd it out
-        (ROP/IBM-style charts with several intermediate levels below the real
-        ceiling). The owner's own recurring targets are exactly the ones that get
-        crowded out: "סגירת הגאפ" and the prior high. So both are added back here.
+        Read from `_opportunity_top` — the SAME resolver `_rr` uses, so the size of
+        the prize and the odds of collecting it can no longer be priced against
+        different targets. See that method for why the display ladder cannot be the
+        source: `MAX_TARGET_STATIONS` caps what the PANEL shows and the biggest
+        target is by construction last in the list, so the number that decides
+        POTENTIAL was the first thing dropped (AXON: a cup target at 1092.97, +53%,
+        computed, displayed nowhere, invisible to the grade).
         """
         if best is None or state in ('broken', 'avoid', 'nothing_yet'):
-            return None, None
+            return None, None, None
         entry = best.get('entry') or ctx.price
-        ups = [t['price'] for t in (s.targets or [])
-               if t.get('price') and t['price'] > entry]
-        if s.ath and s.ath > entry:
-            ups.append(float(s.ath))
-        ov = s.overlays or {}
-        for g in ov.get('gaps') or []:
-            if g.get('dir') == 'down' and g.get('far') and g['far'] > entry:
-                ups.append(float(g['far']))
-        # ── The three the display ladder can still truncate ───────────────────
-        # `MAX_TARGET_STATIONS` caps what the PANEL shows, and the biggest target is
-        # by construction the last one in the list — so the number that decides
-        # POTENTIAL was the first thing dropped. AXON: a cup target at 1092.97
-        # (+53%) computed, displayed nowhere, and invisible to the grade. All three
-        # of these are targets he quotes by name, so all three are read here
-        # directly rather than hoping they survived the cut.
-        cup = ov.get('cup') or {}
-        for k in ('target_big', 'target_small'):
-            if cup.get(k) and cup[k] > entry:
-                ups.append(float(cup[k]))
-        for lv in ((ov.get('fib_ext') or {}).get('levels') or []):
-            if lv.get('price') and lv['price'] > entry:
-                ups.append(float(lv['price']))
-        if not ups:
-            return None, None
-        pct = (max(ups) / entry - 1) * 100
-        return pct, (pct / ctx.atr_pct if ctx.atr_pct else None)
+        top = self._opportunity_top(ctx, s, entry)
+        if top is None:
+            return None, None, None
+        pct = (top / entry - 1) * 100
+        return pct, (pct / ctx.atr_pct if ctx.atr_pct else None), top
+
+    @staticmethod
+    def _trend_for_grade(ctx, s: Signals) -> str:
+        """
+        `Signals.trend` as the STRUCTURE axis is allowed to read it.
+
+        `micha._trend` is a polyfit through the swing pivots of the window (falling
+        back from the last year to the full three). That is a real signal and it is
+        the right one for a chart nobody has done anything to. It is the wrong one
+        for the chart this method is built to buy: a stock only ever reclaims its
+        150MA from below, so the regression through where it CAME FROM still slopes
+        down on the exact setup he posts most.
+
+        Measured over 245 live names: 54 sit above the 150 while the pivot slope
+        reads 'downtrend', and 48 of those 54 had a real bullish EVENT on the chart
+        (a break, a reclaim, a confirmed direction change). Every one was paying
+        -10 of the 45-point structure basis for the condition its own EVENT score
+        was being paid for escaping — the same fact scored twice, in opposite
+        directions. CPRT is the owner's example and the sentence gave it away
+        verbatim: "volume expanding into the move, and rising lows on the weekly.
+        What holds the grade back: lower highs and lower lows."
+
+        This is not a new opinion. `_state` already refuses to let the regression
+        veto the average ("Above the 150 the 150 IS the trend filter; a two-year
+        regression does not get to veto it") and `reasons.py` already downgrades
+        the mirror-image claim — "a real uptrend" on a name under its 150 — to a
+        note. The grade was the last place still taking the raw read at face value.
+
+        Deliberately NOT promoted to 'uptrend': rising highs and rising lows is a
+        claim about the chart and it is not true here. It becomes the sideways case
+        — no directional structure yet — which is exactly what "above the average,
+        nothing else proven" means.
+        """
+        if s.trend == 'downtrend' and ctx.above_150:
+            return 'reclaimed'
+        return s.trend
 
     def _event(self, ctx, s: Signals, state, trigger) -> dict:
         """
@@ -1414,6 +1756,40 @@ class Judgement:
                           'closed back above the 150MA and held it',
                           'חזרה מעל ממוצע 150 ונשארה מעליו'))
         if state in ('buyers_at_level', 'value_pullback') and s.candle.get('found'):
+            # ── The RETEST: buyers on the line the stock itself broke ─────────
+            # His complete-setup sentence, said in this exact three-beat form in
+            # live after live: "יש לנו את הקאפ, יש לנו את הפריצה, יש לנו את הבדיקת
+            # תמיכה" — the base, the breakout, the support retest — followed by
+            # "יש לנו את הכל מה שאנחנו צריכים ... בעיניי זה נראה מצוין" (2026-04-23,
+            # and again on NVDA 2026-05-05). Also "זה הקאפ, זו הפריצה וזו בדיקת
+            # התמיכה ... לדעתי יש לכם נקודת כניסה מצוינת" (2026-04-28) and LMND
+            # "נעצרה בדיוק על קו ההתנגדויות תמיכות ... נקודת כניסה מצוינת".
+            #
+            # A bounce on a random old floor and a bounce on the wall this stock has
+            # just cleared are not the same event, and only the second one is the
+            # entry he calls excellent — the break proved the line, the retest gives
+            # the tight stop back, and both facts were already computed here and
+            # thrown away. `flipped` is the level engine's own record that this price
+            # was resistance and is now support, so nothing new is inferred.
+            #
+            # Ranked above a bare break because he ranks it above one: at the break
+            # he says "חכו לפריצה שלא סתם תעופו בסטופ"; at the retest he says the
+            # entry is excellent. It is the same wall with one more thing proven.
+            # Ties with EVENT_HARD_BREAK on points (30 is the axis basis and nothing
+            # may exceed it) and wins on EVENT_PRIORITY, which matters because the
+            # break that created the line is ALWAYS a candidate alongside the retest
+            # — on a bare max() this sentence could never be the one printed.
+            sup = s.nearest_sup or {}
+            retest = bool(sup.get('flipped')) or (
+                s.break_level is not None and ctx.atr
+                and abs(float(sup.get('price') or 0) - float(s.break_level)) <= ctx.atr * 0.5)
+            if retest:
+                lvl = float(sup.get('price') or s.break_level or 0)
+                cands.append((EVENT_RETEST, 'retest', None,
+                              f'buyers stepped in ON the line it broke ({lvl:.2f}) — '
+                              f'the breakout, then the retest',
+                              f'קונים נכנסו על הקו שהיא פרצה ({lvl:.2f}) — '
+                              f'הפריצה, ואז בדיקת התמיכה'))
             cands.append((EVENT_BOUNCE, 'bounce', None,
                           s.candle.get('label') or 'buyers stepped in at the level',
                           s.candle.get('label_he') or 'קונים נכנסו על הרמה'))
@@ -1436,8 +1812,13 @@ class Judgement:
         # that nothing has happened lately, so the candidate is dropped and the axis
         # falls through to whatever IS true now: waiting on the trigger.
         cands = [c for c in cands if c[2] is None or c[2] <= EVENT_STALE_BARS]
+        age = None
         if cands:
-            pts, key, age, en, he = max(cands, key=lambda c: c[0])
+            # points first, then EVENT_PRIORITY — see there for why the tie-break
+            # exists (a retest always carries the break that made the line with it)
+            pts, key, age, en, he = max(
+                cands, key=lambda c: (c[0], EVENT_PRIORITY.get(c[1], 0)))
+            pts = min(pts, EVENT_BASIS)
             if age is not None and age > EVENT_FRESH_BARS:
                 span = EVENT_STALE_BARS - EVENT_FRESH_BARS
                 f = 1.0 - (1.0 - EVENT_STALE_FLOOR) * min(1.0, (age - EVENT_FRESH_BARS) / span)
@@ -1496,7 +1877,7 @@ class Judgement:
             he += f", אבל הרמה שחוסמת את המהלך — {tp:.2f} — עדיין {tpc:+.0f}% מעל"
         if state in ('broken', 'avoid'):
             pts = min(pts, 5.0)
-        return {'points': pts, 'key': key, 'en': en, 'he': he, 'capped': capped}
+        return {'points': pts, 'key': key, 'age': age, 'en': en, 'he': he, 'capped': capped}
 
     def _reward(self, ctx, s: Signals, best, thesis_pct, thesis_atr, state) -> dict:
         """
@@ -1516,13 +1897,27 @@ class Judgement:
         """
         out = {'ev': 0.0, 'prize': 0.0, 'room': 0.0, 'time': 0.0,
                'notes': [], 'ev_r': None, 'days': None}
-        if state in ('broken', 'avoid', 'nothing_yet') or best is None:
+        if state in ('broken', 'avoid', 'nothing_yet'):
+            return out
+        if best is None:
+            # A live state with no priced plan zeroes the biggest axis on the board
+            # and, because a zero has nothing to deduct, filed nothing for the
+            # sentence to say. KO closed a D 39 with his A-grade line over a 0/34
+            # reward for exactly this reason. State the forfeit explicitly.
+            out['notes'].append(
+                (-float(REWARD_EV_MAX + REWARD_PRIZE_MAX),
+                 'no entry plan can be priced here — no target above the entry to '
+                 'measure the trade against',
+                 'אי אפשר לתמחר פה תוכנית כניסה — אין יעד מעל הכניסה למדוד מולו'))
             return out
         note = out['notes'].append
 
         # ── Expected value ───────────────────────────────────────────────────
         ev = best.get('expectancy_r')
-        rr = best.get('risk_reward')
+        # the ratio the EXPECTANCY was measured at, not the one to the thesis top —
+        # see `_expectancy_at_best_exit`. Quoting `risk_reward` here would print the
+        # odds of the best exit beside the ratio of the farthest target.
+        rr = best.get('expectancy_rr') or best.get('risk_reward')
         out['ev_r'] = ev
         if ev is not None:
             if ev < 0:
@@ -1532,16 +1927,20 @@ class Judgement:
                       f'loses {abs(ev):.2f}R',
                       f'תוחלת שלילית — בסיכויים הנמדדים שלו הטרייד מפסיד {abs(ev):.2f}R'))
             else:
-                frac = next((f for lo, f in REWARD_EV_BANDS if ev >= lo), 0.0)
+                # Continuous, and scaled to what `expectancy()` can actually return
+                # — see REWARD_EV_FULL. The band table this replaces asked for
+                # E[R] >= 1.20 on a surface whose measured maximum is +0.368, so
+                # nothing in the market could score above 55% of this term.
+                frac = min(1.0, ev / REWARD_EV_FULL) if REWARD_EV_FULL else 0.0
                 out['ev'] = REWARD_EV_MAX * frac
                 p = best.get('p_win')
                 pw = f", {p*100:.0f}% of the time" if p else ''
                 pwh = f", {p*100:.0f}% מהמקרים" if p else ''
-                if frac >= 0.70:
+                if frac >= REWARD_EV_GOOD_FRAC:
                     note((out['ev'],
                           f'expectancy {ev:+.2f}R at reward-to-risk {rr:.1f}{pw}',
                           f'תוחלת {ev:+.2f}R ביחס סיכוי/סיכון {rr:.1f}{pwh}'))
-                elif frac <= 0.40:
+                elif frac <= REWARD_EV_THIN_FRAC:
                     note((-(REWARD_EV_MAX - out['ev']),
                           f'thin expectancy — {ev:+.2f}R for the risk taken',
                           f'תוחלת דקה — {ev:+.2f}R על הסיכון שנלקח'))
@@ -1640,7 +2039,7 @@ class Judgement:
 
         d150 = ((price / ctx.sma150 - 1) * 100) if ctx.sma150 else 0.0
         best = self._best_option(options, action)
-        thesis_pct, thesis_atr = self._thesis(ctx, s, best, state)
+        thesis_pct, thesis_atr, thesis_price = self._thesis(ctx, s, best, state)
 
         # ── STRUCTURE: is there a real chart here? ─────────────────────────────
         # Written against the 45-point basis every literal here was designed on and
@@ -1691,13 +2090,22 @@ class Judgement:
         else:
             note('structure', -12, 'below the 150MA — the anchor of the whole method is missing',
                  'מתחת לממוצע 150 — העוגן של כל השיטה חסר')
-        if s.trend == 'uptrend':
+        trend = self._trend_for_grade(ctx, s)
+        if trend == 'uptrend':
             structure += 10
             note('structure', 10, 'rising highs and rising lows', 'שיאים ושפלים עולים')
-        elif s.trend == 'sideways':
+        elif trend == 'sideways':
             structure += 5
             note('structure', -5, 'sideways — no directional structure yet',
                  'דשדוש — עוד אין מבנה כיווני')
+        elif trend == 'reclaimed':
+            # above the 150 while the window's own pivots still slope down — see
+            # `_trend_for_grade`. Scored as the sideways case; worded honestly.
+            structure += 5
+            note('structure', -5,
+                 'the window still shows lower highs and lows — the 150 is the only '
+                 'trend evidence yet',
+                 'התקופה עדיין מראה שיאים ושפלים יורדים — ה-150 היא כרגע העדות היחידה למגמה')
         else:
             note('structure', -10, 'lower highs and lower lows', 'שיאים ושפלים יורדים')
         has_rl = bool(s.dir_change and any(
@@ -1993,6 +2401,17 @@ class Judgement:
         why_en, why_he = self._grade_sentence(notes, caps, GRADES[idx])
         return GRADES[idx], {
             'score': float(shown),
+            # the winning EVENT candidate's own key/age, threaded through for
+            # `Judgement._confirmation` — see there for why this needed adding
+            # rather than already existing (nothing exposed it structurally
+            # before, only folded into the event axis's text detail)
+            'event_key': ev['key'], 'event_age': ev['age'],
+            # the full opportunity's price and %, threaded through for
+            # `Judgement._macro_target` — the SAME number the prize term of
+            # REWARD is already scored against (`_opportunity_top`), just also
+            # exposed as a labeled display field rather than only a percentage
+            # buried in the 'potential' component's detail text
+            'thesis_price': jnum(thesis_price), 'thesis_pct': jnum(thesis_pct),
             # ── 1-10, the headline number ─────────────────────────────────────
             # Owner's call (2026-08-21): "maybe switch to a 1-10 scale, it is more
             # wide and more correct to our case." Five letters is a coarse ranking
@@ -2150,11 +2569,21 @@ class Judgement:
             elif neg:
                 tail_en = f'What holds the grade back: {neg[0][2]}.'
                 tail_he = f'מה שמוריד את הציון: {neg[0][3]}.'
-            else:
-                # his literal A-grade closer, earned only when nothing scored against
+            elif grade == 'A':
+                # his literal A-grade closer — earned only when nothing scored
+                # against AND the letter is actually the one he says it about.
                 risk = next((n for n in pos if n[0] == 'risk'), None)
                 tail_en = ((risk[2] + ' — ') if risk else '') + 'what more is there to ask for.'
                 tail_he = ((risk[3] + ' — ') if risk else '') + 'מה עוד נותר לבקש.'
+            else:
+                # No note scored against it, and yet it is not an A: the points are
+                # missing rather than deducted — an axis that scores zero has nothing
+                # to file, so it cannot appear in `neg`. KO is the case that exposed
+                # this, closing a D 39 with "מה עוד נותר לבקש" over a reward axis of
+                # 0/34. Say what the arithmetic says instead of borrowing his
+                # top-grade sentence.
+                tail_en = 'Nothing scores against it — there is just not much here yet.'
+                tail_he = 'אין משהו שפועל נגדה — פשוט אין פה עדיין הרבה.'
             if not lead_en:
                 return tail_en, tail_he
             return f'{lead_en[0].upper()}{lead_en[1:]}. {tail_en}', f'{lead_he}. {tail_he}'
@@ -2251,6 +2680,21 @@ class Judgement:
         if action == 'enter' and best:
             call = f"Enter around {best['entry']:.2f}, stop {best['stop']:.2f}."
             call_he = f"כניסה סביב {best['entry']:.2f}, סטופ {best['stop']:.2f}."
+            # A bound cap describes a real problem with THIS entry — usually no room
+            # to run, occasionally a stop that isn't sane. Leaving it only in the
+            # separate `warnings` array is how the panel produced its worst reading:
+            # NXPI's call said "Enter around 225.56, stop 216.58" with no hint that a
+            # 2-touch wall sits 0.3 ATR overhead — a fact this SAME breakdown had
+            # already computed. `_grade_sentence` already leads a capped letter with
+            # its binding cap ("it IS the reason the grade is what it is"); the
+            # sentence a reader actually acts on needs the same rule, not a milder
+            # one. Reuses the cap's own label — no new judgment, just no longer
+            # discarding one that was already made.
+            binding = next((c for c in breakdown['caps'] if c['bound']), None)
+            if binding:
+                lbl = binding['label']
+                call += f" {lbl[0].upper()}{lbl[1:]}."
+                call_he += f" {binding['label_he']}."
         elif action == 'wait_trigger' and trigger:
             _stop_en = (f" Stop {best['stop']:.2f}." if best and best.get('stop') else "")
             _stop_he = (f" סטופ {best['stop']:.2f}." if best and best.get('stop') else "")

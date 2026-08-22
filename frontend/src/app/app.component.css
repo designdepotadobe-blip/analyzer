@@ -1,0 +1,47 @@
+.legal-footer {
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: #5a5f6b;
+  background: #0a0c10;
+  border-top: 1px solid #1e222d;
+  padding: 6px 12px;
+  text-align: center;
+}
+
+.legal-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.legal-modal {
+  max-width: 440px;
+  width: 100%;
+  background: #131722;
+  border: 1px solid #2a2e39;
+  border-radius: 10px;
+  padding: 18px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.legal-modal-text {
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #c7ccd4;
+  margin: 0 0 14px;
+}
+.legal-modal-btn {
+  width: 100%;
+  padding: 11px;
+  border: none;
+  border-radius: 6px;
+  background: #26a69a;
+  color: #0e1117;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.legal-modal-btn:active { background: #1e8e83; }
