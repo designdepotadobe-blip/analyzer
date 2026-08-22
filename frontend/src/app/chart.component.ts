@@ -586,15 +586,51 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
       }
     }
 
-    // ── Cup & handle: the rim, and the target the depth projects to ───────
-    // The projection is the number he actually quotes as "the potential", and it
-    // is the one thing on this chart that is not a price the stock has traded at —
-    // so it gets a dashed line and an explicit "+NN%" tag rather than a bare
-    // price, matching how he labels the arrow on his own charts ("59.36%").
+    // ── Cup & handle, drawn the way he draws it ───────────────────────────
+    // Three marks, taken off his own charts (MMM 2026-08-09, KRE 07-01, ET 08-12):
+    //
+    //   1. a thin white ARC tracing the base, left rim → trough → right rim. He
+    //      draws it freehand; a parabola through those three points is the same
+    //      shape and is the only curve lightweight-charts can express (a line
+    //      series of synthesized points — there is no arc primitive).
+    //   2. a RED near-vertical arrow from the rim up to the target, which is the
+    //      one mark present on every cup chart he posts — MMM's is labelled
+    //      "59.36%", KRE's "35.55 (50.34%)", ET's "82.02%".
+    //   3. the percentage in a grey pill at the arrowhead. The percentage is the
+    //      point: it is what he says out loud, and the price alone does not say
+    //      how much money the move is worth.
+    //
+    // Drawing the target as a real series point (rather than only a price line)
+    // is also what makes it VISIBLE: autoscale then includes it, so a target 70%
+    // overhead brings the scale with it instead of rendering off-screen. His own
+    // charts are squashed for exactly this reason.
     if (tg.cup && a.overlays.cup) {
       const c = a.overlays.cup;
+      const bars = a.bars;
+      const li = bars.findIndex((b) => b.time >= c.left_time);
+      const ti = bars.findIndex((b) => b.time >= c.trough_time);
+      // the arc: a parabola pinned to (left rim, trough, right edge)
+      if (li >= 0 && ti > li && bars.length - 1 > ti) {
+        const ri = bars.length - 1;
+        const arc: { time: Time; value: number }[] = [];
+        for (let i = li; i <= ri; i++) {
+          // normalized position across the cup, -1 at the left rim, +1 at the right
+          const half = (ri - li) / 2;
+          const x = half > 0 ? (i - li - half) / half : 0;
+          arc.push({ time: bars[i].time as Time,
+                     value: c.trough + (c.rim - c.trough) * x * x });
+        }
+        const arcSeries = this.chart.addLineSeries({
+          color: 'rgba(255,255,255,0.62)', lineWidth: 2,
+          priceLineVisible: false, lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+        arcSeries.setData(arc);
+        this.overlaySeries.push(arcSeries);
+      }
+      // the rim, as the band he draws across the top
       this.priceLines.push(this.candle.createPriceLine({
-        price: c.rim, color: '#b39ddb', lineWidth: 2, lineStyle: LineStyle.Solid,
+        price: c.rim, color: '#e0e0e0', lineWidth: 2, lineStyle: LineStyle.Solid,
         axisLabelVisible: true, title: c.has_handle ? 'cup rim' : 'rim',
       }));
       if (c.handle_low) {
@@ -603,18 +639,47 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
           lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: 'handle',
         }));
       }
-      if (c.target_small) {
-        this.priceLines.push(this.candle.createPriceLine({
-          price: c.target_small, color: '#9575cd', lineWidth: 1,
-          lineStyle: LineStyle.Dashed, axisLabelVisible: false,
-          title: `+${(c.target_small_pct ?? 0).toFixed(0)}%`,
-        }));
+      // the arrow: rim → target over the last two bars, so it reads as vertical
+      const n = a.bars.length;
+      if (n >= 20) {
+        // Inset from the right edge, not pinned to the last bar. The label renders
+        // to the RIGHT of the arrowhead, so an arrow on the final bar has its
+        // percentage clipped by the price axis — "+48" instead of "+48%". His own
+        // charts inset it the same way, into the empty future space past the last
+        // candle. Four bars apart still reads as vertical across a 750-bar window.
+        const t0 = a.bars[n - 14].time as Time;
+        const t1 = a.bars[n - 10].time as Time;
+        const shaft = this.chart.addLineSeries({
+          color: '#ef5350', lineWidth: 2,
+          priceLineVisible: false, lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+        shaft.setData([{ time: t0, value: c.rim }, { time: t1, value: c.target_big }]);
+        this.overlaySeries.push(shaft);
+        // The label goes on the SHAFT, not on the candle series. `aboveBar` is
+        // relative to the series it belongs to, so a marker on the candles lands
+        // above today's price — the bottom of the arrow — while the number it is
+        // labelling is at the top. On the shaft it sits at the arrowhead, which is
+        // where he puts the pill.
+        shaft.setMarkers([{
+          time: t1, position: 'aboveBar', color: '#ef5350', shape: 'arrowUp',
+          text: `+${c.target_big_pct.toFixed(0)}%`,
+        }]);
+        if (c.target_small) {
+          const shaft2 = this.chart.addLineSeries({
+            color: '#ffb74d', lineWidth: 1, lineStyle: LineStyle.Dashed,
+            priceLineVisible: false, lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          });
+          shaft2.setData([{ time: t0, value: c.rim },
+                          { time: t1, value: c.target_small }]);
+          shaft2.setMarkers([{
+            time: t1, position: 'aboveBar', color: '#ffb74d', shape: 'arrowUp',
+            text: `+${(c.target_small_pct ?? 0).toFixed(0)}%`,
+          }]);
+          this.overlaySeries.push(shaft2);
+        }
       }
-      this.priceLines.push(this.candle.createPriceLine({
-        price: c.target_big, color: '#7e57c2', lineWidth: 2,
-        lineStyle: LineStyle.Dashed, axisLabelVisible: true,
-        title: `cup +${c.target_big_pct.toFixed(0)}%`,
-      }));
     }
 
     // ── Fibonacci extension: where it can go with nothing overhead ────────
