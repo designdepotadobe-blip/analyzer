@@ -129,6 +129,13 @@
           <input type="checkbox" [(ngModel)]="michaToggles.gaps" (ngModelChange)="onMichaToggleChange()" />
           Gap
         </label>
+        <!-- Only where one exists. Most charts have neither a qualifying cup nor a
+             reclaimed correction to project from, and a checkbox that draws nothing
+             is worse than no checkbox — same rule as the Gap band above. -->
+        <label class="tgl" *ngIf="a.overlays.cup || a.overlays.fib_ext">
+          <input type="checkbox" [(ngModel)]="michaToggles.cup" (ngModelChange)="onMichaToggleChange()" />
+          {{ a.overlays.cup ? (a.overlays.cup.has_handle ? 'Cup & handle' : 'Cup') : 'Fib ext' }}
+        </label>
         <label class="tgl">
           <input type="checkbox" [(ngModel)]="michaToggles.markers" (ngModelChange)="onMichaToggleChange()" />
           Markers
@@ -224,6 +231,23 @@
               {{ k.dist_pct > 0 ? '+' : '' }}{{ k.dist_pct | number: '1.1-1' }}%</span>
             <span class="keylv-what" *ngIf="k.what_he">{{ k.what_he }}</span>
           </div>
+        </div>
+
+        <!-- ── The projection: what the pattern is worth, in percent ────────
+             The number he actually says out loud ("פוטנציאל של 96%", "היעד הגדול
+             הוא 80% שזה כל הקאפ הזה") and the one the chart usually cannot show,
+             because a target 50-70% above spot sits far outside the visible range.
+             Percent leads; the price follows in the smaller type. Shown only when
+             a cup was found — see the toolbar note. -->
+        <div class="cup-proj" *ngIf="a.overlays.cup as c" dir="rtl">
+          <span class="cup-tag">{{ c.label_he }}</span>
+          <span class="cup-big">+{{ c.target_big_pct | number: '1.0-0' }}%</span>
+          <span class="cup-px">{{ c.target_big | number: '1.2-2' }}</span>
+          <span class="cup-small" *ngIf="c.target_small">
+            · יעד ראשון +{{ c.target_small_pct | number: '1.0-0' }}%
+            ({{ c.target_small | number: '1.2-2' }})
+          </span>
+          <span class="cup-depth">עומק {{ c.depth_pct | number: '1.0-0' }}% · שפה {{ c.rim | number: '1.2-2' }}</span>
         </div>
 
         <!-- "מתקרב להכרעה. שימו התראה" — a low grade and a nearby trigger are two

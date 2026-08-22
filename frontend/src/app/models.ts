@@ -71,8 +71,47 @@ export interface Marker {
   text: string;
 }
 
+/** The cup (and its handle), with the two targets it produces.
+ *
+ *  His most-posted shape — 269 charted posts name a cup — and the source of the
+ *  potential he quotes: "לוקחים את עומק הספל האדיר הזה, קופי-פסטה, מדביקים —
+ *  פוטנציאל של 96%". `target_big` is the cup depth projected off the rim, which is
+ *  his "היעד הגדול … שזה כל הקאפ הזה"; `target_small` is the handle measure, the
+ *  one that comes first. Both are quoted in PERCENT because that is how he labels
+ *  them on the chart (MMM's arrow reads "59.36%"). */
+export interface Cup {
+  rim: number;
+  trough: number;
+  left_time: string;
+  trough_time: string;
+  depth_pct: number;
+  has_handle: boolean;
+  /** O'Neil's stop for this pattern — under the HANDLE, never the cup low */
+  handle_low: number | null;
+  target_big: number;
+  target_big_pct: number;
+  target_small: number | null;
+  target_small_pct: number | null;
+  label: string;
+  label_he: string;
+}
+
+/** Fibonacci EXTENSION — the target when nothing is overhead.
+ *  "כדי לדעת מה הפוטנציאל למניה באול-טיים-היי, ניקח את אחד התיקונים שלה, נמתח
+ *  פיבונצ'י הפוך". Measured off the largest correction price has already reclaimed;
+ *  a decline not yet reclaimed is the thing in the way, not a launchpad. */
+export interface FibExtension {
+  top: number;
+  bottom: number;
+  levels: { ratio: number; price: number; pct: number }[];
+}
+
 export interface Overlays {
   levels: Level[];
+  /** present only when a cup qualifies — see Cup */
+  cup?: Cup | null;
+  /** present only when there is a reclaimed correction to project from */
+  fib_ext?: FibExtension | null;
   trendlines: LinePrimitive[];
   channels: Channel[];
   triangles: Triangle[];
@@ -682,4 +721,6 @@ export interface Toggles {
   fib: boolean;
   markers: boolean;
   gaps: boolean;
+  /** the cup outline + its two targets, and the open-sky Fib projection */
+  cup: boolean;
 }

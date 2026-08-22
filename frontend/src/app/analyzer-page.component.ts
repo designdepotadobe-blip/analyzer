@@ -139,6 +139,7 @@ export class AnalyzerPageComponent implements OnInit {
     fib: true,
     markers: false,
     gaps: true,
+    cup: true,
   };
 
   // Micha mode has its own independent toggle set, defaulted each load from the
@@ -147,7 +148,7 @@ export class AnalyzerPageComponent implements OnInit {
   michaToggles: Toggles = {
     sma20: false, sma50: false, sma150: true, sma200: false,
     levels: true, trendlines: false, channels: false, triangles: false,
-    fib: false, markers: false, gaps: false,
+    fib: false, markers: false, gaps: false, cup: true,
   };
 
   readonly toggleKeys: { key: keyof Toggles; label: string }[] = [
@@ -165,6 +166,7 @@ export class AnalyzerPageComponent implements OnInit {
     // "what is that yellow range?" — and `hasOverlay` hides the checkbox entirely
     // on a chart with no unfilled gap, so it only appears when there is one.
     { key: 'gaps', label: 'Gap' },
+    { key: 'cup', label: 'Cup / target' },
   ];
 
   /** True only when the current analysis actually has data for this overlay. */
@@ -183,6 +185,11 @@ export class AnalyzerPageComponent implements OnInit {
       case 'fib':        return a.overlays.fib != null;
       case 'markers':    return a.overlays.markers.length > 0;
       case 'gaps':       return (a.overlays.gaps?.length ?? 0) > 0;
+      // Most charts have neither. A cup needs a rounded base price has climbed
+      // back up toward, and the extension needs a correction already reclaimed —
+      // so the control appears only where there is something to draw, exactly
+      // like the gap band above it. Nothing is invented to fill the checkbox.
+      case 'cup':        return !!(a.overlays.cup || a.overlays.fib_ext);
       default:           return true;
     }
   }
@@ -378,6 +385,10 @@ export class AnalyzerPageComponent implements OnInit {
       // checkbox stays available whenever the stock HAS a gap — it just does not
       // start checked. Owner's call.
       triangles: f.triangles, fib: f.fib, markers: false, gaps: false,
+      // on by default wherever a cup exists: the projection IS the potential the
+      // panel is quoting, and a target you cannot see on the chart is a number
+      // the reader has to take on faith
+      cup: true,
     };
   }
 

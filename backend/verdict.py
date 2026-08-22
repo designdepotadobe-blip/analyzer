@@ -79,14 +79,6 @@ from config import (
     MIN_MARKET_CAP,
     NEAR_ATR,
     OFF_HIGH_VALUE_PCT,
-    POTENTIAL_BIG_ATR,
-    POTENTIAL_BIG_PCT,
-    POTENTIAL_HUGE_ATR,
-    POTENTIAL_HUGE_PCT,
-    POTENTIAL_MAX,
-    POTENTIAL_MIN_ATR_PCT,
-    POTENTIAL_REAL_ATR,
-    POTENTIAL_REAL_PCT,
     STOP_BUFFER,
     STOP_IDEAL_ATR,
     STOP_MAX_RISK_PCT,
@@ -94,6 +86,8 @@ from config import (
     STOP_POSITION_WIDEN,
     STOP_RISK_BUDGET_PCT,
     STOP_WIDE_ATR,
+    REWARD_PRIZE_CAP_PCT,
+    REWARD_PRIZE_FLOOR_PCT,
     REWARD_EV_BANDS,
     REWARD_EV_MAX,
     REWARD_EV_NEGATIVE,
@@ -1319,9 +1313,24 @@ class Judgement:
                if t.get('price') and t['price'] > entry]
         if s.ath and s.ath > entry:
             ups.append(float(s.ath))
-        for g in (s.overlays or {}).get('gaps') or []:
+        ov = s.overlays or {}
+        for g in ov.get('gaps') or []:
             if g.get('dir') == 'down' and g.get('far') and g['far'] > entry:
                 ups.append(float(g['far']))
+        # ── The three the display ladder can still truncate ───────────────────
+        # `MAX_TARGET_STATIONS` caps what the PANEL shows, and the biggest target is
+        # by construction the last one in the list — so the number that decides
+        # POTENTIAL was the first thing dropped. AXON: a cup target at 1092.97
+        # (+53%) computed, displayed nowhere, and invisible to the grade. All three
+        # of these are targets he quotes by name, so all three are read here
+        # directly rather than hoping they survived the cut.
+        cup = ov.get('cup') or {}
+        for k in ('target_big', 'target_small'):
+            if cup.get(k) and cup[k] > entry:
+                ups.append(float(cup[k]))
+        for lv in ((ov.get('fib_ext') or {}).get('levels') or []):
+            if lv.get('price') and lv['price'] > entry:
+                ups.append(float(lv['price']))
         if not ups:
             return None, None
         pct = (max(ups) / entry - 1) * 100
@@ -1507,34 +1516,25 @@ class Judgement:
                     note((out['ev'], f'expectancy {ev:+.2f}R',
                           f'תוחלת {ev:+.2f}R'))
 
-        # ── Prize size ───────────────────────────────────────────────────────
-        # ATR-normalized where the ATR means something, with a raw-percent floor
-        # OR'd in — whichever is more generous. Both guards are load-bearing and
-        # cut opposite ways: below POTENTIAL_MIN_ATR_PCT the denominator collapses
-        # and an ordinary move reads as enormous (AES, a utility: +18% landed 54
-        # ATR out), while on a genuinely volatile name the same conversion
-        # UNDER-credits a real move (LRCX: +43% to its own ATH is only ~6 ATR at
-        # 7.15% ATR, never reaching POTENTIAL_REAL_ATR).
-        if thesis_pct is not None:
-            ta = (thesis_atr if (ctx.atr_pct and ctx.atr_pct >= POTENTIAL_MIN_ATR_PCT)
-                  else None)
-            tp = thesis_pct
-            unit = f"{ta:.0f} ATR / " if ta is not None else ''
-            if (ta is not None and ta >= POTENTIAL_HUGE_ATR) or tp >= POTENTIAL_HUGE_PCT:
-                out['prize'] = REWARD_PRIZE_MAX
+        # ── Prize size, in PERCENT ───────────────────────────────────────────
+        # See REWARD_PRIZE_FLOOR_PCT: reward is measured in money, and money is
+        # percent. The ATR path this used to carry is gone, and with it the
+        # calm-stock artifact it needed POTENTIAL_MIN_ATR_PCT to suppress.
+        if thesis_pct is not None and thesis_pct > REWARD_PRIZE_FLOOR_PCT:
+            span = REWARD_PRIZE_CAP_PCT - REWARD_PRIZE_FLOOR_PCT
+            f = min(1.0, (thesis_pct - REWARD_PRIZE_FLOOR_PCT) / span)
+            out['prize'] = REWARD_PRIZE_MAX * f
+            if f >= 0.6:
                 note((out['prize'],
-                      f'the thesis reaches {unit}{tp:.0f}% out — an exceptional amount of room',
-                      f'התזה מגיעה ל-{unit}{tp:.0f}% מכאן — כמות עצומה של מקום'))
-            elif (ta is not None and ta >= POTENTIAL_BIG_ATR) or tp >= POTENTIAL_BIG_PCT:
-                out['prize'] = REWARD_PRIZE_MAX * 0.6
+                      f'the thesis reaches {thesis_pct:.0f}% out — an exceptional amount of room',
+                      f'התזה מגיעה ל-{thesis_pct:.0f}% מכאן — כמות עצומה של מקום'))
+            elif f >= 0.25:
                 note((out['prize'],
-                      f'the thesis reaches {unit}{tp:.0f}% out — real room beyond the near target',
-                      f'התזה מגיעה ל-{unit}{tp:.0f}% מכאן — מקום ממשי מעבר ליעד הקרוב'))
-            elif (ta is not None and ta >= POTENTIAL_REAL_ATR) or tp >= POTENTIAL_REAL_PCT:
-                out['prize'] = REWARD_PRIZE_MAX * 0.3
-                note((out['prize'],
-                      f'the thesis reaches {unit}{tp:.0f}% out — more than the ordinary target',
-                      f'התזה מגיעה ל-{unit}{tp:.0f}% מכאן — יותר מיעד רגיל'))
+                      f'the thesis reaches {thesis_pct:.0f}% out — real room beyond the near target',
+                      f'התזה מגיעה ל-{thesis_pct:.0f}% מכאן — מקום ממשי מעבר ליעד הקרוב'))
+            else:
+                note((out['prize'], f'the thesis reaches {thesis_pct:.0f}% out',
+                      f'התזה מגיעה ל-{thesis_pct:.0f}% מכאן'))
 
         # ── Recovery room: the gap to close, and the old high to get back to ──
         room = 0.0
@@ -2035,14 +2035,9 @@ class Judgement:
                 # the tier earned whenever the raw-percent floor was what fired.
                 {'key': 'potential', 'label': 'Potential', 'label_he': 'פוטנציאל',
                  'got': jnum(rw['prize']), 'max': REWARD_PRIZE_MAX, 'adjustment': True,
-                 'detail': (f"the thesis target is {thesis_atr:.0f} ATR / {thesis_pct:.0f}% out"
-                            if ctx.atr_pct and ctx.atr_pct >= POTENTIAL_MIN_ATR_PCT
-                            and thesis_atr is not None
-                            else f"the thesis target is {thesis_pct:.0f}% out"),
-                 'detail_he': (f"יעד התזה במרחק {thesis_atr:.0f} ATR / {thesis_pct:.0f}%"
-                               if ctx.atr_pct and ctx.atr_pct >= POTENTIAL_MIN_ATR_PCT
-                               and thesis_atr is not None
-                               else f"יעד התזה במרחק {thesis_pct:.0f}%")},
+                 # quoted in percent only — the unit the money is in
+                 'detail': f"the thesis target is {thesis_pct:.0f}% out",
+                 'detail_he': f"יעד התזה במרחק {thesis_pct:.0f}%"},
             ] if rw['prize'] else []) + ([
                 # counted inside `reward`; one-sided now — see TIME_EFFICIENCY_MAX
                 {'key': 'time', 'label': 'Time to target', 'label_he': 'זמן ליעד',

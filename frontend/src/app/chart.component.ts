@@ -586,6 +586,51 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
       }
     }
 
+    // ── Cup & handle: the rim, and the target the depth projects to ───────
+    // The projection is the number he actually quotes as "the potential", and it
+    // is the one thing on this chart that is not a price the stock has traded at —
+    // so it gets a dashed line and an explicit "+NN%" tag rather than a bare
+    // price, matching how he labels the arrow on his own charts ("59.36%").
+    if (tg.cup && a.overlays.cup) {
+      const c = a.overlays.cup;
+      this.priceLines.push(this.candle.createPriceLine({
+        price: c.rim, color: '#b39ddb', lineWidth: 2, lineStyle: LineStyle.Solid,
+        axisLabelVisible: true, title: c.has_handle ? 'cup rim' : 'rim',
+      }));
+      if (c.handle_low) {
+        this.priceLines.push(this.candle.createPriceLine({
+          price: c.handle_low, color: '#b39ddb', lineWidth: 1,
+          lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: 'handle',
+        }));
+      }
+      if (c.target_small) {
+        this.priceLines.push(this.candle.createPriceLine({
+          price: c.target_small, color: '#9575cd', lineWidth: 1,
+          lineStyle: LineStyle.Dashed, axisLabelVisible: false,
+          title: `+${(c.target_small_pct ?? 0).toFixed(0)}%`,
+        }));
+      }
+      this.priceLines.push(this.candle.createPriceLine({
+        price: c.target_big, color: '#7e57c2', lineWidth: 2,
+        lineStyle: LineStyle.Dashed, axisLabelVisible: true,
+        title: `cup +${c.target_big_pct.toFixed(0)}%`,
+      }));
+    }
+
+    // ── Fibonacci extension: where it can go with nothing overhead ────────
+    // Only drawn with the cup toggle, because it answers the same question and
+    // two sets of projection lines at once is the clutter he deletes.
+    if (tg.cup && a.overlays.fib_ext) {
+      for (const lv of a.overlays.fib_ext.levels) {
+        this.priceLines.push(this.candle.createPriceLine({
+          price: lv.price, color: '#4dd0e1', lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: lv.ratio === 1.618,
+          title: lv.ratio === 1.618 ? `fib ${lv.ratio} +${lv.pct.toFixed(0)}%` : '',
+        }));
+      }
+    }
+
     // ── Micha entry / stop / target price lines ───────────────────────────
     // Only the option the reader is actually being told to take gets drawn: three
     // entries and three stops on one chart is the clutter he deletes ("ניקיתי את כל

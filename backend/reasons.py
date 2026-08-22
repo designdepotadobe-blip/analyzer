@@ -61,7 +61,7 @@ class Reasons:
 
         self._trend(ctx, s, add)
         self._level(ctx, s, j, add)
-        self._volume(ctx, s, j, add)
+        self._volume(ctx, s, j, add) 
         self._pattern(ctx, s, add)
         self._strength(ctx, s, add)
         self._risk(ctx, s, j, add)

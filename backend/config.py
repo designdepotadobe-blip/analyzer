@@ -14,9 +14,26 @@ from typing import Optional
 SMA_PERIODS = (20, 50, 150, 200)
 ATR_PERIOD = 14
 
-HISTORY_PERIOD = '3y'        # fetch 3 yrs so SMA150 is fully warmed up before the display window
+# ── The analysis window is THREE years, and the fetch is longer only to warm it ──
+# Owner's instruction (2026-08-22): "analyze graph 3 years back not 2 — don't extend
+# it." The two numbers below are different things and only the second is the window:
+# `DISPLAY_BARS` is what every engine actually reads (`ctx.w`), and `HISTORY_PERIOD`
+# is the raw fetch that feeds `ctx.full` so SMA150/SMA200 and the touch counts are
+# already warmed up when the window opens. Leaving the fetch at 3y while widening
+# the window to 3y would have left the first ~200 bars of the analysis with a NaN
+# 150MA — the anchor of the whole method missing exactly where the oldest structure
+# lives. So the fetch grows by the warm-up only; the ANALYSIS does not go past 3y.
+#
+# Why 3 and not 2: measured on his own charts, the structure he trades routinely
+# does not fit in two years. MMM's cup (the one he posted as "קאפ אנד הנדל") runs
+# 2022-2025 and bottoms at 72.18; inside a 2-year window the deepest thing visible
+# is the HANDLE, which is why our measured move returned 214 where his chart says
+# 282. Three years reaches the cup low. It does NOT reach KRE's 34.52 measuring low
+# from April 2023 — that one stays out of range by instruction, and the engine will
+# under-measure such names rather than silently widening past what was asked for.
+HISTORY_PERIOD = '4y'        # 3y of analysis + ~1y of indicator/touch warm-up
 HISTORY_INTERVAL = '1d'
-DISPLAY_BARS = 504           # bars sent to the frontend (~2 trading years)
+DISPLAY_BARS = 756           # the analysis window: ~3 trading years
 MIN_BARS = 160              # refuse to analyze anything with fewer usable bars
 
 FETCH_CACHE_TTL = 300       # seconds to reuse a downloaded history (speeds up scans + re-analyze)
@@ -149,7 +166,12 @@ MIN_MARKET_CAP = 1_000_000_000  # Micha screens out sub-$1B names for the 150 me
 ROUND_NEAR_ATR = 0.6        # a round number this close to price is a psychological level
 EARNINGS_SOON_DAYS = 5      # earnings within this many days → defer new entries
 STATION_MERGE_ATR = 0.6     # target "stations" closer than this merge into one
-MAX_TARGET_STATIONS = 3     # the ladder Micha shows: next station → next → ATH
+# 3 -> 4. With the cup target and the Fibonacci extensions now eligible, three rungs
+# were being spent entirely on near resistance and the big target — the one he
+# actually quotes as "the potential" — fell off the bottom of the list. Four keeps
+# "next station → next → the record → the projection" visible together, which is the
+# shape of his own ladders ("יש כל כך הרבה יעדים פה בדרך").
+MAX_TARGET_STATIONS = 4
 
 # ── How long a target actually takes, and how often it is reached ─────────────
 # ATR is the right UNIT for distance ("כל יומיים כאלה זה יכול להיות 16%") but it is a
@@ -633,9 +655,38 @@ EVENT_UNDER_WALL = 16.0
 #       argument on a longer horizon. Both were computable and neither was scored.
 #
 # EV carries the most because it is the only one of the three that is measured.
-REWARD_EV_MAX = 18.0
-REWARD_PRIZE_MAX = 8.0
+REWARD_EV_MAX = 14.0
+REWARD_PRIZE_MAX = 12.0
 REWARD_ROOM_MAX = 4.0
+
+# ── The prize, in PERCENT, on a continuous ramp ───────────────────────────────
+# Owner's instruction (2026-08-22), and the single correction with the widest blast
+# radius in this whole rework: "ATR is good to measure distances - from the SMA, the
+# breaking line, the stop loss - but for POTENTIAL we need to measure by %, because
+# the money is in %."
+#
+# He is right, and his own charts say so. The projection arrow on MMM is labelled
+# "59.36%"; KRE's is labelled "35.55 (50.34%)" — the same 35.55 DOLLARS re-quoted as
+# a percentage from the higher base. ATR appears on his charts once, as a volatility
+# badge in the header. It is never a unit of reward.
+#
+# The distinction is not cosmetic. ATR-normalising asks "is this move big for THIS
+# stock", which is a question about ODDS and belongs to `expectancy` and
+# `time_to_target`. Percent asks "how much money", which is the question this term
+# exists to answer. Scoring reward in ATR made a 10% gain on a 5.6%-ATR name (AXON:
+# 643.65 -> 708, the owner's own worked example) read as 1.8 ATR and score nothing,
+# while the identical 10% on a calm utility read as 6 ATR and scored full marks.
+# Same money, opposite grades. Dropping the ATR path also retires the AES artifact
+# that POTENTIAL_MIN_ATR_PCT was invented to patch — with no ATR denominator there
+# is nothing to collapse.
+#
+# Continuous, not three steps — also the owner's call ("the 3 steps potential
+# assessment isn't good"). Three tiers over a range this wide quantised a 31% and a
+# 69% thesis to the identical score. Bounds come from the potentials he actually
+# quotes out loud: 14, 25, 47, 50, 59, 74, 80, 96, 103%. Below the floor it is not a
+# prize; at the cap it is his "כמעט להכפיל את השווי".
+REWARD_PRIZE_FLOOR_PCT = 10.0
+REWARD_PRIZE_CAP_PCT = 100.0
 # E[R] bands, in R. The grid tops out at R=10 (see `expectancy`), so a perfect score
 # here means "as good as anything we have measured", not "unbounded".
 REWARD_EV_BANDS = ((1.20, 1.00), (0.80, 0.85), (0.50, 0.70),
@@ -839,3 +890,80 @@ def jnum(x) -> Optional[float]:
     except (TypeError, ValueError):
         return None
     return None if math.isnan(v) or math.isinf(v) else round(v, 4)
+
+# ── Cup & handle ──────────────────────────────────────────────────────────────
+# Owner's instruction (2026-08-22): this is a generic, well-known pattern and the
+# engine must actually support it. It is also, by a wide margin, the shape he posts
+# most — 269 of his charted posts name a cup against 32 that name a record high —
+# and it is where his POTENTIAL number comes from: "לוקחים את עומק הספל האדיר הזה,
+# קופי-פסטה, מדביקים — פוטנציאל של 96%".
+#
+# Bounds are O'Neil's (How to Make Money in Stocks, 1988) except where his own
+# charts contradict them, and those exceptions are the point:
+#   • O'Neil wants a cup 12-33% deep. His MMM cup runs 177.41 -> 72.18, i.e. 59%
+#     deep, and he posted it as the textbook case ("זה מתחיל. קאפ אנד הנדל"). So
+#     the ceiling is raised well past O'Neil's; the FLOOR is what matters, because
+#     a 5% dip is a pause, not a cup.
+#   • O'Neil wants 7-65 weeks. MMM's runs ~3 years. Capped by the analysis window
+#     rather than by a rule.
+# Kept from O'Neil unchanged, because his charts agree with them: the handle sits
+# in the UPPER HALF of the cup, is shallower than the cup, and the stop goes under
+# the HANDLE low, never the cup low.
+# ── Selectivity ───────────────────────────────────────────────────────────────
+# Owner (2026-08-22): "not every graph has cup and handle... only relevant stock
+# will draw it and be verdicted by it." The first calibration fired on 68% of a
+# 196-name universe, which makes the pattern meaningless — if two thirds of the
+# market is a cup then the cup is not telling you anything. These four bounds are
+# what separate a base from an ordinary pullback, and they were tuned together
+# against that sweep rather than one at a time.
+CUP_MIN_DEPTH_PCT = 20.0     # shallower than this is a pullback, not a base
+# A cup is symmetric-ish: the low sits in the MIDDLE, not against either rim. This
+# is what rejects "fell for two years then bounced last month" — a shape whose
+# trough is at 90% of the span is a downtrend with a rally on the end.
+CUP_TROUGH_CENTER = (0.25, 0.75)
+# ...and both legs have to take real time. A V-bottom crash-and-snapback satisfies
+# every price test a cup does and is not a cup — O'Neil is explicit that the base
+# should be U-shaped, "not a narrow V".
+CUP_MIN_LEG_FRACTION = 0.20
+CUP_MAX_DEPTH_PCT = 75.0     # deeper than this is a collapse the cup frame misreads
+CUP_MIN_BARS = 30            # a cup is a base, not a three-week dip
+CUP_RIM_TOLERANCE = 0.08     # right rim within 8% of the left rim = the same rim
+# Time spent near the low, as a fraction of the whole cup. The single strongest
+# discriminator: a U spends weeks basing, a V spends days. Raised from 0.35-of-half
+# (an effective 0.175) to a straight fraction of the full span.
+CUP_ROUND_FRACTION = 0.30    # ...of the cup's bars must sit in its lower third
+CUP_HANDLE_MAX_DEPTH = 0.5   # O'Neil: handle no deeper than half the cup
+CUP_HANDLE_MIN_BARS = 3
+CUP_HANDLE_MAX_BARS = 90     # a "handle" longer than this is a second base
+CUP_NEAR_RIM_ATR = 6.0       # only report a cup price is actually working toward
+# ...and the structural version of the same test, which is the one that binds. An
+# ATR bound alone is useless on a volatile name: AXON at 5.6% ATR admitted a rim
+# 30% overhead (830 against a 636 quote) and then reported ITS depth, handing back
+# a +59% target hung off a rim price was nowhere near. "Price must have climbed
+# back toward the rim" is a statement about the CUP, so measure it against the cup:
+# the quote has to sit in the top third of the base before the rim above it is the
+# line being worked toward. With this, AXON resolves to the 698.67 rim — the same
+# 8-touch wall the owner named as "the next line" — instead of the all-time high.
+CUP_RECOVERY_MIN = 0.85      # price must be this far up from the trough toward the rim
+# ...and the rim has to be within reach in PERCENT terms, which is the bound that
+# actually makes this selective. Over a 3-year window almost every name that fell in
+# 2022 and recovered traces a U, so shape tests alone still admitted 47% of the
+# universe. He does not draw a cup on all of those — he draws it when price is
+# TESTING the rim, because that is when the pattern is a trade rather than a
+# description of the past. Quoted in percent for the same reason the targets are.
+CUP_RIM_REACH_PCT = 15.0     # rim no further than this above the quote
+
+# ── Fibonacci EXTENSIONS — the open-sky target ────────────────────────────────
+# Owner's instruction, and his own method for a stock with nothing overhead:
+# "כדי לדעת מה הפוטנציאל למניה באול-טיים-היי, ניקח את אחד התיקונים שלה, נמתח
+# פיבונצ'י הפוך" — take one of its corrections and stretch a REVERSE Fibonacci.
+# `setups._detect_fib` only ever computed RETRACEMENTS (0.382-0.786 of a prior
+# rise, all of them BELOW the peak), so a stock at its high had no computable
+# target at all and `potential` collapsed to zero on exactly the charts he likes
+# most. These are the standard projection ratios.
+FIB_EXT_RATIOS = (1.272, 1.618, 2.0)
+# The correction being stretched has to be a real one, and the projection has to
+# land somewhere worth quoting. Without both, every chart carries an "extension"
+# a couple of percent overhead — true, useless, and 68% of the universe.
+FIB_EXT_MIN_DROP_PCT = 10.0  # a correction shallower than this is noise
+FIB_EXT_MIN_ROOM_PCT = 8.0   # ...and the 1.618 must sit at least this far above

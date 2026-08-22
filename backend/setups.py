@@ -15,6 +15,22 @@ import numpy as np
 
 from config import (
     BOUNCE_LOOKBACK,
+    CUP_HANDLE_MAX_BARS,
+    CUP_HANDLE_MAX_DEPTH,
+    CUP_HANDLE_MIN_BARS,
+    CUP_MAX_DEPTH_PCT,
+    CUP_MIN_BARS,
+    CUP_MIN_DEPTH_PCT,
+    CUP_NEAR_RIM_ATR,
+    CUP_RECOVERY_MIN,
+    CUP_RIM_REACH_PCT,
+    CUP_RIM_TOLERANCE,
+    CUP_MIN_LEG_FRACTION,
+    CUP_ROUND_FRACTION,
+    CUP_TROUGH_CENTER,
+    FIB_EXT_MIN_DROP_PCT,
+    FIB_EXT_MIN_ROOM_PCT,
+    FIB_EXT_RATIOS,
     BULLFLAG_FLAG_BARS,
     BULLFLAG_POLE_BARS,
     BULLFLAG_POLE_GAIN,
@@ -148,7 +164,34 @@ class SetupScanner:
                         else f'Inside a descending channel — upper rail {upper_now:.2f}.',
                         active=breaking_up))
 
-        # ── Bull flag (pole + descending channel breaking up) ──────────────────
+        # ── Fibonacci extension: the target when nothing is overhead ───────
+        fx = self._detect_fib_extension(highs, lows, price, atr, M, sh_idx, sl_idx)
+        if fx:
+            overlays['fib_ext'] = fx
+
+        # ── Cup & handle ───────────────────────────────────────────────────
+        # His most-posted shape (269 charted posts name a cup) and the source of
+        # the potential number he quotes. Publishes the outline so the chart can
+        # draw it, and the two targets so the ladder and the grade can use them.
+        cup = self._detect_cup_handle(highs, lows, closes, price, atr, M, sh_idx, sl_idx)
+        if cup:
+            overlays['cup'] = {
+                'rim': cup['rim'], 'trough': cup['trough'],
+                'left_time': times[cup['left_i']], 'trough_time': times[cup['trough_i']],
+                'depth_pct': cup['depth_pct'], 'has_handle': cup['has_handle'],
+                'handle_low': cup['handle_low'],
+                'target_big': cup['target_big'], 'target_big_pct': cup['target_big_pct'],
+                'target_small': cup['target_small'],
+                'target_small_pct': cup['target_small_pct'],
+                'label': cup['label'], 'label_he': cup['label_he'],
+            }
+            setups.append(self._setup(
+                'cup_handle', 'Cup & handle' if cup['has_handle'] else 'Cup',
+                cup['detail'],
+                # "active" is the breakout, not the shape: he waits for the rim
+                active=bool(price >= cup['rim'])))
+
+        # ── Bull flag (pole + descending channel breaking up) ──────────────
         bull = self._detect_bull_flag(closes, highs, lows, M)
         if bull:
             # publish the flag top: while price is under it, that line — not some other
@@ -257,6 +300,203 @@ class SetupScanner:
         return {'code': code, 'label': label, 'detail': detail, 'active': bool(active)}
 
     # ── Individual detectors ──────────────────────────────────────────────────
+    # ── Cup & handle ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _detect_fib_extension(highs, lows, price, atr, M, sh_idx, sl_idx):
+        """
+        The "reverse Fibonacci" — where a stock can go when nothing is overhead.
+
+        "כדי לדעת מה הפוטנציאל למניה באול-טיים-היי, אנחנו ניקח את אחד התיקונים שלה,
+        נמתח פיבונצ'י הפוך" (livestream 2026-05-14). Above an all-time high there is
+        no resistance BY DEFINITION, so the level map has nothing to say and the
+        target ladder used to come back empty — which is why a stock breaking into
+        clear air scored zero potential, the exact opposite of what the chart means.
+
+        Measures a real CORRECTION (a swing high, then the swing low that followed
+        it) and projects the standard ratios up from that low.
+
+        Which correction: the BIGGEST one price has already climbed back above, not
+        the most recent. "נמתח את כל הירידה בפיבונאצ'י ונראה שהיעד הוא 1958 או 20 או
+        265 — יש כל כך הרבה יעדים פה בדרך" (05-28): he stretches the whole decline,
+        and the whole decline is what produces a target worth quoting. Taking the
+        latest pullback instead put every projection 1-11% overhead — arithmetically
+        fine and useless as a statement of potential.
+
+        Requiring price to be back ABOVE the correction's top is what keeps that
+        honest: a decline you have not yet reclaimed is not a launchpad, it is the
+        thing still in the way, and its 1.618 is fiction.
+        """
+        if not atr or len(sh_idx) < 1 or len(sl_idx) < 1:
+            return None
+        best = None
+        for hi in (int(x) for x in sh_idx):
+            after = [int(x) for x in sl_idx if int(x) > hi]
+            if not after:
+                continue
+            li = min(after)
+            top, bottom = float(highs[hi]), float(lows[li])
+            drop = top - bottom
+            # a correction worth measuring: real in ATR terms AND a real percentage,
+            # so this neither fires on noise nor misses a calm stock's genuine dip
+            if drop < 1.5 * atr or drop / top * 100 < FIB_EXT_MIN_DROP_PCT:
+                continue
+            if price < top:
+                continue          # not reclaimed - see the docstring
+            if best is None or drop > (best['top'] - best['bottom']):
+                best = {'top': jnum(top), 'bottom': jnum(bottom),
+                        'top_i': hi, 'bottom_i': li}
+        if not best:
+            return None
+        drop = best['top'] - best['bottom']
+        levels = []
+        for r in FIB_EXT_RATIOS:
+            p = best['bottom'] + drop * r
+            if p > price:
+                levels.append({'ratio': r, 'price': jnum(p),
+                               'pct': jnum((p / price - 1) * 100)})
+        if not levels:
+            return None
+        # the projection has to be worth quoting — see FIB_EXT_MIN_ROOM_PCT
+        if max(l['pct'] for l in levels) < FIB_EXT_MIN_ROOM_PCT:
+            return None
+        best['levels'] = levels
+        return best
+
+    @staticmethod
+    def _detect_cup_handle(highs, lows, closes, price, atr, M, sh_idx, sl_idx):
+        """
+        The pattern he posts more than any other, with O'Neil's geometry.
+
+        Structure, left to right: a LEFT RIM (a swing high), a rounded decline to a
+        TROUGH, a recovery back to a RIGHT RIM at roughly the same price, and then
+        an optional HANDLE — a shallow pullback in the upper half of the cup.
+
+        Three numbers come out of it and each is used somewhere different:
+          rim          the breakout price ("פריצה מעל 177.5" MMM)
+          handle_low   the stop — O'Neil is explicit that it goes under the HANDLE,
+                       not the cup, because losing the handle kills the momentum
+                       thesis while the base itself may still be fine
+          targets      cup depth projected off the rim is the BIG one, handle depth
+                       the SMALL one. That is his "יעד קטן ויעד גדול" / "קאפ קטן
+                       וקאפ גדול" — not two arbitrary cups, but the handle measure
+                       and the cup measure of the same pattern.
+
+        Returns None unless price is actually working toward the rim; a cup whose
+        rim is 40% overhead is history, not a setup.
+        """
+        if M < CUP_MIN_BARS + CUP_HANDLE_MIN_BARS or not atr:
+            return None
+        if len(sh_idx) < 2:
+            return None
+
+        best = None
+        for li in (int(x) for x in sh_idx):
+            left_rim = float(highs[li])
+            # the cup must still be relevant: its rim within reach of today
+            if (left_rim - price) / atr > CUP_NEAR_RIM_ATR:
+                continue
+            tail = M - li
+            if tail < CUP_MIN_BARS:
+                continue
+            seg_lows = lows[li:]
+            ti = int(np.argmin(seg_lows)) + li
+            trough = float(lows[ti])
+            depth = left_rim - trough
+            if depth <= 0:
+                continue
+            depth_pct = depth / left_rim * 100
+            if not (CUP_MIN_DEPTH_PCT <= depth_pct <= CUP_MAX_DEPTH_PCT):
+                continue
+            if ti - li < CUP_MIN_BARS // 3 or M - 1 - ti < CUP_MIN_BARS // 3:
+                continue          # a rim/trough hard against either edge is half a cup
+            # the low belongs in the middle, and neither leg may be a cliff
+            span = M - li
+            pos = (ti - li) / span
+            if not (CUP_TROUGH_CENTER[0] <= pos <= CUP_TROUGH_CENTER[1]):
+                continue
+            if (ti - li) < CUP_MIN_LEG_FRACTION * span or (M - 1 - ti) < CUP_MIN_LEG_FRACTION * span:
+                continue
+            # price has to be working toward THIS rim — see CUP_RECOVERY_MIN
+            if price < trough + CUP_RECOVERY_MIN * depth:
+                continue
+            if (left_rim - price) / price * 100 > CUP_RIM_REACH_PCT:
+                continue          # the rim is history, not a line being tested
+
+            # ── U, not V ──────────────────────────────────────────────────────
+            # O'Neil's shape rule, and the one that keeps a crash-and-snapback from
+            # being read as a base. A real cup spends time near its low.
+            band = trough + depth / 3.0
+            in_lower = int(np.sum(lows[li:] <= band))
+            if in_lower < CUP_ROUND_FRACTION * span:
+                continue
+
+            # ── The right rim, and the handle behind it ───────────────────────
+            # The right rim is the highest close since the trough. If price has since
+            # eased off it by a little, that dip IS the handle.
+            after = closes[ti:]
+            ri = int(np.argmax(after)) + ti
+            right_rim = float(highs[ri])
+            if abs(right_rim - left_rim) / left_rim > CUP_RIM_TOLERANCE:
+                # not back to the rim yet — still a cup, rim stays the left one
+                right_rim = None
+
+            rim = max(left_rim, right_rim or 0.0)
+            handle_low = handle_bars = None
+            if right_rim is not None and M - 1 - ri >= CUP_HANDLE_MIN_BARS:
+                hseg = lows[ri:]
+                hl = float(np.min(hseg))
+                hb = M - 1 - ri
+                # O'Neil: shallower than half the cup, and sitting in the cup's
+                # UPPER HALF. Both, not either — a "handle" that drops through the
+                # midpoint is a failed rally back into the base.
+                if (rim - hl) <= CUP_HANDLE_MAX_DEPTH * depth and hl >= trough + depth / 2 \
+                        and hb <= CUP_HANDLE_MAX_BARS:
+                    handle_low, handle_bars = hl, hb
+
+            # ── Which cup, when several qualify ───────────────────────────────
+            # The DEEPEST one, not the longest. Depth is what he copy-pastes, so
+            # depth is what decides which cup is "the" cup — and span alone picks
+            # the oldest rim, which on a chart that has since doubled is a rim far
+            # BELOW today's price whose projection lands underneath the current
+            # quote. Those are rejected outright just below: a target you are
+            # already trading above is not a target.
+            target_big = rim_c = max(left_rim, 0.0)
+            if left_rim + depth <= price:
+                continue
+            if best is None or depth_pct > best['depth_pct']:
+                best = {
+                    'left_rim': jnum(left_rim), 'right_rim': jnum(right_rim),
+                    'rim': jnum(rim), 'trough': jnum(trough),
+                    'depth': jnum(depth), 'depth_pct': jnum(depth_pct),
+                    'bars': int(span), 'left_i': li, 'trough_i': ti,
+                    'handle_low': jnum(handle_low), 'handle_bars': handle_bars,
+                    # ── the two targets ───────────────────────────────────────
+                    # Both are PERCENT-quoted off the rim, because that is how he
+                    # labels them on the chart: MMM's projection arrow reads
+                    # "59.36%", KRE's reads "35.55 (50.34%)". The dollar distance is
+                    # what gets copy-pasted; the percentage is what gets said.
+                    'target_big': jnum(rim + depth),
+                    'target_big_pct': jnum(depth / rim * 100),
+                    'target_small': jnum(rim + (rim - handle_low)) if handle_low else None,
+                    'target_small_pct': (jnum((rim - handle_low) / rim * 100)
+                                         if handle_low else None),
+                    'has_handle': handle_low is not None,
+                }
+        if not best:
+            return None
+        d = best
+        kind = 'cup & handle' if d['has_handle'] else 'cup'
+        kind_he = 'קאפ אנד הנדל' if d['has_handle'] else 'קאפ'
+        d['label'], d['label_he'] = kind, kind_he
+        d['detail'] = (f"{kind}: rim {d['rim']:.2f}, low {d['trough']:.2f} "
+                       f"({d['depth_pct']:.0f}% deep) → target {d['target_big']:.2f} "
+                       f"(+{d['target_big_pct']:.0f}%)")
+        d['detail_he'] = (f"{kind_he}: שפה {d['rim']:.2f}, תחתית {d['trough']:.2f} "
+                          f"(עומק {d['depth_pct']:.0f}%) ← יעד {d['target_big']:.2f} "
+                          f"(+{d['target_big_pct']:.0f}%)")
+        return d
+
 
     def _detect_bull_flag(self, closes, highs, lows, M):
         if M < BULLFLAG_POLE_BARS + BULLFLAG_FLAG_BARS + 2:

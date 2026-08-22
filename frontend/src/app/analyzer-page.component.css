@@ -1536,3 +1536,27 @@ button:disabled {
   direction: ltr;
   text-align: left;
 }
+
+/* ── Cup projection row ───────────────────────────────────────────────────────
+   The percentage is the headline because that is the unit the reward is in — the
+   money is in percent, not in ATR and not really in the price either. Bidi-isolated
+   like every other number in this RTL panel. */
+.cup-proj {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(126, 87, 194, 0.12);
+  border: 1px solid rgba(126, 87, 194, 0.35);
+  font-size: 12px;
+}
+.cup-tag { font-weight: 700; color: #b39ddb; }
+.cup-big {
+  font-size: 16px; font-weight: 800; color: #b39ddb;
+  direction: ltr; unicode-bidi: isolate;
+}
+.cup-px, .cup-small, .cup-depth { color: #9aa0a6; direction: ltr; unicode-bidi: isolate; }
+.cup-depth { margin-inline-start: auto; font-size: 11px; }
