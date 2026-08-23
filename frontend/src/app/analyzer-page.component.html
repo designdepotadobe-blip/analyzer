@@ -201,7 +201,7 @@
                at-a-glance read (green = good) is unchanged while the number itself
                says where inside that band this stock sits. -->
           <span class="decision-grade" [style.background]="gradeColor(a.micha.grade)"
-                [title]="a.micha.grade_why_he">{{ a.micha.rating }}<span class="of-ten">/10</span></span>
+                [title]="a.micha.grade_why_he" (click)="onGradeBadgeClick()">{{ a.micha.rating }}<span class="of-ten">/10</span></span>
           <!-- The ONE unambiguous word — `action_label_he` still carries the full
                9-value nuance below it, but a reader scanning fast needs a single
                answer before the detail, not instead of it. Same field the Radar
@@ -210,6 +210,21 @@
           <span class="decision-headline" [ngClass]="'hl-' + a.micha.headline_action">{{ headlineHe[a.micha.headline_action] }}</span>
           <span class="decision-action">{{ a.micha.action_label_he }}</span>
           <span class="decision-state">{{ a.micha.state_label_he }}</span>
+        </div>
+
+        <!-- Hidden analyst-notes box — reached only by clicking the grade badge
+             above 5 times quickly (see AnalyzerPageComponent.onGradeBadgeClick).
+             No visible affordance points at it on purpose. -->
+        <div class="analyst-note" *ngIf="showNoteBox">
+          <textarea class="analyst-note-text" rows="3" [(ngModel)]="noteText"
+                    placeholder="note for this analysis…" [disabled]="noteSaved"></textarea>
+          <div class="analyst-note-actions">
+            <button type="button" class="analyst-note-save" (click)="submitNote()"
+                    [disabled]="!noteText.trim() || noteSaved">
+              {{ noteSaved ? 'saved' : 'save' }}
+            </button>
+            <button type="button" class="analyst-note-close" (click)="closeNoteBox()">✕</button>
+          </div>
         </div>
 
         <!-- The status card his own 2026 charts carry above the price action:

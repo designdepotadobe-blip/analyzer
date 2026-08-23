@@ -21,3 +21,8 @@ corpus/
 
 # validation harness caches (history pickles, scored runs)
 .harness/
+
+# analyst notes captured from the hidden feedback box (api.py's /api/notes) —
+# personal commentary, reviewed locally on demand, never auto-processed or
+# committed. See backend/api.py's `add_note`/`list_notes`.
+analyst_notes.jsonl

@@ -123,4 +123,14 @@ export class ApiService {
   tickers(): Observable<{ count: number; tickers: string[] }> {
     return this.http.get<{ count: number; tickers: string[] }>(`${this.base}/api/tickers`);
   }
+
+  /** The hidden analyst-notes box (see the easter egg in AnalyzerPageComponent) —
+   *  posts straight to the local, gitignored JSONL file api.py's `add_note` appends
+   *  to. Nothing reads this back automatically; it is reviewed by hand later. */
+  submitNote(ticker: string, note: string, ctx: {
+    price?: number | null; grade?: string | null; grade_score?: number | null;
+    state?: string | null; action?: string | null;
+  }): Observable<{ saved: boolean }> {
+    return this.http.post<{ saved: boolean }>(`${this.base}/api/notes`, { ticker, note, ...ctx });
+  }
 }

@@ -28,7 +28,9 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 
-from fastapi import FastAPI, HTTPException, Query
+from datetime import datetime, timezone
+
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -395,3 +397,43 @@ def scan(
         hits.sort(key=lambda h: (-h['setup_count'],
                                  -sum(1 for s in h['setups'] if s['active'])))
     return {"scanned": len(universe), "matched": len(hits), "results": hits}
+
+
+# ── Analyst notes: the hidden per-analysis feedback box ──────────────────────
+# Reached only through the front-end's own easter egg (no route/button points here
+# for an ordinary user) — deliberately unauthenticated rather than built out with
+# real accounts, since the owner asked not to take on user-rights management for
+# this. Every submission is just appended to a local, gitignored JSONL file; NOTHING
+# here reads it back into the grade automatically. The owner reviews the file by
+# hand (or hands it to a future session with "read analyst_notes.jsonl and fix the
+# code accordingly") and decides what, if anything, becomes a real change — same
+# arm's-length shape as the Discord corpus (`discord_harvest.py`/`tools/corpus.py`),
+# just sourced from typing directly on the analysis being looked at instead of a
+# Discord post.
+NOTES_PATH = os.path.join(_ROOT, 'analyst_notes.jsonl')
+
+
+@app.post("/api/notes")
+def add_note(payload: dict = Body(...)):
+    ticker = str(payload.get('ticker') or '').strip().upper()
+    note = str(payload.get('note') or '').strip()
+    if not ticker or not note:
+        raise HTTPException(status_code=400, detail="ticker and note are required")
+    row = {
+        'ts': datetime.now(timezone.utc).isoformat(),
+        'ticker': ticker,
+        'note': note,
+        # Whatever the panel was showing when the note was written — so reading
+        # this back later doesn't require re-running analyze() against a price
+        # that has since moved to reconstruct what was actually being reacted to.
+        'context': {
+            'price': payload.get('price'),
+            'grade': payload.get('grade'),
+            'grade_score': payload.get('grade_score'),
+            'state': payload.get('state'),
+            'action': payload.get('action'),
+        },
+    }
+    with open(NOTES_PATH, 'a', encoding='utf-8') as f:
+        f.write(json.dumps(row, ensure_ascii=False) + '\n')
+    return {'saved': True}

@@ -215,6 +215,60 @@ export class AnalyzerPageComponent implements OnInit {
     this.api.tickers().subscribe({ next: r => { this.tickerList = r.tickers; } });
   }
 
+  // ── Hidden analyst-notes box ──────────────────────────────────────────────
+  // The owner asked for a way to leave commentary against a specific analysis for
+  // a later session to read and learn from, but explicitly did NOT want to build
+  // real user accounts/permissions right now. Obscurity stands in: N rapid clicks
+  // on the grade badge (an element every viewer already sees, but nothing tells
+  // them to click repeatedly) reveals the box; nothing else in the UI points at
+  // it. Submissions are just appended to a local, gitignored JSONL file
+  // (`backend/api.py`'s `add_note`) — nothing reads them back into the grade
+  // automatically, by design (see the endpoint's own comment).
+  private static readonly EGG_CLICKS = 5;
+  private static readonly EGG_WINDOW_MS = 1500;
+  private badgeClickTimes: number[] = [];
+  showNoteBox = false;
+  noteText = '';
+  noteSaved = false;
+
+  onGradeBadgeClick(): void {
+    const now = Date.now();
+    this.badgeClickTimes = this.badgeClickTimes.filter(
+      (t) => now - t < AnalyzerPageComponent.EGG_WINDOW_MS);
+    this.badgeClickTimes.push(now);
+    if (this.badgeClickTimes.length >= AnalyzerPageComponent.EGG_CLICKS) {
+      this.badgeClickTimes = [];
+      this.showNoteBox = true;
+      this.noteSaved = false;
+    }
+  }
+
+  closeNoteBox(): void {
+    this.showNoteBox = false;
+    this.noteText = '';
+  }
+
+  submitNote(): void {
+    const text = this.noteText.trim();
+    if (!text || !this.analysis) return;
+    const m = this.analysis.micha;
+    this.api.submitNote(this.ticker, text, {
+      price: this.analysis.meta?.price ?? null,
+      grade: m.grade, grade_score: m.grade_score, state: m.state, action: m.action,
+    }).subscribe({
+      next: () => {
+        this.noteText = '';
+        this.noteSaved = true;
+        // Auto-close shortly after a confirmed save — the box is meant to be in
+        // and out quickly, not a persistent panel someone has to remember to close.
+        setTimeout(() => { this.showNoteBox = false; this.noteSaved = false; }, 1200);
+      },
+      // Left open with the text intact on failure, so a dropped request doesn't
+      // silently lose what was typed.
+      error: () => { this.noteSaved = false; },
+    });
+  }
+
   ngOnInit(): void {
     // `initialTicker` (embedded via quicklook) wins over the routed `?ticker=`
     // query param (the Radar page's now-unused "→ Analyzer" navigate-away path),
@@ -242,6 +296,7 @@ export class AnalyzerPageComponent implements OnInit {
     if (!t) return;
     this.loading = true;
     this.error = '';
+    this.closeNoteBox();
     this.api.analyze(t).subscribe({
       next: (a) => {
         this.analysis = a;
