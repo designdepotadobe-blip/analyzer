@@ -40,6 +40,10 @@ from config import (
     GAP_LOOKBACK,
     NEAR_ATR,
     TRI_RELEVANT_ATR,
+    VCP_CONTRACTION_RATIO,
+    VCP_LEG_MIN_BARS,
+    VCP_MIN_LEGS,
+    VCP_NEAR_PIVOT_ATR,
     jnum,
 )
 from geometry import Geometry
@@ -51,6 +55,7 @@ class SetupScanner:
     def scan(self, ctx, res_levels: list, sup_levels: list,
              overlays: dict, setups: list) -> None:
         times, highs, lows, closes = ctx.times, ctx.highs, ctx.lows, ctx.closes
+        vols = ctx.vols
         M, atr, price, mean_price = ctx.M, ctx.atr, ctx.price, ctx.mean_price
         sh_idx, sl_idx = ctx.sh_idx, ctx.sl_idx
 
@@ -168,6 +173,25 @@ class SetupScanner:
         fx = self._detect_fib_extension(highs, lows, price, atr, M, sh_idx, sl_idx)
         if fx:
             overlays['fib_ext'] = fx
+
+        # ── VCP: a staircase of tightening, quieting-volume legs ────────────
+        # Distinct from `_long_base`/`_consolidation_zones` (both ONE flat box,
+        # volume-blind) and from cup & handle (fixed single-decline geometry):
+        # this looks for a run of successive pullbacks each SHALLOWER than the
+        # last, on progressively LIGHTER volume, coiling into today's price —
+        # "smart money accumulating quietly" ahead of the actual breakout.
+        vcp = self._detect_vcp(highs, lows, vols, price, atr, M, sh_idx, sl_idx)
+        if vcp:
+            overlays['vcp'] = {
+                'pivot': vcp['pivot'], 'n_legs': vcp['n_legs'],
+                'tightness': vcp['tightness'],
+                'top_time': times[vcp['top_i']], 'bottom_time': times[vcp['bottom_i']],
+            }
+            setups.append(self._setup(
+                'vcp', 'Volatility contraction',
+                f"{vcp['n_legs']} progressively tighter legs on lighter volume, "
+                f"coiling under {vcp['pivot']:.2f}.",
+                active=bool(price >= vcp['pivot'])))
 
         # ── Cup & handle ───────────────────────────────────────────────────
         # His most-posted shape (269 charted posts name a cup) and the source of
@@ -362,6 +386,79 @@ class SetupScanner:
             return None
         best['levels'] = levels
         return best
+
+    @staticmethod
+    def _detect_vcp(highs, lows, vols, price, atr, M, sh_idx, sl_idx):
+        """
+        Volatility Contraction Pattern: a run of successive high-to-low legs,
+        each one tighter than the last (VCP_CONTRACTION_RATIO) and on lighter
+        volume than the last, coiling into a pivot close enough to today's
+        price to still be the operative setup (VCP_NEAR_PIVOT_ATR).
+
+        Distinct from `_long_base` (one flat box, no leg structure, no volume)
+        and from cup & handle (one fixed decline-then-recovery shape): this is
+        specifically the "each pullback shallower and quieter than the last"
+        staircase — the shape that says supply is drying up leg over leg,
+        not just "the stock has been quiet for a while."
+        """
+        if not atr or len(sh_idx) < 1 or len(sl_idx) < 1:
+            return None
+        # One chronological pivot sequence, alternating H/L — when two pivots
+        # of the same kind land back to back (a common artifact of scanning
+        # highs and lows independently), keep only the more extreme one so
+        # the sequence actually alternates.
+        piv = sorted([(int(i), 'H') for i in sh_idx] + [(int(i), 'L') for i in sl_idx])
+        seq = []
+        for idx, kind in piv:
+            if seq and seq[-1][1] == kind:
+                prev_idx = seq[-1][0]
+                if (kind == 'H' and highs[idx] > highs[prev_idx]) or \
+                   (kind == 'L' and lows[idx] < lows[prev_idx]):
+                    seq[-1] = (idx, kind)
+                continue
+            seq.append((idx, kind))
+        if len(seq) < VCP_MIN_LEGS + 1:
+            return None
+
+        # Each adjacent (high, low) pair is one contraction leg.
+        legs = []
+        for i in range(len(seq) - 1):
+            (i0, k0), (i1, k1) = seq[i], seq[i + 1]
+            if k0 != 'H' or k1 != 'L' or (i1 - i0) < VCP_LEG_MIN_BARS:
+                continue
+            rng = float(highs[i0] - lows[i1])
+            if rng <= 0:
+                continue
+            legs.append({'hi': i0, 'lo': i1, 'range': rng,
+                         'vol': float(np.nanmean(vols[i0:i1 + 1])),
+                         'top': float(highs[i0])})
+        if len(legs) < VCP_MIN_LEGS:
+            return None
+
+        # Walk backward from the most recent leg, keeping only the trailing
+        # run where each earlier leg is WIDER (by at least VCP_CONTRACTION_
+        # RATIO) and LOUDER (higher average volume) than the one after it —
+        # i.e. the staircase actually tightens and quiets all the way in.
+        trail = [legs[-1]]
+        for leg in reversed(legs[:-1]):
+            nxt = trail[0]
+            if (nxt['range'] <= leg['range'] * VCP_CONTRACTION_RATIO
+                    and nxt['vol'] <= leg['vol']):
+                trail.insert(0, leg)
+            else:
+                break
+        if len(trail) < VCP_MIN_LEGS:
+            return None
+
+        pivot = trail[-1]['top']
+        if abs(price - pivot) > VCP_NEAR_PIVOT_ATR * atr:
+            return None          # tightened, but not near today's price any more
+
+        return {
+            'pivot': jnum(pivot), 'n_legs': len(trail),
+            'tightness': jnum(trail[-1]['range'] / trail[0]['range']) if trail[0]['range'] else None,
+            'top_i': trail[0]['hi'], 'bottom_i': trail[-1]['lo'],
+        }
 
     @staticmethod
     def _detect_cup_handle(highs, lows, closes, price, atr, M, sh_idx, sl_idx):

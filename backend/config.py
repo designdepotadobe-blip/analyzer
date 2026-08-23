@@ -89,6 +89,19 @@ BREAKOUT_LOOKFORWARD = 20   # bars ahead to score a historical breakout
 # ── Trend geometry ────────────────────────────────────────────────────────────
 NEAR_ATR = 0.7              # "close to a level" tolerance, in ATRs
 EXTENDED_ATR = 2.0          # > this many ATRs above a broken level ⇒ extended
+# A softer, EARLIER rung than EXTENDED_ATR above: past that ceiling the state
+# machine stops calling it `breakout_now` at all (falls through to `holding`,
+# which was never `enter` in the first place). What was missing was a warning
+# BEFORE that hard ceiling — chasing a break that is already a full ATR past
+# the level it broke is a materially worse entry than buying it at the level,
+# even though the state hasn't yet flipped away from `breakout_now`. ATR-
+# normalized, not a flat percent, for the same reason every other distance in
+# this file is: a flat "3-5%" means a different number of standard daily
+# ranges on a calm 2%-ATR name than on a violent 8%-ATR one. Deliberately a
+# SOFT gate (downgrades `enter` to `wait_pullback`, same shape as `stretched`
+# below) rather than a hard veto — an already-extended breakout with real
+# structure behind it is still a legitimate trade, just not a chase.
+CHASE_PAST_TRIGGER_ATR = 1.0
 MIN_TREND_SLOPE_PCT = 0.03  # min |slope| (% of price per bar) to call a line "sloped"
 
 # `_trend()`'s recent-window override. A pure full-window regression reads a
@@ -162,6 +175,33 @@ GOLDEN_POCKET = (0.60, 0.68)  # the 61.8–66% "golden pocket" Fib zone — his 
 MOMENTUM_RUN_DAYS = 5       # this many consecutive up-closes ⇒ a momentum run (getting extended)
 CAPITULATION_VOL = 1.8      # a wash-out bar's volume vs the 20-day average
 LONG_BASE_BARS = 25         # a consolidation this long is a "pressure-relief" base (bullish coil)
+
+# ── Volatility Contraction Pattern (VCP) ───────────────────────────────────────
+# `LONG_BASE_BARS` above finds ONE flat box; a true VCP is a SEQUENCE of them —
+# each successive leg tighter than the last, and (the part `_long_base` cannot
+# see at all) volume drying up leg over leg into the pivot, the classic
+# "smart money accumulating quietly" signature that precedes a real breakout.
+# Owner's directive: reward this shape specifically, not just "has been quiet
+# for a while" — a stock that chopped sideways in one wide range for 25 bars
+# is not the same setup as one that visibly tightened its range three times
+# running on shrinking volume.
+VCP_MIN_LEGS = 2            # at least this many successive contracting legs to count
+VCP_LEG_MIN_BARS = 5        # a leg shorter than this is noise, not a real contraction step
+# Each leg's range must be no more than this fraction of the PRIOR leg's range —
+# i.e. at least a 25% tightening step, matching the "each pullback should be
+# shallower than the last" shape VCP is named for. A ratio near 1.0 would accept
+# legs that aren't actually contracting; this is a floor on how much tighter,
+# not merely "not wider".
+VCP_CONTRACTION_RATIO = 0.75
+# The tightened base has to still be TODAY's situation — a coil that finished
+# contracting two months ago and has since drifted away is a different chart,
+# same reasoning as BREAKOUT_FRESH_BARS/HEADROOM_TIGHT_ATR elsewhere in this file.
+VCP_NEAR_PIVOT_ATR = 1.0
+# The structure-axis bonus for a fresh, qualifying VCP — same order of
+# magnitude as the existing pattern bonus (`+4`, see `_grade`'s structure
+# section), since this is one more chart-quality fact among several, not a
+# dominant term on its own.
+VCP_STRUCTURE_BONUS = 6.0
 MIN_MARKET_CAP = 1_000_000_000  # Micha screens out sub-$1B names for the 150 method
 ROUND_NEAR_ATR = 0.6        # a round number this close to price is a psychological level
 EARNINGS_SOON_DAYS = 5      # earnings within this many days → defer new entries

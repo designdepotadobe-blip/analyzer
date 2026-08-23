@@ -75,6 +75,7 @@ from config import (
     CUP_RIM_DEPTH_ATR,
     CUP_RIM_NEAR_ATR,
     EARNINGS_SOON_DAYS,
+    CHASE_PAST_TRIGGER_ATR,
     EXTENDED_ATR,
     FAR_FROM_MA_PCT,
     TARGET_ODDS_FLOOR,
@@ -116,6 +117,9 @@ from config import (
     TRIGGER_REANCHOR_TOUCH_MULT,
     TRIGGER_ZONE_ATR,
     VALUE_NEAR_150_ATR,
+    VCP_MIN_LEGS,
+    VCP_STRUCTURE_BONUS,
+    VOL_SPIKE_FACTOR,
     expectancy,
     jnum,
     time_to_target,
@@ -190,6 +194,10 @@ class Signals:
     candle: dict = field(default_factory=dict)
     capitulation: bool = False
     base: Optional[dict] = None
+    # a fresh, qualifying Volatility Contraction Pattern (setups._detect_vcp) —
+    # a run of successive tightening, quieting-volume legs, distinct from `base`
+    # (one flat box, `_long_base`) and from a cup/handle's fixed geometry.
+    vcp: Optional[dict] = None
     momentum: int = 0
     # structure
     res_levels: list = field(default_factory=list)
@@ -370,7 +378,7 @@ class Judgement:
         hold = self._hold_level(ctx, s)
         state = self._state(ctx, s, trigger, hold)
         options = self._options(ctx, s, state, trigger, hold)
-        action = self._action(state, s, earn, options)
+        action = self._action(ctx, state, s, earn, options)
         grade, breakdown = self._grade(ctx, s, state, trigger, options, action,
                                        small_cap, earn)
         confirmation = _confirmation(breakdown)
@@ -1619,7 +1627,7 @@ class Judgement:
     # ── 6. The action ─────────────────────────────────────────────────────────
 
     @staticmethod
-    def _action(state, s: Signals, earn, options) -> str:
+    def _action(ctx, state, s: Signals, earn, options) -> str:
         # "רק חכו לדיווח התוצאות מחר - פשוט לא רוצה לשכוח את הסט אפ" (PM) — the setup
         # still stands, the entry is deferred.
         entering = state in ('breakout_now', 'buyers_at_level', 'value_pullback')
@@ -1628,6 +1636,21 @@ class Judgement:
         # Stretched is a modifier, not a veto: "מתוחה אבל ... כל עוד שומרת מעל 19 היא
         # בסדר" (CRML). It never blocks holding — it blocks CHASING.
         if entering and s.ext.get('stretched'):
+            return 'wait_pullback'
+        # The same "don't chase" idea, measured a different way: distance from the
+        # level THIS break actually happened at, not from the 150/200MA. `stretched`
+        # can be false on a chart that just broke out cleanly weeks below its
+        # average and has since run hard off that fresh level — the MA is still
+        # close, but the entry itself is no longer at the break. ATR-normalized
+        # (CHASE_PAST_TRIGGER_ATR), same reasoning as EXTENDED_ATR's own hard
+        # ceiling on `breakout_now` itself (`_state`) — this is the SOFTER, earlier
+        # rung between "right at the level" and that hard ceiling, so an entry a
+        # full ATR past its own trigger gets a caution before the state machine
+        # gives up on calling it a breakout at all. A modifier, not a veto, same as
+        # `stretched` above — a real, well-structured breakout that has run is
+        # still a trade, just not a chase.
+        if (entering and s.break_level and ctx.atr
+                and (ctx.price - s.break_level) / ctx.atr > CHASE_PAST_TRIGGER_ATR):
             return 'wait_pullback'
         if entering:
             return 'enter'
@@ -2124,12 +2147,36 @@ class Judgement:
         if s.pattern:
             structure += 4
             note('structure', 4, f'{s.pattern[0]} on the chart', f'{s.pattern[1]} על הגרף')
+        # VCP: a run of successive legs, each tighter AND quieter than the last
+        # (setups._detect_vcp) — a stronger, more specific claim than "there is
+        # SOME pattern here" (the generic +4 just above, which this stacks with
+        # rather than replaces: "a pattern is present" and "this particular
+        # pattern is a high-quality one" are different facts). Two-tier rather
+        # than a fitted curve — PROVENANCE: reasoned from the owner's directive,
+        # not measured, same status as HEADROOM_MAX/POTENTIAL_MAX when those were
+        # introduced. One extra confirming leg beyond the minimum earns the full
+        # bonus; sitting right at the minimum earns a partial one.
+        if s.vcp:
+            vcp_bonus = (VCP_STRUCTURE_BONUS if s.vcp['n_legs'] > VCP_MIN_LEGS
+                         else VCP_STRUCTURE_BONUS * 0.6)
+            structure += vcp_bonus
+            note('structure', vcp_bonus,
+                 f"{s.vcp['n_legs']} progressively tighter legs on lighter volume, "
+                 f"coiling under {s.vcp['pivot']:.2f}",
+                 f"{s.vcp['n_legs']} רגליים מתכווצות בהדרגה על ווליום קל יותר, "
+                 f"מתכנסות מתחת ל-{s.vcp['pivot']:.2f}")
         if s.vol.get('trend') == 'rising':
             structure += 5
             note('structure', 5, 'volume expanding into the move', 'ווליום מתרחב לתוך המהלך')
         elif s.vol.get('trend') == 'flat':
             structure += 2.5
-        else:
+        elif not s.vcp:
+            # Skipped specifically when a fresh VCP is present: a tightening base's
+            # whole signature IS volume drying up leg over leg — that's the VCP note
+            # just above explaining it as a POSITIVE, and firing this generic
+            # "isn't expanding — without it this isn't a breakout" complaint right
+            # alongside it would have the sentence arguing with itself over the same
+            # underlying fact. Every chart without a detected VCP is unaffected.
             note('structure', -5,
                  "volume isn't expanding into the move — without it this isn't a breakout",
                  'הווליום לא מתרחב לתוך המהלך — ובלי זה זו לא פריצה')
@@ -2329,6 +2376,21 @@ class Judgement:
         if stop_flag == 'wide':
             cap('stop_wide', 'no sane stop from here — that is not a stop in this method',
                 'אין סטופ הגיוני מכאן — זה לא סטופ בשיטה הזו', 1)
+        # Belt-and-suspenders with the volume-spike test `_fresh_break` already
+        # applies before `s.break_level` is ever set (both branches, horizontal
+        # and diagonal — see micha.py): reuses `s.vol_detail['break_vol_x']`
+        # (already computed for the reasons-panel text, not recomputed here) so
+        # ANY path that could someday populate `break_level` without the spike
+        # check still gets caught at the letter. "A break without volume is not
+        # a break" — a break attempt on ordinary volume is not the event the
+        # method is organised around, so this caps rather than merely dings.
+        bvx = (s.vol_detail or {}).get('break_vol_x')
+        if state == 'breakout_now' and bvx is not None and bvx < VOL_SPIKE_FACTOR:
+            cap('weak_volume',
+                f"the break came on only {bvx:.1f}× average volume — thin for a "
+                f"breakout, that is the one thing missing",
+                f"הפריצה הגיעה על {bvx:.1f}× מהווליום הממוצע בלבד — דק מדי לפריצה, "
+                f"זה הדבר היחיד שחסר", 2)
         if hr is not None and hr.get('level') == 'tight':
             # An A means "everything lines up — מה עוד נותר לבקש". A well-defended
             # wall inside HEADROOM_TIGHT_ATR of the entry is something left to ask
@@ -2365,6 +2427,25 @@ class Judgement:
                 f"negative expectancy ({rw['ev_r']:+.2f}R) — the odds do not pay for "
                 f"the risk at this target",
                 f"תוחלת שלילית ({rw['ev_r']:+.2f}R) — הסיכויים לא מצדיקים את הסיכון ליעד הזה", 2)
+        elif (rw['ev_r'] is not None and REWARD_EV_FULL
+                and (rw['ev_r'] / REWARD_EV_FULL) <= REWARD_EV_THIN_FRAC
+                and state not in ('broken', 'avoid', 'nothing_yet')):
+            # One tier gentler than `negative_ev`, and reusing the exact same
+            # threshold `_reward`'s own "thin expectancy" note already fires on
+            # (REWARD_EV_THIN_FRAC) rather than inventing a second number that
+            # could quietly disagree with it. A hard MINIMUM RATIO (e.g. 1:2.5)
+            # was considered and rejected: the axis's own expectancy grid shows
+            # a tight-stop 1.0-ATR/2R setup can out-earn a wide-stop 3-ATR/3R one
+            # (see config.EXPECTANCY_PWIN), so gating on the raw ratio would block
+            # exactly the shape the method rates highest. Gating on EXPECTANCY
+            # instead — real but thin edge — catches the same "not worth an
+            # unqualified enter" case without that flaw. Capped at B, not C:
+            # a thin edge is a weaker `enter` than a strong one, not a reason to
+            # avoid it outright the way a losing one (`negative_ev`) is.
+            cap('marginal_ev',
+                f"a real edge, but a thin one ({rw['ev_r']:+.2f}R) — not worth an "
+                f"unqualified enter",
+                f"תוחלת אמיתית אך דקה ({rw['ev_r']:+.2f}R) — לא מצדיקה כניסה חד-משמעית", 3)
         if s.ext.get('severe'):
             # Clear of BOTH the 150 and the 200 — "מהממוצעים", plural. The one he
             # declines rather than merely flags: "מתוחה ורחוקה מהממוצע. האם זו נקודת

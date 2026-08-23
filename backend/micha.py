@@ -84,6 +84,7 @@ class MichaAnalyzer:
         momentum = self._momentum_days(ctx)
         capitulation = self._capitulation(ctx, off_high)
         base = self._long_base(ctx)
+        vcp = overlays.get('vcp')
         broke_desc = self._broke_descending(ctx, overlays)
         break_level = self._fresh_break(ctx, sup_levels, overlays, broke_desc)
         break_age = self._bars_since_cross(ctx, break_level, up=True)
@@ -105,6 +106,7 @@ class MichaAnalyzer:
         sig = Signals(
             trend=trend, off_high=off_high, ath=ath, fib_r=fib_r, golden=golden,
             ext=ext, vol=vol, candle=candle, capitulation=capitulation, base=base,
+            vcp=vcp,
             momentum=momentum, res_levels=res_levels, sup_levels=sup_levels,
             nearest_res=nearest_res, nearest_sup=nearest_sup, broke_desc=broke_desc,
             break_level=break_level, break_age=break_age,
@@ -1181,11 +1183,21 @@ class MichaAnalyzer:
         if best is not None:
             return best
         # a freshly broken descending-highs line is the same event in diagonal form
-        # ("פורצת שיאים יורדים" — WGMI, NVDA, OKTA)
+        # ("פורצת שיאים יורדים" — WGMI, NVDA, OKTA) — held to the SAME volume-spike
+        # bar test as the horizontal branch above. This used to return the line's
+        # price unconditionally, so a trendline break on ordinary volume populated
+        # `break_level` (and therefore `breakout_now`/`enter`) exactly the way the
+        # horizontal branch already refuses to — the one gap the volume rule had.
         if broke_desc:
             for t in overlays.get('trendlines', []):
-                if t.get('kind') == 'falling_highs' and t.get('broke'):
-                    return float(t['p2']['price'])
+                if t.get('kind') != 'falling_highs' or not t.get('broke'):
+                    continue
+                edge = t.get('p2', {}).get('price')
+                if edge is None:
+                    continue
+                for i in range(lo, len(c)):
+                    if c[i - 1] <= edge < c[i] and avg and v[i] >= avg * VOL_SPIKE_FACTOR:
+                        return float(edge)
         return None
 
     @staticmethod
@@ -1476,8 +1488,18 @@ class MichaAnalyzer:
                             abs(ctx.price - ctx.sma200)) <= 2.0 * ctx.atr)
 
     def _pattern(self, codes, base):
+        # `vcp` and `cup_handle` lead the tuple — the primary multi-week base
+        # shapes this method is built around — ahead of the shorter-lived
+        # patterns below them. Neither used to be IN this tuple at all: a
+        # detected cup with no simultaneous bull_flag code fell all the way
+        # through to the `base` fallback below, and `bull_flag`'s own label
+        # ("Cup & handle / flag") was overloaded to cover for it. Fibonacci
+        # (retracement or extension) was never in this tuple and still isn't —
+        # a Fib zone is a level to react to, not the chart's headline pattern.
         for code, en, he in (
-            ('bull_flag', 'Cup & handle / flag', 'קאפ אנד הנדל'),
+            ('vcp', 'Volatility contraction', 'התכנסות תנודתיות'),
+            ('cup_handle', 'Cup & handle', 'קאפ אנד הנדל'),
+            ('bull_flag', 'Bull flag', 'דגל שורי'),
             ('triangle', 'Converging triangle', 'משולש מתכנס'),
             ('rising_channel', 'Rising channel', 'תעלה עולה'),
             ('descending_channel', 'Descending channel', 'תעלה יורדת'),
