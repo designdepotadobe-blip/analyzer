@@ -1,21 +1,29 @@
 :host {
   display: block;
-  height: 100vh;
-  /* Overrides the line above in browsers that support it (all current mobile
-     ones) — `100vh` on mobile is sized against the LARGEST possible viewport
-     (address bar hidden), not what's actually visible on first paint (address
-     bar still showing), so the bottom of the layout was clipped until the user
-     scrolled once and the browser chrome collapsed to reveal it. `100dvh`
-     tracks the actual visible viewport as the browser chrome shows/hides,
-     closing that gap without needing a scroll at all. Kept `100vh` as the first
-     declaration for older/non-supporting browsers to fall back to. */
-  height: 100dvh;
+  /* Claims the space the shell (app.component.css) has left after the
+     persistent legal footer. `min-height: 0` because a flex item defaults to
+     `min-height: auto` and would refuse to shrink below its content, pushing
+     the footer back off-screen — the same trap documented on `.micha` below. */
+  flex: 1;
+  min-height: 0;
+  /* Height comes from the SHELL now (app.component.css), which splits the
+     viewport between this page and the persistent legal footer. This used to
+     be `height: 100vh/100dvh` — claiming the entire viewport for the page,
+     which pushed the footer below the fold, and since `.layout` never scrolls
+     (`overflow: hidden`) there was no way to scroll down to it.
+
+     The dvh reasoning that lived here still applies, it just moved up to the
+     shell: `100vh` on mobile is sized against the LARGEST possible viewport
+     (address bar hidden) rather than what is actually visible on first paint,
+     so the bottom was clipped until the browser chrome collapsed. `100dvh`
+     tracks the visible viewport; `100vh` stays as the fallback. */
   color: #d1d4dc;
 }
 
 .layout {
-  height: 100vh;
-  height: 100dvh;
+  /* 100% of the space the shell handed this page, not 100% of the viewport —
+     the difference IS the footer. */
+  height: 100%;
 }
 
 /* ── Top bar: ticker search + Micha toggle, always visible ─────────────── */

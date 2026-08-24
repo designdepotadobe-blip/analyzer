@@ -1,15 +1,17 @@
 :host {
   display: block;
-  height: 100vh;
-  /* See analyzer-page.component.css's comment on the same pair of rules —
-     `100dvh` tracks the actual visible mobile viewport as the browser's
-     address bar shows/hides, `100vh` is the fallback for browsers without it. */
-  height: 100dvh;
+  /* Claims the space the shell (app.component.css) leaves after the persistent
+     legal footer; `min-height: 0` so a tall page cannot squeeze the footer out. */
+  flex: 1;
+  min-height: 0;
+  /* Height comes from the shell (app.component.css) — see the same comment in
+     analyzer-page.component.css. Claiming the full viewport here pushed the
+     persistent legal footer off-screen. */
   color: #d1d4dc;
 }
 .layout {
-  height: 100vh;
-  height: 100dvh;
+  /* 100% of what the shell allotted, i.e. viewport minus the legal footer */
+  height: 100%;
   overflow: hidden;
   max-width: 100vw;
 }

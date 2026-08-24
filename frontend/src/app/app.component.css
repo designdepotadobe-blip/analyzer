@@ -1,11 +1,65 @@
+/* The shell owns the viewport and splits it: routed page on top, legal footer
+   underneath, always both on screen.
+
+   Before this, each routed page set `height: 100dvh` on its own `:host`, so the
+   page alone filled the whole viewport and the footer — a sibling in normal
+   flow after `<router-outlet>` — was pushed below the fold. Since the pages
+   themselves never scroll (`.layout` is `overflow: hidden`), there was nothing
+   to scroll to reach it: the disclaimer was effectively invisible.
+
+   Deliberately NOT `position: fixed` on the footer. The comment in
+   app.component.html is right that a fixed bar overlaying three separately
+   tuned viewport-height layouts is the bug class that was just fixed — and an
+   overlay would also sit on top of the chart and the mobile expand button. A
+   flex split gives the footer REAL space instead of borrowed space: the pages
+   now size to "viewport minus footer", which is a number the browser computes,
+   not one anybody has to hard-code. */
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;   /* see the pages' own comment on this pair */
+  overflow: hidden;
+}
+
+/* `<router-outlet>` is a real element in the DOM, not just a marker — the routed
+   component is inserted as its SIBLING, not its child. Left visible it becomes a
+   second flex item and claims an equal share of the column, which showed up as a
+   large empty band above the app. It renders nothing, so take it out of layout. */
+router-outlet {
+  display: none;
+}
+
+/* NOTE: the routed page claims its share of this column from its OWN `:host`
+   (`flex: 1; min-height: 0` in each page's CSS), not from a `:host > *` rule
+   here. That was tried and does not work: under emulated encapsulation a
+   `:host > *` selector compiles to `[_nghost-x] > *[_ngcontent-x]`, and a
+   component inserted by the router never receives the parent's `_ngcontent`
+   attribute — so the rule silently matched nothing and the page collapsed to
+   its content height. Each page owning its own sizing also keeps the pages
+   usable outside this shell. */
+
 .legal-footer {
-  font-size: 9.5px;
-  line-height: 1.5;
-  color: #5a5f6b;
+  /* Legible, not decorative. This was 9.5px in #5a5f6b, which measures about
+     3.3:1 against the #0a0c10 ground — under the 4.5:1 floor for text this
+     size, i.e. present but not really readable. A disclaimer nobody can read
+     is not doing the job it exists to do. 11px at #8b919e clears 7:1 while
+     staying visibly subordinate to the app above it. */
+  font-size: 11px;
+  line-height: 1.6;
+  color: #8b919e;
   background: #0a0c10;
   border-top: 1px solid #1e222d;
-  padding: 6px 12px;
+  padding: 7px 12px;
   text-align: center;
+  /* Long legal copy set across a 1600px window is a single run-on line the eye
+     loses its place in; cap the measure and centre it. */
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+  /* never give up its space to a tall page — that is the whole point */
+  flex-shrink: 0;
 }
 
 .legal-modal-backdrop {
