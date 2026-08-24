@@ -38,7 +38,11 @@ export class RadarPageComponent implements OnInit, OnDestroy {
   private scanSub?: Subscription;
 
   limit = 250;
-  readonly limitOptions = [60, 120, 250, 517];
+  // 1120 = the full universe (Dow + Nasdaq100 + S&P500 + S&P600 — see
+  // ticker_finder.py). Was 517 before S&P 600 was added; this sentinel and the
+  // matching `=== 1120` checks in the template must move together with any
+  // future universe change or "scan everything" silently stops meaning that.
+  readonly limitOptions = [60, 120, 250, 1120];
 
   minGrade: Grade = 'B';
   readonly gradeOptions: Grade[] = ['A', 'B', 'C', 'D'];
@@ -73,7 +77,7 @@ export class RadarPageComponent implements OnInit, OnDestroy {
   readonly displayCapOptions = [20, 30, 50, Infinity];
   /** Angular templates can't reference the bare global `Infinity` identifier —
    *  only component-instance members are in scope — so it's exposed here the same
-   *  way `limitOptions` exposes its own "show everything" sentinel (517). */
+   *  way `limitOptions` exposes its own "show everything" sentinel (1120). */
   readonly INFINITY = Infinity;
 
   /** "sitting on the correct price to enter, or ready for it" — the exact question

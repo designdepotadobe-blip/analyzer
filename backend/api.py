@@ -194,15 +194,17 @@ def _preset_ok(preset: str, m: dict, meta: dict, best: dict | None, al: dict | N
 @app.get("/api/scan")
 def scan(
     setup: str | None = Query(None, description="filter by a setup code, e.g. bull_flag"),
-    # `_universe()[:limit]` already clamps to the real universe size (~517
-    # Dow+Nasdaq100+S&P500 names) regardless of how high this goes, so the ceiling
-    # here is just a safety bound, not a real constraint — it must sit ABOVE the
-    # universe size or the client's own "scan everything" option (517) gets
-    # rejected outright with a 422 before a single ticker runs. Found via an actual
-    # end-to-end run, not inspection: `le=500` silently broke the Radar page's own
-    # "הכל" scope chip, and on the streaming endpoint a 422 reads to `EventSource`
-    # as an immediate connection error with no explanation in the UI.
-    limit: int = Query(60, ge=1, le=600, description="max tickers to scan"),
+    # `_universe()[:limit]` already clamps to the real universe size (1,120:
+    # Dow+Nasdaq100+S&P500+S&P600 — see ticker_finder.py) regardless of how high
+    # this goes, so the ceiling here is just a safety bound, not a real
+    # constraint — it must sit ABOVE the universe size or the client's own
+    # "scan everything" option gets rejected outright with a 422 before a single
+    # ticker runs. Found via an actual end-to-end run, not inspection: `le=500`
+    # silently broke the Radar page's own "הכל" scope chip once already (when
+    # the universe was 517), and on the streaming endpoint a 422 reads to
+    # `EventSource` as an immediate connection error with no explanation in the
+    # UI. Same trap, same fix, now that S&P 600 grew the universe past 600.
+    limit: int = Query(60, ge=1, le=1500, description="max tickers to scan"),
     workers: int = Query(8, ge=1, le=24),
     alerting: bool = Query(False, description="only names close to their trigger"),
     actionable: bool = Query(False, description="only names tradeable today or ready"),
