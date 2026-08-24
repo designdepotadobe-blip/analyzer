@@ -439,3 +439,15 @@ def add_note(payload: dict = Body(...)):
     with open(NOTES_PATH, 'a', encoding='utf-8') as f:
         f.write(json.dumps(row, ensure_ascii=False) + '\n')
     return {'saved': True}
+
+
+@app.get("/api/notes")
+def list_notes():
+    """Read back everything `add_note` has appended — newest first, since that's
+    the order a reviewer actually wants ("what did I just leave myself")."""
+    if not os.path.exists(NOTES_PATH):
+        return {'count': 0, 'notes': []}
+    with open(NOTES_PATH, encoding='utf-8') as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+    rows.reverse()
+    return {'count': len(rows), 'notes': rows}
