@@ -383,10 +383,6 @@
               </span>
             </span>
           </div>
-          <div class="ep-row warn" *ngFor="let w of a.micha.report.warnings">
-            <span class="ep-tag">⚠</span>
-            <span class="ep-txt">{{ w.he }}</span>
-          </div>
         </div>
       </div>
 
@@ -663,6 +659,20 @@
         <ul class="micha-notes" *ngIf="a.micha.notes.length" dir="rtl">
           <li *ngFor="let n of a.micha.notes">{{ n.he }}</li>
         </ul>
+      </div>
+
+      <!-- Warnings — pinned to the bottom of the panel, never scrolled away.
+           Moved out of `.decision` (which lives inside the scrolling body) so a
+           caveat cannot be missed just because the reader never scrolled to it:
+           a warning that is only visible if you look for it is not a warning.
+           Last child of `.micha` so its natural position is the end of the
+           content, which is what makes `position: sticky; bottom: 0` hold it
+           against the bottom of the scrollport the whole way down. -->
+      <div class="micha-warnings" *ngIf="a.micha.report.warnings?.length" dir="rtl">
+        <div class="ep-row warn" *ngFor="let w of a.micha.report.warnings">
+          <span class="ep-tag">⚠</span>
+          <span class="ep-txt">{{ w.he }}</span>
+        </div>
       </div>
     </aside>
     </div><!-- /workspace -->

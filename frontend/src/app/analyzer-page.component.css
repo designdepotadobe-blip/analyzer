@@ -328,6 +328,13 @@ button:disabled {
 .micha {
   padding: 10px 14px;
   background: #0e1117;
+  /* Column flex so `.micha-warnings` can claim the bottom with `margin-top:auto`
+     when the analysis is SHORT. Sticky alone is not enough for that case: with
+     content shorter than the scrollport there is nothing to scroll, so a sticky
+     footer just sits wherever the content ends — which on a collapsed panel is
+     the middle of the rail. The two work as a pair, see `.micha-warnings`. */
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── Decision banner: the bottom line, up top ─────────────────────────── */
@@ -1085,6 +1092,46 @@ button:disabled {
 .ep-row.growth.pace-slow .ep-tag { background: rgba(255, 167, 38, 0.12); color: #ffa726; }
 .ep-row.warn .ep-tag { background: rgba(255, 167, 38, 0.14); color: #ffa726; }
 .ep-row.warn .ep-txt { color: #c7ccd4; }
+
+/* ── Warnings: pinned to the bottom of the panel ──────────────────────────
+   A caveat the reader has to scroll to find is a caveat that gets missed, so
+   these sit against the bottom edge of the panel at all times instead of in
+   the scrolling body where they used to live.
+
+   `sticky` rather than `fixed`: fixed would position against the VIEWPORT and
+   so would float over the chart (and, on mobile, over the expand button),
+   which is a different component's space. Sticky keeps it inside `.micha`'s
+   own scrollport — the panel owns the warning, the page does not.
+
+   The negative margins bleed the strip to the panel's edges (cancelling
+   `.micha`'s 10px/14px padding) so it reads as a footer rail rather than a
+   floating card, and the padding puts the inset back on the content. The
+   background must stay OPAQUE: content scrolls underneath this, and a
+   translucent strip would render the text on top of it unreadable. */
+.micha-warnings {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  /* `margin-top:auto` handles the SHORT-content case (pushed to the bottom of
+     the rail); `position:sticky` handles the LONG-content case (held against
+     the scrollport while the analysis scrolls underneath). Both are needed —
+     each alone leaves the other case looking wrong. `flex-shrink:0` stops the
+     strip being squeezed to nothing by a tall analysis above it. */
+  margin: auto -14px -10px;
+  flex-shrink: 0;
+  padding: 8px 14px;
+  background: #0e1117;
+  border-top: 1px solid rgba(255, 167, 38, 0.35);
+  box-shadow: 0 -6px 12px rgba(14, 17, 23, 0.9);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  /* Several warnings on a small panel must not eat the whole scrollport —
+     cap the rail and let it scroll internally instead of pushing the analysis
+     out of view. */
+  max-height: 30vh;
+  overflow-y: auto;
+}
 .ep-txt { line-height: 1.45; }
 /* The odds belong next to the number, not in a tooltip — "+30%" at a 17% hit rate
    and "+8%" at 75% are not the same claim and must not read alike. */
