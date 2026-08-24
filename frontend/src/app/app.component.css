@@ -50,12 +50,20 @@ router-outlet {
   color: #8b919e;
   background: #0a0c10;
   border-top: 1px solid #1e222d;
-  padding: 7px 12px;
+  padding: 5px 14px;
   text-align: center;
-  /* Long legal copy set across a 1600px window is a single run-on line the eye
-     loses its place in; cap the measure and centre it. */
-  max-width: 1100px;
-  margin: 0 auto;
+  /* ONE row, not the previous 2-3 wrapped lines — giving that reclaimed height
+     back to the chart above is the whole point of this change. The text itself
+     is ~335 Hebrew characters, which at a legible size runs to roughly 2000px —
+     wider than most windows even at full bleed — so a literal single line
+     can't also be made to FIT the viewport without shrinking the font back
+     into the sub-4.5:1-contrast illegibility this was just fixed away from.
+     `nowrap` + its own horizontal scrollbar is the honest tradeoff: the row
+     height is fixed and minimal regardless of window width, and the full text
+     is still one small sideways scroll away rather than silently truncated
+     (a disclaimer that gets clipped is worse than one that takes a scroll). */
+  white-space: nowrap;
+  overflow-x: auto;
   width: 100%;
   box-sizing: border-box;
   /* never give up its space to a tall page — that is the whole point */
