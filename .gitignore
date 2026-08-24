@@ -22,6 +22,9 @@ corpus/
 # validation harness caches (history pickles, scored runs)
 .harness/
 
+# pytest's own cache
+.pytest_cache/
+
 # analyst notes captured from the hidden feedback box (api.py's /api/notes) —
 # personal commentary, reviewed locally on demand, never auto-processed or
 # committed. See backend/api.py's `add_note`/`list_notes`.

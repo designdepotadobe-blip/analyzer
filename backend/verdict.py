@@ -40,6 +40,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Optional
 
+import gates as gt
+import rmultiple as rm
 from config import (
     ALERT_CLOSE_ATR,
     EVENT_BASIS,
@@ -389,6 +391,30 @@ class Judgement:
         report = self._report(ctx, s, state, action, trigger, hold, options, grade,
                               breakdown, earn, small_cap, alert)
 
+        # ── The plan in R space ───────────────────────────────────────────────
+        # Priced off the option the reader is actually being pointed at (the same
+        # `_best_option` the grade and the headline use), not options[0] — the
+        # ladder means nothing without the entry and stop it is measured from,
+        # and grading one option while quoting another's R is the exact
+        # mismatch `_best_option` was introduced to stop. Purely additive: no
+        # score, state or action reads this.
+        best_opt = self._best_option(options, action)
+        r_plan = rm.build_plan(
+            (best_opt or {}).get('entry'), (best_opt or {}).get('stop'),
+            s.targets, atr=atr, atr_pct=ctx.atr_pct)
+        expected_value = rm.expected_value(
+            r_plan, (best_opt or {}).get('stop_atr'),
+            (best_opt or {}).get('expectancy_rr') or (best_opt or {}).get('risk_reward'))
+
+        # ── Hard gates, and the blocker that actually set the outcome ─────────
+        # Composed from what `_grade` already decided (its ceilings) plus the
+        # validity checks that had no home before — see gates.py for why this
+        # reads the grade's own output instead of re-testing the conditions.
+        hard_gates = (gt.validity_gates(best_opt, s.targets)
+                      + gt.from_caps(breakdown.get('caps'),
+                                     breakdown.get('cap_ceilings')))
+        why_not = gt.why_not(action, hard_gates, breakdown.get('positives'))
+
         st_en, st_he = STATE_LABELS[state]
         ac_en, ac_he = ACTION_LABELS[action]
         gm_en, gm_he = GRADE_MEANING[grade]
@@ -401,6 +427,16 @@ class Judgement:
             'headline_action': _headline_action(action, alert),
             'confirmation': confirmation,
             'macro_target': macro_target,
+            # ── additive: the plan in R, and what it is worth ─────────────────
+            # New keys only; nothing existing changed shape, so a client reading
+            # the old payload is unaffected. `expected_value` carries its own
+            # `probability_source` — read that before quoting the number as a
+            # probability of anything (see rmultiple.py's docstring).
+            'r_multiple': r_plan,
+            'expected_value': expected_value,
+            # every blocker, structured; and which one set the outcome
+            'hard_gates': [g.to_dict() for g in hard_gates],
+            'why_not': why_not,
             'grade': grade, 'grade_score': breakdown['score'],
             # the headline number — see `_rating`. `grade`/`grade_score` stay for the
             # scan filters, the caps machinery and `grade_if_break`'s delta.
@@ -2353,7 +2389,11 @@ class Judgement:
         def cap(key, en, he, ceiling):
             nonlocal idx
             hit = ceiling < idx
-            caps.append((key, en, he, hit))
+            # The CEILING is carried as a 5th element so `gates.py` can tell a
+            # blocker apart from a caveat (clamped to D/F vs clamped to B/C)
+            # without hard-coding a second copy of these numbers. Existing
+            # consumers read positions 1-3 and are unaffected.
+            caps.append((key, en, he, hit, ceiling))
             idx = min(idx, ceiling)
 
         if state == 'broken':
@@ -2460,8 +2500,12 @@ class Judgement:
             cap('earnings', 'earnings land within a day — he does not open into a report',
                 'דיווח תוצאות בתוך יום — לא נכנסים לפני דיווח', 3)
         if small_cap:
+            # Not a `cap()` call: this DEMOTES by one band rather than clamping to
+            # a fixed ceiling, so it has no single ceiling value to record — the
+            # 5th element is the resulting index, which is what it lands on.
             caps.append(('small_cap', 'under $1B — outside the 150 method, speculative',
-                         'מתחת ל-1 מיליארד — מחוץ לשיטה, ספקולטיבי', idx > 0))
+                         'מתחת ל-1 מיליארד — מחוץ לשיטה, ספקולטיבי', idx > 0,
+                         max(0, idx - 1)))
             idx = max(0, idx - 1)
 
         # The letter must not contradict the recommendation. GRADE_MEANING defines
@@ -2564,7 +2608,15 @@ class Judgement:
                  'detail_he': f"~{rw['days']:.0f} ימי מסחר ליעד"},
             ] if rw['time'] else []),
             'caps': [{'key': k, 'label': e, 'label_he': h, 'bound': bool(b)}
-                     for k, e, h, b in caps],
+                     for k, e, h, b, _ceiling in caps],
+            # reason_code -> the grade index that cap clamps to. Read by
+            # `gates.from_caps` to separate a blocker (clamped to D/F) from a
+            # caveat (clamped to B/C) without duplicating these numbers.
+            'cap_ceilings': {k: c for k, _e, _h, _b, c in caps},
+            # the positive clauses the score actually credited, for `why_not`'s
+            # "still going for it" — taken from the grade's own notes so it can
+            # never praise something the arithmetic did not pay for
+            'positives': [en for ax, w, en, he in notes if w > 0][:3],
         }
 
     # ── 7b. The grade, in two sentences ───────────────────────────────────────

@@ -1,0 +1,205 @@
+{
+  "ADBE": {
+    "action": "wait_trigger",
+    "axis_max": {
+      "event": 33,
+      "reward": 34,
+      "risk": 8,
+      "structure": 25
+    },
+    "bound_caps": [],
+    "grade": "A",
+    "grade_score": 80.0,
+    "headline_action": "WAIT",
+    "rating": 8,
+    "setup_codes": [
+      "bearish_to_bullish",
+      "fibonacci",
+      "ma_bounce",
+      "resistance_retest",
+      "support_test",
+      "vcp"
+    ],
+    "state": "at_trigger"
+  },
+  "ARM": {
+    "action": "enter",
+    "axis_max": {
+      "event": 33,
+      "reward": 34,
+      "risk": 8,
+      "structure": 25
+    },
+    "bound_caps": [],
+    "grade": "A",
+    "grade_score": 94.0,
+    "headline_action": "ENTER",
+    "rating": 9,
+    "setup_codes": [
+      "bull_flag",
+      "cup_handle",
+      "descending_channel",
+      "fibonacci",
+      "ma_bounce",
+      "resistance_retest",
+      "support_test",
+      "triangle"
+    ],
+    "state": "breakout_now"
+  },
+  "GOOGL": {
+    "action": "wait_trigger",
+    "axis_max": {
+      "event": 33,
+      "reward": 34,
+      "risk": 8,
+      "structure": 25
+    },
+    "bound_caps": [],
+    "grade": "B",
+    "grade_score": 60.0,
+    "headline_action": "READY",
+    "rating": 6,
+    "setup_codes": [
+      "above150_breakout",
+      "fibonacci",
+      "ma_bounce",
+      "resistance_retest",
+      "rising_channel",
+      "support_test"
+    ],
+    "state": "at_trigger"
+  },
+  "LRCX": {
+    "action": "enter",
+    "axis_max": {
+      "event": 33,
+      "reward": 34,
+      "risk": 8,
+      "structure": 25
+    },
+    "bound_caps": [],
+    "grade": "A",
+    "grade_score": 96.0,
+    "headline_action": "ENTER",
+    "rating": 10,
+    "setup_codes": [
+      "fibonacci",
+      "ma_bounce",
+      "resistance_retest",
+      "support_test"
+    ],
+    "state": "buyers_at_level"
+  },
+  "MRNA": {
+    "action": "wait_trigger",
+    "axis_max": {
+      "event": 33,
+      "reward": 34,
+      "risk": 8,
+      "structure": 25
+    },
+    "bound_caps": [
+      "stop_wide"
+    ],
+    "grade": "D",
+    "grade_score": 47.0,
+    "headline_action": "WAIT",
+    "rating": 5,
+    "setup_codes": [
+      "fibonacci",
+      "ma_bounce",
+      "support_test"
+    ],
+    "state": "at_trigger"
+  },
+  "NVDA": {
+    "action": "wait_trigger",
+    "axis_max": {
+      "event": 33,
+      "reward": 34,
+      "risk": 8,
+      "structure": 25
+    },
+    "bound_caps": [],
+    "grade": "B",
+    "grade_score": 62.0,
+    "headline_action": "READY",
+    "rating": 6,
+    "setup_codes": [
+      "descending_channel",
+      "fibonacci",
+      "ma_bounce",
+      "resistance_retest",
+      "support_test",
+      "triangle"
+    ],
+    "state": "at_trigger"
+  },
+  "OPEN": {
+    "action": "wait_trigger",
+    "axis_max": {
+      "event": 33,
+      "reward": 34,
+      "risk": 8,
+      "structure": 25
+    },
+    "bound_caps": [],
+    "grade": "C",
+    "grade_score": 51.0,
+    "headline_action": "READY",
+    "rating": 5,
+    "setup_codes": [
+      "bull_flag",
+      "fibonacci",
+      "resistance_retest",
+      "support_test"
+    ],
+    "state": "at_trigger"
+  },
+  "PM": {
+    "action": "wait_trigger",
+    "axis_max": {
+      "event": 33,
+      "reward": 34,
+      "risk": 8,
+      "structure": 25
+    },
+    "bound_caps": [],
+    "grade": "C",
+    "grade_score": 50.0,
+    "headline_action": "WAIT",
+    "rating": 5,
+    "setup_codes": [
+      "fibonacci",
+      "resistance_retest",
+      "rising_channel",
+      "support_test",
+      "triangle"
+    ],
+    "state": "at_trigger"
+  },
+  "ROP": {
+    "action": "enter",
+    "axis_max": {
+      "event": 33,
+      "reward": 34,
+      "risk": 8,
+      "structure": 25
+    },
+    "bound_caps": [],
+    "grade": "A",
+    "grade_score": 71.0,
+    "headline_action": "ENTER",
+    "rating": 7,
+    "setup_codes": [
+      "bearish_to_bullish",
+      "cup_handle",
+      "fibonacci",
+      "ma_bounce",
+      "resistance_retest",
+      "support_test"
+    ],
+    "state": "buyers_at_level"
+  }
+}

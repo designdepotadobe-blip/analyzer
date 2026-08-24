@@ -20,9 +20,11 @@ everything else only when it is the thing actually happening.
 from __future__ import annotations
 
 import math
+from typing import Optional
 
 import numpy as np
 
+import thesis
 from geometry import Geometry
 from reasons import Reasons
 from verdict import Judgement, Signals
@@ -127,6 +129,11 @@ class MichaAnalyzer:
         # to take, not whichever option happens to be listed first
         best = Judgement._best_option(j['options'], j['action'])
         growth = self._growth(ctx, targets, best)
+        # The argument, assembled from what the pipeline already produced —
+        # built HERE because this is the first point where the verdict, the
+        # reasons and the growth model all exist together. See thesis.py: it
+        # composes, it never recomputes.
+        trade_thesis = thesis.build(sig, j, reasons, best, growth)
         focus = self._chart_focus(ctx, j['state'], codes, fib, off_high, ext, overlays)
         key_levels = self._key_levels(ctx, j, target)
         notes = self._notes(ext, golden, base, capitulation, momentum, small_cap,
@@ -149,6 +156,14 @@ class MichaAnalyzer:
             # `target`/`targets` below stay the near-station ladder; this is the
             # separate "what is it worth" number
             'macro_target': j['macro_target'],
+            # the plan in R space + what it is worth, from verdict/rmultiple.
+            # Additive keys; `expected_value.probability_source` says where the
+            # probability came from and must be read before quoting it.
+            'r_multiple': j.get('r_multiple'),
+            'expected_value': j.get('expected_value'),
+            'hard_gates': j.get('hard_gates'),
+            'why_not': j.get('why_not'),
+            'trade_thesis': trade_thesis,
             'report': j['report'],
             # the full argument, grouped and quantified — all computed from today's
             # data, nothing carried over from a previous run
@@ -696,24 +711,36 @@ class MichaAnalyzer:
         price = ctx.price
         floor_price = price + max(0.3 * ctx.atr, price * 0.005)
 
-        # (price, label, label_he, RANK) — rank decides who survives a merge, see below
-        cands: list[tuple[float, str, str, int]] = []
+        # (price, label, label_he, RANK, SOURCE, TOUCHES)
+        #   rank    — decides who survives a merge, see below
+        #   source  — machine-readable provenance of the station, carried so the
+        #             R-multiple layer (backend/rmultiple.py) and the API can say
+        #             WHERE a target came from without re-deriving it by matching
+        #             on the human label. The label is display copy and changes
+        #             wording freely; the source is a contract.
+        #   touches — the wall's own touch count where it has one, so a target can
+        #             report how well defended it is. None for a projection.
+        cands: list[tuple[float, str, str, int, str, Optional[int]]] = []
         for r in res_levels:
             if r['price'] > floor_price:
                 flipped = r.get('flipped')
                 # a wall's rank rises with how well defended it is
-                rank = 90 + min(9, int(r.get('touches') or 0))
+                touches = int(r.get('touches') or 0)
+                rank = 90 + min(9, touches)
                 cands.append((float(r['price']),
                               'former support / breakout price' if flipped else 'next resistance',
-                              'תמיכה לשעבר / מחיר פריצה' if flipped else 'התנגדות הבאה', rank))
+                              'תמיכה לשעבר / מחיר פריצה' if flipped else 'התנגדות הבאה', rank,
+                              'flipped_level' if flipped else 'resistance', touches))
         if ath > floor_price * 1.005:
             # "כשעוברים את קו ההתנגדות רק שיא כל הזמנים מפריע - 6% לשיא" (AAPL): the
             # record is a STATION on the way, quoted as a percentage, not the end of
             # the road. Ranked high so it is never merged out by a nearby gap edge.
-            cands.append((float(ath), 'prior high (ATH)', 'השיא הקודם', 85))
+            cands.append((float(ath), 'prior high (ATH)', 'השיא הקודם', 85, 'ath', None))
         if overlays:
-            cands.extend((p, e, h, 40) for p, e, h in self._gap_stations(overlays, floor_price))
-            cands.extend((p, e, h, 30) for p, e, h in self._fib_stations(overlays, floor_price))
+            cands.extend((p, e, h, 40, 'gap', None)
+                         for p, e, h in self._gap_stations(overlays, floor_price))
+            cands.extend((p, e, h, 30, 'fib_retracement', None)
+                         for p, e, h in self._fib_stations(overlays, floor_price))
             # ── The cup, and the open-sky projection ──────────────────────────
             # Both are targets he quotes by name and neither could reach the ladder
             # before: the cup because there was no cup detector, the extension
@@ -723,15 +750,17 @@ class MichaAnalyzer:
             cup = overlays.get('cup') or {}
             if cup.get('target_small') and cup['target_small'] > floor_price:
                 cands.append((float(cup['target_small']), 'handle measured move',
-                              'מהלך מדוד של ההנדל', 70))
+                              'מהלך מדוד של ההנדל', 70, 'measured_move', None))
             if cup.get('target_big') and cup['target_big'] > floor_price:
                 cands.append((float(cup['target_big']),
                               f"cup target (+{cup.get('target_big_pct') or 0:.0f}%)",
-                              f"יעד הקאפ (+{cup.get('target_big_pct') or 0:.0f}%)", 80))
+                              f"יעד הקאפ (+{cup.get('target_big_pct') or 0:.0f}%)", 80,
+                              'pattern_projection', None))
             for lv in ((overlays.get('fib_ext') or {}).get('levels') or []):
                 if lv['price'] > floor_price:
                     cands.append((float(lv['price']), f"Fib extension {lv['ratio']}",
-                                  f"הרחבת פיבונאצ'י {lv['ratio']}", 60))
+                                  f"הרחבת פיבונאצ'י {lv['ratio']}", 60,
+                                  'fib_extension', None))
 
         measured = measured_detail = measured_detail_he = None
         b_bottom = b_top = None
@@ -758,7 +787,7 @@ class MichaAnalyzer:
                 measured_detail_he = (f"בסיס ${b_bottom:.2f} ← שיא ${b_top:.2f} "
                                       f"(עומק ${depth:.2f}) מוקרן ← ${mv:.2f}")
                 cands.append((mv, 'measured move (base depth)',
-                              'מהלך מדוד (עומק הבסיס)', 75))
+                              'מהלך מדוד (עומק הבסיס)', 75, 'measured_move', None))
 
         # ── Merge, keeping the MORE IMPORTANT station, not the lower one ──────
         # The old rule kept whichever candidate sorted first and dropped everything
@@ -767,17 +796,27 @@ class MichaAnalyzer:
         # the exact price the owner named as "the next line". A wall the price has
         # been rejected from repeatedly outranks a drawn ratio; rank decides.
         cands.sort(key=lambda c: c[0])
-        stations: list[tuple[float, str, str, int]] = []
-        for p, lbl, lbl_he, rank in cands:
+        stations: list[tuple[float, str, str, int, str, Optional[int]]] = []
+        for cand in cands:
+            p, rank = cand[0], cand[3]
             if stations and (p - stations[-1][0]) <= STATION_MERGE_ATR * ctx.atr:
                 if rank > stations[-1][3]:
-                    stations[-1] = (p, lbl, lbl_he, rank)
+                    stations[-1] = cand
                 continue
-            stations.append((p, lbl, lbl_he, rank))
+            stations.append(cand)
         stations = stations[:MAX_TARGET_STATIONS]
 
+        # `source`/`touches`/`atr` are additive — every existing key keeps its
+        # meaning and position, so a client reading only price/pct/label is
+        # unaffected (see the API-compatibility rule). `atr` is the distance in
+        # ATR, which is what makes two stations on differently-volatile names
+        # comparable; the R multiple itself needs an entry and a stop and so is
+        # computed a layer up, in backend/rmultiple.py.
         targets = [{'price': jnum(p), 'pct': jnum((p / price - 1) * 100) if price else None,
-                    'label': lbl, 'label_he': lbl_he} for p, lbl, lbl_he, _ in stations]
+                    'label': lbl, 'label_he': lbl_he,
+                    'source': src, 'touches': touches,
+                    'atr': jnum((p - price) / ctx.atr) if ctx.atr else None}
+                   for p, lbl, lbl_he, _, src, touches in stations]
 
         if targets:
             primary = dict(targets[0])
