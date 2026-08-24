@@ -1,22 +1,31 @@
 :host {
   display: block;
-  /* Claims the space the shell (app.component.css) has left after the
-     persistent legal footer. `min-height: 0` because a flex item defaults to
-     `min-height: auto` and would refuse to shrink below its content, pushing
-     the footer back off-screen — the same trap documented on `.micha` below. */
-  flex: 1;
-  min-height: 0;
-  /* Height comes from the SHELL now (app.component.css), which splits the
-     viewport between this page and the persistent legal footer. This used to
-     be `height: 100vh/100dvh` — claiming the entire viewport for the page,
-     which pushed the footer below the fold, and since `.layout` never scrolls
-     (`overflow: hidden`) there was no way to scroll down to it.
+  /* This component is mounted in TWO different parents, and both need to be
+     satisfied at once — regressed once already when only the routed case was
+     considered (a stock opened from Radar's "→ ניתוח מלא" full sheet rendered
+     tiny, collapsed to content height):
 
-     The dvh reasoning that lived here still applies, it just moved up to the
-     shell: `100vh` on mobile is sized against the LARGEST possible viewport
-     (address bar hidden) rather than what is actually visible on first paint,
-     so the bottom was clipped until the browser chrome collapsed. `100dvh`
-     tracks the visible viewport; `100vh` stays as the fallback. */
+       1. ROUTED (app.component.css): a direct flex-column child of the shell,
+          alongside the persistent legal footer. `flex: 1; min-height: 0`
+          claims the remainder after the footer's space — plain `height: 100%`
+          alone would NOT account for the footer's height and would overflow
+          past it.
+       2. EMBEDDED (stock-quicklook.component.ts's full-screen sheet): a plain
+          `display: block` child of `.ql-full-page`, which is not a flex
+          container at all, so `flex: 1` is simply ignored there. `height:
+          100%` is what fills it — `.ql-full-page` and its own ancestor
+          `.ql-wrap.ql-sheet` both carry explicit heights precisely so this
+          chain resolves (see stock-quicklook.component.css).
+
+     `flex: 1` overrides `height: 100%` for sizing purposes inside a flex
+     container (flex-basis wins over height on the main axis), so the two
+     rules don't fight in case 1; in case 2 `flex: 1` is inert and `height:
+     100%` is what applies. Same reasoning applies to `.layout` below —
+     `height: 100%` there completes case 2's chain and is what case 1 was
+     already relying on `:host`'s flex-computed size to provide. */
+  flex: 1;
+  height: 100%;
+  min-height: 0;
   color: #d1d4dc;
 }
 

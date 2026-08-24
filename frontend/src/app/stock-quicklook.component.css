@@ -117,13 +117,20 @@
 }
 .ql-float-close:active { background: rgba(42, 46, 57, 0.96); }
 
-/* The embedded real Analyzer page fills the sheet edge-to-edge — its own `:host`
-   is a rigid `height:100vh`, which is right for the sheet (itself `inset:0`, i.e.
-   also full-viewport) but would overflow `.ql-wrap`'s own padding by exactly that
-   padding amount without this; negative margins cancel it so the embedded page's
-   edges line up with the sheet's own. */
+/* The embedded real Analyzer page fills the sheet edge-to-edge. Its `:host` now
+   sizes itself with `height: 100%` when it isn't a flex child (see that file's
+   own comment — this component is embedded in two different parent shapes and
+   has to satisfy both), which needs an explicit-height ANCESTOR CHAIN to
+   resolve against: `.ql-wrap.ql-sheet` already carries `height: 100%` (itself
+   `position: fixed; inset: 0`, so that resolves to the full viewport), and this
+   rule is the next link — without it the chain breaks here (a percentage
+   height against an auto-height parent computes as auto, i.e. is ignored) and
+   the embedded page silently collapses back to its content height. Negative
+   margins cancel `.ql-wrap`'s own padding so the embedded page's edges line up
+   with the sheet's own — same as the old fixed-100vh version. */
 .ql-full-page {
   display: block;
+  height: 100%;
   margin: -10px -12px -14px;
 }
 
