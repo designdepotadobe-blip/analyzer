@@ -644,6 +644,40 @@ class Judgement:
 
         if not cands:
             return None
+
+        # ── Is there a real, defended HORIZONTAL wall nearby, even if it isn't
+        # the thing actually being quoted? ── A cup rim, the ATH, a flag top, a
+        # triangle rail and the 150MA are all legitimate "first obstacle"
+        # answers with no touch history of their own (see the `wall=None`
+        # comments above) — right for NAMING the breakout price, but wrong as
+        # the ONLY thing `_state()`'s "an unbroken trigger right overhead is
+        # not an entry" rule can see: a real, well-tested level sitting just
+        # behind a weightless one was invisible to it. Found from real analyst
+        # feedback: ES graded and called ENTER with a 20-touch, retested
+        # resistance level 0.8 ATR behind its quoted cup rim — well inside
+        # TRIGGER_NEAR_ATR, the same band that already blocks an entry when the
+        # QUOTED trigger itself is the well-defended one.
+        #
+        # Deliberately reuses the trigger's own at_hand/near tiers rather than
+        # TRIGGER_ZONE_ATR: that constant governs whether a wall gets merged
+        # into (or re-anchors) the QUOTED price, a much tighter question than
+        # "is a real wall close enough to matter for the entry decision at all".
+        #
+        # Level-kind only, NOT trendlines, even though a trendline candidate
+        # also carries a `wall`/touches (see the CMG-bug comment above) and a
+        # same-shaped case exists (D: a 3-touch descending-highs line 1.9 ATR
+        # behind its quoted cup rim, same tier as this ES fix). Left out on
+        # purpose: ARM is the measured, NAMED exception two paragraphs below
+        # showing a near-tier descending-highs line does NOT reliably mean
+        # "wait" the way a near-tier horizontal wall does, and ARM's own
+        # trendline today is numerically identical to D's (3 touches, `near`
+        # tier) — so this rule cannot tell them apart yet. Widening to
+        # trendlines needs its own measurement of what actually distinguishes
+        # the two, not a guess riding along with the unambiguous level fix.
+        nearest_wall = min(
+            (c for c in cands if c[1] == 'level' and c[4] and c[4].get('touches')),
+            key=lambda c: c[0], default=None)
+
         p, kind, en, he, wall = min(cands, key=lambda c: c[0])
 
         # ── The breakout line is a ZONE, not a single price ────────────────────
@@ -767,9 +801,15 @@ class Judgement:
 
         d_atr = (p - price) / atr if atr else 0.0
         d_pct = (p / price - 1) * 100 if price else 0.0
-        tier = ('at_hand' if d_atr <= TRIGGER_AT_HAND_ATR else
-                'near' if d_atr <= TRIGGER_NEAR_ATR else
-                'moderate' if d_atr <= TRIGGER_REACH_ATR else 'far')
+
+        def _tier(dist_atr):
+            return ('at_hand' if dist_atr <= TRIGGER_AT_HAND_ATR else
+                    'near' if dist_atr <= TRIGGER_NEAR_ATR else
+                    'moderate' if dist_atr <= TRIGGER_REACH_ATR else 'far')
+
+        tier = _tier(d_atr)
+        nw_price = nearest_wall[0] if nearest_wall else None
+        nw_wall = nearest_wall[4] if nearest_wall else None
         return {
             'price': jnum(p), 'kind': kind, 'what': en, 'what_he': he,
             # the lower edge of the same wall — see above; `_stop` leans on this
@@ -785,6 +825,14 @@ class Judgement:
             'distance_atr': jnum(d_atr), 'distance_pct': jnum(d_pct), 'tier': tier,
             'label': f"break above {p:.2f} ({en}) — {d_pct:.1f}% / {d_atr:.1f} ATR away",
             'label_he': f"פריצה מעל {p:.2f} ({he}) — {d_pct:.1f}% / {d_atr:.1f} ATR",
+            # the nearest REAL wall, whether or not it's the price actually being
+            # quoted above — see the comment where this is built. None when the
+            # quoted trigger already IS the nearest real wall (nothing further
+            # for this to add).
+            'nearest_wall': ({
+                'price': jnum(nw_price), 'touches': nw_wall.get('touches'),
+                'tier': _tier((nw_price - price) / atr if atr else 0.0),
+            } if nw_wall and nw_price != p else None),
         }
 
     @staticmethod
@@ -1070,8 +1118,21 @@ class Judgement:
         # — widening to 'near' by tier ALONE, measured first, would have gutted
         # 8 of 11 live 'enter' actions down to 3, including ARM's legitimate one.
         has_real_wall = bool(trigger and (trigger.get('wall') or {}).get('touches'))
+        # A real HORIZONTAL wall doesn't have to be the thing actually NAMED as
+        # the trigger to matter here — see `_trigger`'s own `nearest_wall`
+        # (level-kind only; see its own comment for why trendlines are left out
+        # for now): a cup rim, the ATH, a flag top or the 150MA can legitimately
+        # be the QUOTED price (none of them carry touch history of their own,
+        # correctly) while a well-tested level sits just behind it, at the same
+        # at_hand/near distance this rule already treats as too close to call an
+        # entry. Found from real analyst feedback: ES graded ENTER with a
+        # 20-touch, retested resistance level 0.8 ATR behind its quoted cup rim
+        # — invisible to `has_real_wall` alone because it was never the price
+        # actually being quoted.
+        nw = (trigger or {}).get('nearest_wall')
+        nearby_real_wall = has_real_wall or bool(nw and nw.get('tier') in ('at_hand', 'near'))
         if (trigger and trigger.get('tier') in ('at_hand', 'near') and trigger.get('price')
-                and has_real_wall):
+                and nearby_real_wall):
             atr_eps = (ctx.atr * 0.01) if ctx.atr else 0.0
             if float(trigger['price']) > price + atr_eps:
                 return 'at_trigger'

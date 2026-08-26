@@ -506,8 +506,11 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
           // separate levels, which is exactly what quoting a range is meant to
           // avoid. The axis tag still goes on the top edge, the price that has
           // to give.
+          // Fill only, deliberately lighter than the boundary line above it —
+          // owner's call: the shadow was competing with the candles for
+          // attention, the line is what actually needs to read.
           this.drawBand(lvl.zone_top, lvl.zone_bottom, '255,255,255',
-                        strong ? 0.16 : 0.09, strong ? 0.85 : 0.5);
+                        strong ? 0.10 : 0.05, strong ? 0.85 : 0.5);
           if (labeled) {
             this.priceLines.push(
               this.candle.createPriceLine({

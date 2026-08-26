@@ -95,6 +95,13 @@ export class AnalyzerPageComponent implements OnInit {
     return [...sw, ...ct].slice(0, 10);
   }
 
+  /** Clicking into the search box to look up a new ticker used to require
+   *  clearing the old one by hand first — clear it for them on focus instead. */
+  onTickerFocus(): void {
+    this.ticker = '';
+    this.showSuggestions = false;
+  }
+
   onTickerInput(): void {
     this.ticker = AnalyzerPageComponent.normalizeTicker(this.ticker);
     this.showSuggestions = true;

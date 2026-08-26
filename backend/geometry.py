@@ -171,10 +171,11 @@ class Geometry:
                 # A standing line needs TL_MIN_TOUCHES; a 2-touch line counts too
                 # when it was JUST broken — the break is the third interaction
                 # (Micha's "high to high — and now it's breaking" calls, e.g. WGMI).
-                touches = sum(
-                    1 for j in piv
-                    if j >= anchor and abs(vals[j] - (slope * j + intercept)) <= tol
-                )
+                touch_devs = [
+                    abs(vals[j] - (slope * j + intercept)) for j in piv if j >= anchor
+                    and abs(vals[j] - (slope * j + intercept)) <= tol
+                ]
+                touches = len(touch_devs)
                 if touches < TL_MIN_TOUCHES and not (touches >= 2 and broke):
                     continue
 
@@ -182,8 +183,21 @@ class Geometry:
                     'slope': slope, 'intercept': intercept, 'x0': anchor,
                     'touches': touches, 'broke': broke,
                     'line_now': slope * (M - 1) + intercept,
+                    # mean distance from the line to the pivots it claims to touch —
+                    # "how magnetized is this line", not just "how many touches".
+                    # `tol` (0.5 ATR) is generous on purpose so a real trend survives
+                    # normal noise, but that same slack let the OLD tie-break (touch
+                    # count, then just the most recent anchor) pick a candidate that
+                    # technically touches enough pivots while sitting visibly off of
+                    # them — reported repeatedly as a line "cutting through candles"
+                    # instead of hugging their wicks. Real analyst notes on ARM/BR
+                    # confirmed it: two candidates tied on touch count, one fit within
+                    # 0.30 ATR of its pivots, the other (chosen, purely for being more
+                    # recent) sat 0.43 ATR off. Tightness now breaks the tie instead.
+                    'mean_dev': sum(touch_devs) / touches if touches else tol,
                 }
-                if best is None or (cand['touches'], cand['x0']) > (best['touches'], best['x0']):
+                key = (cand['touches'], -cand['mean_dev'], cand['x0'])
+                if best is None or key > (best['touches'], -best['mean_dev'], best['x0']):
                     best = cand
         return best
 

@@ -8,7 +8,7 @@
           [(ngModel)]="ticker"
           (keydown)="onKey($event)"
           (input)="onTickerInput()"
-          (focus)="showSuggestions = true"
+          (focus)="onTickerFocus()"
           (blur)="onBlur()"
           placeholder="Ticker e.g. GTLB"
           spellcheck="false"
