@@ -44,6 +44,8 @@ from config import (
     RUN_UP_ATR,
     RUN_UP_DAYS,
     RUN_UP_LOOKBACK,
+    RUN_UP_SHORT_ATR,
+    RUN_UP_SHORT_DAYS,
     GOLDEN_POCKET,
     LONG_BASE_BARS,
     MAX_TARGET_STATIONS,
@@ -180,6 +182,10 @@ class MichaAnalyzer:
             # the headline number the panel leads with — see verdict._rating
             'rating': j['rating'], 'rating_max': j['rating_max'],
             'grade_meaning': j['grade_meaning'], 'grade_meaning_he': j['grade_meaning_he'],
+            # the by-the-book judgement the grade comes from (verdict → book.py)
+            'book': j['book'],
+            'legacy_grade': j['legacy_grade'], 'legacy_grade_score': j['legacy_grade_score'],
+            'legacy_rating': j['legacy_rating'],
             # why THIS stock got THIS letter, in two sentences (verdict._grade_sentence).
             # NB: this dict is rebuilt field by field, so a new verdict.py key that is
             # not added here is silently dropped from the API — that is how
@@ -265,11 +271,18 @@ class MichaAnalyzer:
         if ctx.sma150:
             d = (ctx.price / ctx.sma150 - 1) * 100
             above = bool(ctx.above_150)
+            # the direction of the average rides along — the 150 method needs it flat
+            # or rising, and "above a falling 150" is a warning, not a green light
+            md = getattr(ctx, 'ma150_dir', 'unknown')
+            arrow = {'rising': ' ↗', 'flat': ' →', 'falling': ' ↘'}.get(md, '')
+            dir_he = {'rising': 'עולה', 'flat': 'שטוח', 'falling': 'יורד'}.get(md, '')
+            tone = ('bad' if not above else 'warn' if md == 'falling' else 'good')
             out.append({
-                'key': 'ma150', 'tone': 'good' if above else 'bad',
-                'label': f"{'Above' if above else 'Below'} 150 MA ({d:+.1f}%)",
-                'label_he': f"{'מעל ממוצע 150' if above else 'מתחת לממוצע 150'} ({d:+.1f}%)",
-                'note': '', 'note_he': '',
+                'key': 'ma150', 'tone': tone,
+                'label': f"{'Above' if above else 'Below'} 150 MA ({d:+.1f}%){arrow}",
+                'label_he': f"{'מעל ממוצע 150' if above else 'מתחת לממוצע 150'} ({d:+.1f}%){arrow}",
+                'note': f'the 150 is {md}' if arrow else '',
+                'note_he': f'הממוצע {dir_he}' if dir_he else '',
             })
 
         d = ctx.earnings_days
@@ -1057,7 +1070,13 @@ class MichaAnalyzer:
         n = min(RUN_UP_LOOKBACK, len(closes) - 1)
         run_pct = ((closes[-1] / closes[-1 - n] - 1) * 100) if n > 0 else 0.0
         run_atr = (run_pct / ctx.atr_pct) if ctx.atr_pct else 0.0
-        ran_hot = bool(run_days >= RUN_UP_DAYS or run_atr >= RUN_UP_ATR)
+        # the ground covered by the current streak itself, in ATR — three up closes of
+        # a few cents each are a drift, not the run he means
+        streak_pct = ((closes[-1] / closes[-1 - run_days] - 1) * 100) if run_days else 0.0
+        streak_atr = (streak_pct / ctx.atr_pct) if ctx.atr_pct else 0.0
+        ran_hot = bool(run_days >= RUN_UP_DAYS
+                       or (run_days >= RUN_UP_SHORT_DAYS and streak_atr >= RUN_UP_SHORT_ATR)
+                       or run_atr >= RUN_UP_ATR)
 
         # "מתוחה" is a spectrum in his hands, not a flag:
         #   "קצת מתוחה מהממוצע … אתם לא מאחרים" (AAPL) / "קצת מתוחה אז זהירות עם
@@ -1500,10 +1519,25 @@ class MichaAnalyzer:
             engulf = (i > 0 and c[i] > o[i] and o[i - 1] > c[i - 1]
                       and c[i] >= o[i - 1] and o[i] <= c[i - 1])
             strong_green = c[i] > o[i] and body >= 0.5 * rng and v[i] >= avg
-            if hammer or engulf or strong_green:
+            # His "נכנסים קונים" is quieter than a textbook reversal bar, measured on
+            # the evenings he said it (2025-07 → 2026-09): MRVL closed at its high off
+            # the low on 0.9x volume, HOOD a solid green body on 0.7x, C "קונים ביום
+            # אדום" a red day bought back hard off the low. Two shapes cover them:
+            #   • a green body of real size closing near the high, on ordinary volume
+            #   • a day bought back off its low — closing in the top 40% with a lower
+            #     wick of at least 40% of the range, whatever the colour
+            close_pos = (c[i] - l[i]) / rng
+            firm_green = (c[i] > o[i] and body >= 0.4 * rng and close_pos >= 0.65
+                          and v[i] >= 0.6 * avg)
+            bought_back = close_pos >= 0.6 and lower_wick >= 0.4 * rng
+            if hammer or engulf or strong_green or firm_green or bought_back:
                 en, he = (('Hammer at the level', 'נר פטיש על הרמה') if hammer else
                           ('Bullish engulfing', 'נר בולען') if engulf else
-                          ('Strong buyers candle on volume', 'נר קונים חזק עם ווליום'))
+                          ('Strong buyers candle on volume', 'נר קונים חזק עם ווליום')
+                          if strong_green else
+                          ('Buyers came in — closed near the high', 'נכנסים קונים — סגירה ליד הגבוה')
+                          if firm_green else
+                          ('Bought back off the low', 'קונים מהנמוך — נקנתה חזרה'))
                 return {'found': True, 'turn': False, 'label': en, 'label_he': he,
                         'low': float(l[i]), 'bars_ago': len(c) - 1 - i,
                         'detail': f'bar -{len(c) - 1 - i}'}

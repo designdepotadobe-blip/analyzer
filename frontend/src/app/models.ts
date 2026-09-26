@@ -566,7 +566,68 @@ export interface MichaLevelContext {
   narrative_he: string;
 }
 
+/** One line of the by-the-book checklist (backend/book.py). */
+export interface BookItem {
+  key: 'trend' | 'location' | 'event' | 'volume' | 'stop' | 'potential';
+  points: number;
+  max: number;
+  ok: 'yes' | 'partial' | 'no';
+  label: string;
+  label_he: string;
+  detail: string;
+  detail_he: string;
+}
+
+/** A "not now" deduction — ran hot, chasing past the break, earnings inside a week. */
+export interface BookMinus {
+  key: string;
+  points: number;
+  label: string;
+  label_he: string;
+}
+
+/** A "not this stock" ceiling; `bound` = it actually lowered the score. */
+export interface BookCap {
+  key: string;
+  ceiling: number;
+  bound: boolean;
+  label: string;
+  label_he: string;
+}
+
+/** The potential he would quote: the measured move, plus the near station. */
+export interface BookTarget {
+  price: number;
+  pct: number;
+  what: string;
+  what_he: string;
+  first_price: number | null;
+  first_pct: number | null;
+  first_what_he: string | null;
+}
+
+/** The grade, by the book — the letter/score/rating on `Micha` come from this. */
+export interface MichaBook {
+  score: number;
+  raw: number;
+  letter: string;
+  rating: number;
+  rating_max: number;
+  verdict: string;
+  verdict_he: string;
+  items: BookItem[];
+  minus: BookMinus[];
+  caps: BookCap[];
+  target: BookTarget | null;
+  why: string;
+  why_he: string;
+}
+
 export interface Micha {
+  book: MichaBook;
+  legacy_grade?: string;
+  legacy_grade_score?: number;
+  legacy_rating?: number;
   relevant: boolean;
   state: MichaState;
   state_label: string;

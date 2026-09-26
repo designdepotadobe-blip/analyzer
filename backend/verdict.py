@@ -40,6 +40,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Optional
 
+import book as bk
 import gates as gt
 import rmultiple as rm
 from config import (
@@ -85,6 +86,12 @@ from config import (
     GRADE_BAND_RANGE,
     GRADE_BANDS,
     GRADE_BUDGET,
+    FLOOR_150_PCT,
+    PULLBACK_LOOKBACK,
+    PULLBACK_MAX_RUN_ATR,
+    PULLBACK_MIN_ATR,
+    PULLBACK_RET_BARS,
+    MA150_RECLAIM_GRACE_BARS,
     MIN_MARKET_CAP,
     NEAR_ATR,
     OFF_HIGH_VALUE_PCT,
@@ -386,8 +393,17 @@ class Judgement:
         confirmation = _confirmation(breakdown)
         macro_target = _macro_target(breakdown)
         alert = self._alert(ctx, s, trigger, action)
+        # ── The grade, by the book (see book.py) ──────────────────────────────
+        # The letter, the 0-100 score and the 1-10 rating every consumer reads are
+        # the book's. `_grade`'s four-axis breakdown above is kept intact as
+        # `grade_breakdown` / `legacy_grade` — `_confirmation`, `_macro_target`,
+        # the hard gates and the report still read its structure — but it no
+        # longer sets the letter.
+        book = bk.grade(self, ctx, s, state, action, trigger, options, earn, small_cap)
+        legacy_grade, legacy_score, legacy_rating = grade, breakdown['score'], breakdown['rating']
+        grade = book['letter']
         if_break = self._grade_if_break(ctx, s, state, trigger, options, grade,
-                                        breakdown, small_cap, earn)
+                                        breakdown, small_cap, earn, book)
         report = self._report(ctx, s, state, action, trigger, hold, options, grade,
                               breakdown, earn, small_cap, alert)
 
@@ -437,16 +453,20 @@ class Judgement:
             # every blocker, structured; and which one set the outcome
             'hard_gates': [g.to_dict() for g in hard_gates],
             'why_not': why_not,
-            'grade': grade, 'grade_score': breakdown['score'],
-            # the headline number — see `_rating`. `grade`/`grade_score` stay for the
-            # scan filters, the caps machinery and `grade_if_break`'s delta.
-            'rating': breakdown['rating'], 'rating_max': 10,
+            'grade': grade, 'grade_score': book['score'],
+            'rating': book['rating'], 'rating_max': 10,
+            # the whole by-the-book judgement: checklist, deductions, ceilings,
+            # the potential he would quote, and the verdict word
+            'book': book,
+            # the previous four-axis grade, kept for comparison only
+            'legacy_grade': legacy_grade, 'legacy_grade_score': legacy_score,
+            'legacy_rating': legacy_rating,
             'grade_meaning': gm_en, 'grade_meaning_he': gm_he,
             # Why THIS stock earned THIS letter, in two sentences, built from the
             # grade's own terms. `grade_meaning` above is one fixed string per
             # letter and says the same thing about every B in the universe; this
             # replaces it in the panel and is kept beside it only for compatibility.
-            'grade_why': breakdown['summary'], 'grade_why_he': breakdown['summary_he'],
+            'grade_why': book['why'], 'grade_why_he': book['why_he'],
             'grade_breakdown': breakdown,
             # "and if it DOES break?" — see _grade_if_break
             'grade_if_break': if_break,
@@ -458,7 +478,7 @@ class Judgement:
         }
 
     def _grade_if_break(self, ctx, s: Signals, state, trigger, options, grade,
-                        breakdown, small_cap, earn) -> Optional[dict]:
+                        breakdown, small_cap, earn, book=None) -> Optional[dict]:
         """
         "…and if it DOES break?"
 
@@ -522,6 +542,28 @@ class Judgement:
 
         g2, bd2 = self._grade(ctx2, s2, 'breakout_now', trigger, [brk], 'enter',
                               small_cap, earn)
+        if book is not None:
+            # The projection is read on the SAME scale as the grade the reader is
+            # shown — the book's. The legacy breakdown above is still computed for
+            # its components/caps, but the letter, score and rating are re-graded
+            # by the book with the break assumed.
+            b2 = bk.grade(self, ctx2, s2, 'breakout_now', 'enter', trigger, [brk],
+                          earn, small_cap)
+            delta = float(b2['score']) - float(book['score'])
+            moved = b2['rating'] != book['rating']
+            tp = trigger['price']
+            return {
+                'grade': b2['letter'], 'score': b2['score'], 'delta': jnum(delta),
+                'rating': b2['rating'], 'rating_delta': b2['rating'] - book['rating'],
+                'moves': moved, 'at_price': jnum(tp),
+                'components': bd2['components'], 'caps': bd2['caps'],
+                'book': b2,
+                'why': b2['why'], 'why_he': b2['why_he'],
+                'label': (f"clears {tp:.2f} → {b2['rating']}/10"
+                          if moved else f"clears {tp:.2f} → still {b2['rating']}/10"),
+                'label_he': (f"פורצת {tp:.2f} → {b2['rating']}/10"
+                             if moved else f"פורצת {tp:.2f} → נשארת {b2['rating']}/10"),
+            }
         delta = bd2['score'] - breakdown['score']
         # Tracked on the RATING, not the letter: the rating is what the panel leads
         # with, and a 1-10 move is the change a reader actually sees. On letters this
@@ -1042,10 +1084,19 @@ class Judgement:
         # BROKEN — "כשאני מציין 'אין סט אפ' זה אומר שהסט אפ נגמר ... צריך לצאת מנקודת
         # הנחה שהסטופ שלכם קפץ". Losing the rising-lows line that WAS the structure, or
         # dropping back under a level that had just flipped to support, ends it.
-        if s.lost_level and not ctx.above_150 and not turned and not recovering:
+        # ...but not while price is still standing on a real floor. Losing a line
+        # 0.1-0.3 ATR overhead while a 10-touch support, the rising-lows line or the
+        # channel bottom holds right underneath is his "נמצא בתחתית תעלה ועל קו תמיכה
+        # — אם נראה פה שינוי כיוון זה יכול להיות טרייד מאוד מעניין. צריך לשמור מעל
+        # 167" (XLI 2026-09-23), not "the stop was hit". The floor is the new line
+        # to hold; losing IT is what ends the setup.
+        on_floor = self._floor(ctx, s) is not None and (
+            self._floor(ctx, s)[1] != 'ma150' or ctx.price >= ctx.sma150 * 0.99)
+        if (s.lost_level and not ctx.above_150 and not turned and not recovering
+                and not on_floor):
             return 'broken'
         if (rl_broke and not ctx.above_150 and s.trend != 'uptrend'
-                and not turned and not recovering):
+                and not turned and not recovering and not on_floor):
             return 'broken'
 
         # A base sitting RIGHT AT the 150, with the shorter-term structure already
@@ -1117,6 +1168,37 @@ class Judgement:
         # Requiring `has_real_wall` (not just tier) is what keeps that distinction
         # — widening to 'near' by tier ALONE, measured first, would have gutted
         # 8 of 11 live 'enter' actions down to 3, including ARM's legitimate one.
+        # ── HIS 150 METHOD comes before the overhead-wall veto ─────────────────
+        # "מגיעים. נרגעים. ואז נכנסים קונים. סטופ מתחת לממוצע" (DOW). Measured as of
+        # the evening of each post, 2025-07 → 2026-09: of 48 calls where he said
+        # "entry", the engine agreed on 2 — 39 came back "wait for the break",
+        # because the veto below fired first on every chart with a wall within 2.5
+        # ATR, and in an uptrend pulling back to a floor that wall is simply the
+        # rally's own last high. On a bounce the entry is AT the floor with the stop
+        # under it; the wall overhead is the first target (and still costs points in
+        # the grade's room term), not the thing to wait for. The veto keeps its job
+        # for what it was written for — a break or a reclaim happening UNDER a wall.
+        #
+        # WHICH of the two he calls depends on how price ARRIVED at the floor, not on
+        # where the trigger sits (on most of his entries a thin level or cup rim sits
+        # 0.05-0.5 ATR overhead and he ignores it). Came DOWN onto it — "תיקנה ישירות
+        # לממוצע 150" (ABNB), "נמכרה עד קו המגמה" (SEDG), "הגיעה לממוצע" (LITE) — and
+        # the bounce is the trade. Climbing UP into the ceiling — "מגיעה שוב לנקודת
+        # פריצה" (KRE), "תנועה לכיוון ההתנגדות" (OKE), "עושה מאמץ לפריצה" (UNH) — and
+        # the break is. Measured on the evenings he posted, above the 150: his entries
+        # sit a median 1.76 ATR under their 10-day high with a flat 5-day return
+        # (-0.06 ATR); his "wait for the break" calls 0.75 ATR under it, up +0.93 ATR.
+        # And the 150 has to be flat or rising — his method, not a bounce inside a
+        # downtrend (SOFI, AFRM, UNH: all "wait" calls on a falling average).
+        rc = s.ma150_reclaim or {}
+        ma_ok = (getattr(ctx, 'ma150_dir', 'unknown') != 'falling'
+                 or (rc.get('bars') is not None and rc['bars'] <= MA150_RECLAIM_GRACE_BARS))
+        if (ctx.above_150 and ma_ok and s.candle.get('found') and vol_ok
+                and self._at_floor(ctx, s) and self._came_down_to_it(ctx)):
+            if self._is_value(ctx, s):
+                return 'value_pullback'
+            return 'buyers_at_level'
+
         has_real_wall = bool(trigger and (trigger.get('wall') or {}).get('touches'))
         # A real HORIZONTAL wall doesn't have to be the thing actually NAMED as
         # the trigger to matter here — see `_trigger`'s own `nearest_wall`
@@ -1146,6 +1228,13 @@ class Judgement:
                 return 'breakout_now'
 
         at_floor = self._at_floor(ctx, s)
+        # The 150 method needs an average that is flat or rising — "קונים רק מעל הקו"
+        # on a line that is itself going up. A bounce whose ONLY floor is a falling 150
+        # is a downtrend touching its average, not his setup; a real support level
+        # under price is still a floor in its own right, and a fresh reclaim is
+        # exempt because a reclaim always happens under a falling average.
+        if at_floor and self._only_floor_is_falling_150(ctx, s):
+            at_floor = False
 
         # BUYERS AT THE LEVEL — "כניסת קונים באיזור הממוצע" (AVGO), "קפצה על קו
         # תמיכה/התנגדות מהעבר + נכנס ווליום + נר קונים חזק" (LMND). An entry in its own
@@ -1369,13 +1458,70 @@ class Judgement:
 
     @staticmethod
     def _at_floor(ctx, s: Signals) -> bool:
-        """Price is ON a floor: the nearest support or the 150 itself."""
+        """Price is ON a floor — see `_floor`."""
+        return Judgement._floor(ctx, s) is not None
+
+    @staticmethod
+    def _floor(ctx, s: Signals, include_150: bool = True) -> Optional[tuple]:
+        """
+        The real floor price is sitting on, as (price, kind), or None.
+
+        His entries name four floors, and until 2026-09-26 only two were seen here:
+          • the 150 — "כניסת קונים באיזור הממוצע" (AVGO), "על קו ממוצע 150. קונים ביום
+            אדום" (C, +5% above it), "תיקנה משמעותית ישירות לממוצע 150" (ABNB +3%).
+            His "on the 150" runs 3-7% above the average on a calm name, far wider
+            than the 1.4-ATR band this used, so it is ATR OR FLOOR_150_PCT.
+          • a support band — "מקו התמיכה נכנסים קונים" (VRT).
+          • the rising-lows line — "נכנסים קונים על קו השפלים העולים" (GLW),
+            "כניסת קונים על קו המגמה" (NBIS).
+          • the bottom of a rising channel — XLI "בתחתית תעלה ועל קו תמיכה".
+        """
         price, atr = ctx.price, ctx.atr
+        if not atr:
+            return None
+        reach = NEAR_ATR * 2 * atr
+        cands = []
         if s.nearest_sup:
             b = _edge(s.nearest_sup, 'sup')
-            if b and 0 <= (price - b) / atr <= NEAR_ATR * 2:
-                return True
-        return bool(ctx.sma150 and abs(price - ctx.sma150) / atr <= NEAR_ATR * 2)
+            if b and 0 <= price - b <= reach:
+                cands.append((float(b), 'support'))
+        if include_150 and ctx.sma150:
+            d = price - ctx.sma150
+            if (0 <= d <= max(reach, price * FLOOR_150_PCT)) or abs(d) <= reach:
+                cands.append((float(ctx.sma150), 'ma150'))
+        for tl in (s.overlays or {}).get('trendlines') or []:
+            if tl.get('kind') == 'rising_lows' and not tl.get('broke'):
+                p = (tl.get('p2') or {}).get('price')
+                if p and 0 <= price - float(p) <= reach:
+                    cands.append((float(p), 'rising_lows'))
+        ch = s.channel or {}
+        if ch.get('kind') == 'rising' and ch.get('lower') and 0 <= price - ch['lower'] <= reach:
+            cands.append((float(ch['lower']), 'channel'))
+        return max(cands, key=lambda c: c[0]) if cands else None
+
+
+    @staticmethod
+    def _came_down_to_it(ctx) -> bool:
+        """A pullback onto the floor, not a run up to the ceiling — see `_state`."""
+        atr = ctx.atr
+        if not atr or ctx.M < PULLBACK_LOOKBACK + 1:
+            return False
+        hi = float(max(ctx.highs[-PULLBACK_LOOKBACK:]))
+        pulled = (hi - ctx.price) / atr
+        ref = float(ctx.closes[-1 - PULLBACK_RET_BARS])
+        ret_atr = ((ctx.price / ref - 1) * 100 / ctx.atr_pct) if (ref and ctx.atr_pct) else 0.0
+        return pulled >= PULLBACK_MIN_ATR or ret_atr <= PULLBACK_MAX_RUN_ATR
+
+    @staticmethod
+    def _only_floor_is_falling_150(ctx, s: Signals) -> bool:
+        if getattr(ctx, 'ma150_dir', None) != 'falling':
+            return False
+        rc = s.ma150_reclaim
+        if rc and rc.get('bars') is not None and rc['bars'] <= MA150_RECLAIM_GRACE_BARS:
+            return False
+        # a real level, the rising-lows line or the channel bottom is holding it —
+        # then it is not "only the falling 150"
+        return Judgement._floor(ctx, s, include_150=False) is None
 
     @staticmethod
     def _is_value(ctx, s: Signals) -> bool:
@@ -1728,11 +1874,21 @@ class Judgement:
         # "רק חכו לדיווח התוצאות מחר - פשוט לא רוצה לשכוח את הסט אפ" (PM) — the setup
         # still stands, the entry is deferred.
         entering = state in ('breakout_now', 'buyers_at_level', 'value_pullback')
-        if entering and earn is not None and earn <= 1:
+        # A week, not a day: he does not open into a report at all ("מדווחת שבוע הבא.
+        # אז זהירות!!!!!"), he posts the setup and waits for it. `<= 1` let a report
+        # three days out say "enter" under the badge's own red warning.
+        if entering and earn is not None and earn <= EARNINGS_SOON_DAYS:
             return 'wait_event'
         # Stretched is a modifier, not a veto: "מתוחה אבל ... כל עוד שומרת מעל 19 היא
         # בסדר" (CRML). It never blocks holding — it blocks CHASING.
         if entering and s.ext.get('stretched'):
+            return 'wait_pullback'
+        # "אם שלושה ימים היא כבר ירוקה תדע שזה כבר מאוחר מדי" (20/20 live 2026-04-23),
+        # "ארבעה ימים רצופים בלי תיקון ... לא נקודת כניסה טובה, הייתי שמח שתבדוק
+        # תמיכה או אפילו שבוע שלא תעשה כלום" (NOW, 06-01). The run INTO the entry was
+        # the move; this used to cost five structure points and still say "enter".
+        # Same shape as `stretched`: it blocks chasing, never holding.
+        if entering and s.ext.get('ran_hot'):
             return 'wait_pullback'
         # The same "don't chase" idea, measured a different way: distance from the
         # level THIS break actually happened at, not from the 150/200MA. `stretched`
@@ -2557,9 +2713,9 @@ class Judgement:
         elif s.ext.get('stretched'):
             cap('stretched', 'stretched from the 150 — do not chase, wait for the pullback',
                 'מתוחה מממוצע 150 — לא לרדוף, להמתין לתיקון', 3)
-        if earn is not None and earn <= 1:
-            cap('earnings', 'earnings land within a day — he does not open into a report',
-                'דיווח תוצאות בתוך יום — לא נכנסים לפני דיווח', 3)
+        if earn is not None and earn <= EARNINGS_SOON_DAYS:
+            cap('earnings', f'earnings in {earn} days — he does not open into a report',
+                f'דיווח תוצאות בעוד {earn} ימים — לא נכנסים לפני דיווח', 3)
         if small_cap:
             # Not a `cap()` call: this DEMOTES by one band rather than clamping to
             # a fixed ceiling, so it has no single ceiling value to record — the
@@ -2920,6 +3076,15 @@ class Judgement:
         elif action == 'wait_buyers':
             call = "It reached the zone — wait for a buyers' candle before entering."
             call_he = "הגיעה לאזור — להמתין לנר קונים לפני כניסה."
+        elif action == 'wait_pullback' and s.ext.get('ran_hot') and not s.ext.get('stretched'):
+            # his words for it: a run into the entry, not a distance from the average
+            n = s.ext.get('run_days') or 0
+            at_en = f" around {hold['price']:.2f}" if hold else ''
+            at_he = f" סביב {hold['price']:.2f}" if hold else ''
+            call = (f"Ran {n} days in a row — too late to chase. Wait for a support test "
+                    f"or a few quiet days{at_en}.")
+            call_he = (f"רצה {n} ימים ברצף — מאוחר מדי לרדוף. מחכים לבדיקת תמיכה "
+                       f"או לכמה ימים של התייצבות{at_he}.")
         elif action == 'wait_pullback' and hold:
             call = f"Don't chase — wait for a pullback toward {hold['price']:.2f}."
             call_he = f"לא לרדוף — להמתין לתיקון לכיוון {hold['price']:.2f}."
@@ -2950,7 +3115,7 @@ class Judgement:
         warn = []
         for c in breakdown['caps']:
             warn.append({'en': c['label'], 'he': c['label_he']})
-        if earn is not None and 1 < earn <= EARNINGS_SOON_DAYS:
+        if earn is not None and earn > EARNINGS_SOON_DAYS and earn <= 14:
             warn.append({'en': f'Earnings in {earn} days', 'he': f'דיווח תוצאות בעוד {earn} ימים'})
         if s.momentum >= 5:
             warn.append({'en': f'{s.momentum} green days in a row — expect a rest',

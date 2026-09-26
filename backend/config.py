@@ -987,9 +987,42 @@ CUP_RIM_NEAR_ATR = 3.0      # ...and how close price must be back to the rim now
 # reclaimed its 150 — a trigger by the method's own rules — because the run INTO the
 # trigger was the move. Counted both ways he says it: consecutive up days, and the
 # size of the recent run in ATRs (a 3-day gap-and-drift shows up in the second).
+# Re-read against the 2026 lives, which weight above the one 2026-04 CRWD post: "אם
+# שלושה ימים היא כבר ירוקה תדע שזה כבר מאוחר מדי" (20/20 live 2026-04-23) and NOW
+# "עלינו מאוד חזק, לא תיקנו, ארבעה ימים רצופים ... לא נקודת כניסה טובה" (06-01). Six
+# days was his most extreme example, not his threshold. Three quiet up-closes are not a
+# run, though, so three need real ground behind them; four are enough on their own.
 RUN_UP_LOOKBACK = 6
-RUN_UP_DAYS = 6             # consecutive green days
+RUN_UP_DAYS = 4             # consecutive up closes — "ארבעה ימים רצופים"
+RUN_UP_SHORT_DAYS = 3       # "שלושה ימים ירוקים" ...
+RUN_UP_SHORT_ATR = 2.0      # ...when they covered at least this many ATR
 RUN_UP_ATR = 3.0            # or this much ground covered in RUN_UP_LOOKBACK days
+
+# ── The 150 has a direction, not just a side ─────────────────────────────────
+# His 150 method is "price arrives at the 150, calms, buyers come in" on an average that
+# is flat or rising — "קונים רק מעל הקו". A stock bouncing on a FALLING 150 is a stock in
+# a downtrend touching its average from above, not the 150 method. Measured as the
+# average's own % change over MA150_SLOPE_BARS; on the frozen sample the 20-bar change
+# runs p25 -1.2% / p50 +1.4% / p75 +4.4%, so ±1% separates a flat average from one that
+# is actually going somewhere.
+MA150_SLOPE_BARS = 20
+MA150_FLAT_PCT = 1.0
+# A reclaim from below always happens under a still-falling average (ADBE "ברגע שתעבור
+# את ממוצע 150 ... זה אפילו טרייד יותר בשרני"). Inside this many bars of the reclaim a
+# falling 150 is the expected shape of the setup, not a defect.
+MA150_RECLAIM_GRACE_BARS = 25
+# How far above the 150 still counts as "on the 150" for his buyers-at-the-average
+# entry: ABNB +3%, ALAB +5%, C +5%, AVGO +6%, DOW +6%, AMZN +7% — all called "על
+# הממוצע / באיזור הממוצע". ATR-only (1.4 ATR) missed most of them on calm names.
+FLOOR_150_PCT = 0.08
+# "Came down to the floor" vs "ran up to the ceiling" — see verdict._came_down_to_it.
+# Measured as of the evenings he posted (2025-07 → 2026-09, above the 150): 10-day
+# pullback ≥1.5 ATR on 58% of his entries vs 25% of his "wait for the break" calls;
+# 5-day return median -0.06 ATR on entries vs +0.93 on waits.
+PULLBACK_LOOKBACK = 10
+PULLBACK_MIN_ATR = 1.5
+PULLBACK_RET_BARS = 5
+PULLBACK_MAX_RUN_ATR = 0.0
 
 # (An OVERHEAD_WALL_PENALTY lived here and was removed after measurement — it charged
 #  a stock for owning a target ladder and cost TEAM its A. See the note in

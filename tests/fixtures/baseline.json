@@ -7,9 +7,11 @@
       "risk": 8,
       "structure": 25
     },
+    "book_caps": [],
+    "book_minus": [],
     "bound_caps": [],
-    "grade": "A",
-    "grade_score": 80.0,
+    "grade": "B",
+    "grade_score": 75.3,
     "headline_action": "WAIT",
     "rating": 8,
     "setup_codes": [
@@ -30,11 +32,15 @@
       "risk": 8,
       "structure": 25
     },
+    "book_caps": [
+      "small_move"
+    ],
+    "book_minus": [],
     "bound_caps": [],
-    "grade": "A",
-    "grade_score": 94.0,
+    "grade": "C",
+    "grade_score": 64.0,
     "headline_action": "ENTER",
-    "rating": 9,
+    "rating": 6,
     "setup_codes": [
       "bull_flag",
       "cup_handle",
@@ -42,10 +48,9 @@
       "fibonacci",
       "ma_bounce",
       "resistance_retest",
-      "support_test",
-      "triangle"
+      "support_test"
     ],
-    "state": "breakout_now"
+    "state": "value_pullback"
   },
   "GOOGL": {
     "action": "wait_trigger",
@@ -55,13 +60,14 @@
       "risk": 8,
       "structure": 25
     },
+    "book_caps": [],
+    "book_minus": [],
     "bound_caps": [],
     "grade": "B",
-    "grade_score": 60.0,
+    "grade_score": 73.3,
     "headline_action": "READY",
-    "rating": 6,
+    "rating": 7,
     "setup_codes": [
-      "above150_breakout",
       "fibonacci",
       "ma_bounce",
       "resistance_retest",
@@ -78,9 +84,11 @@
       "risk": 8,
       "structure": 25
     },
+    "book_caps": [],
+    "book_minus": [],
     "bound_caps": [],
     "grade": "A",
-    "grade_score": 96.0,
+    "grade_score": 95.0,
     "headline_action": "ENTER",
     "rating": 10,
     "setup_codes": [
@@ -89,7 +97,7 @@
       "resistance_retest",
       "support_test"
     ],
-    "state": "buyers_at_level"
+    "state": "value_pullback"
   },
   "MRNA": {
     "action": "wait_trigger",
@@ -99,11 +107,17 @@
       "risk": 8,
       "structure": 25
     },
+    "book_caps": [
+      "stop_wide"
+    ],
+    "book_minus": [
+      "ran_hot"
+    ],
     "bound_caps": [
       "stop_wide"
     ],
     "grade": "D",
-    "grade_score": 47.0,
+    "grade_score": 49.0,
     "headline_action": "WAIT",
     "rating": 5,
     "setup_codes": [
@@ -121,11 +135,13 @@
       "risk": 8,
       "structure": 25
     },
+    "book_caps": [],
+    "book_minus": [],
     "bound_caps": [],
     "grade": "B",
-    "grade_score": 62.0,
+    "grade_score": 77.3,
     "headline_action": "READY",
-    "rating": 6,
+    "rating": 8,
     "setup_codes": [
       "descending_channel",
       "fibonacci",
@@ -144,11 +160,13 @@
       "risk": 8,
       "structure": 25
     },
+    "book_caps": [],
+    "book_minus": [],
     "bound_caps": [],
-    "grade": "C",
-    "grade_score": 51.0,
+    "grade": "D",
+    "grade_score": 41.2,
     "headline_action": "READY",
-    "rating": 5,
+    "rating": 4,
     "setup_codes": [
       "bull_flag",
       "fibonacci",
@@ -165,11 +183,15 @@
       "risk": 8,
       "structure": 25
     },
+    "book_caps": [
+      "small_move"
+    ],
+    "book_minus": [],
     "bound_caps": [],
     "grade": "C",
-    "grade_score": 50.0,
+    "grade_score": 64.0,
     "headline_action": "WAIT",
-    "rating": 5,
+    "rating": 6,
     "setup_codes": [
       "fibonacci",
       "resistance_retest",
@@ -180,18 +202,22 @@
     "state": "at_trigger"
   },
   "ROP": {
-    "action": "enter",
+    "action": "wait_trigger",
     "axis_max": {
       "event": 33,
       "reward": 34,
       "risk": 8,
       "structure": 25
     },
+    "book_caps": [],
+    "book_minus": [
+      "ran_hot"
+    ],
     "bound_caps": [],
-    "grade": "A",
-    "grade_score": 71.0,
-    "headline_action": "ENTER",
-    "rating": 7,
+    "grade": "C",
+    "grade_score": 58.2,
+    "headline_action": "WAIT",
+    "rating": 6,
     "setup_codes": [
       "bearish_to_bullish",
       "cup_handle",
@@ -200,6 +226,6 @@
       "resistance_retest",
       "support_test"
     ],
-    "state": "buyers_at_level"
+    "state": "at_trigger"
   }
 }

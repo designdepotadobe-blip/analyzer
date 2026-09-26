@@ -44,6 +44,10 @@ def decision_surface(r: dict) -> dict:
         'axis_max': {c['key']: c['max'] for c in bd['components']
                      if not c.get('adjustment')},
         'setup_codes': sorted({s['code'] for s in r['setups']}),
+        # the by-the-book grade's own ceilings and deductions (book.py) — the
+        # letter above is the book's, these say what bound it
+        'book_caps': sorted(c['key'] for c in m['book']['caps'] if c['bound']),
+        'book_minus': sorted(x['key'] for x in m['book']['minus']),
     }
 
 

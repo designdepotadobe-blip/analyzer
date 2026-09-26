@@ -1,7 +1,7 @@
 import { Component, Input, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { ApiService } from './api.service';
-import { Analysis, Meta, Micha, MichaReasonGroup, MichaState, Toggles } from './models';
+import { Analysis, BookCap, BookItem, Meta, Micha, MichaOption, MichaReasonGroup, MichaState, Toggles } from './models';
 
 @Component({
   selector: 'app-analyzer-page',
@@ -360,6 +360,41 @@ export class AnalyzerPageComponent implements OnInit {
   };
   gradeColor(g: string): string {
     return this.gradeColors[g] || '#787b86';
+  }
+
+  /** The plan row the panel leads with — the same option the chart draws. */
+  planOption(m: Micha): MichaOption | null {
+    const want = this.drawnOptionByAction[m.action];
+    return m.options.find((o) => o.kind === want) || m.options[0] || null;
+  }
+
+  /** The other ways in ("אפשרות 2"), shown under the main plan. */
+  otherOptions(m: Micha): MichaOption[] {
+    const main = this.planOption(m);
+    return m.options.filter((o) => o !== main);
+  }
+
+  /** How the entry is phrased in his register, per option kind. */
+  entryLabelHe(m: Micha, o: MichaOption): string {
+    if (o.kind === 'now') return 'כניסה';
+    if (o.kind === 'pullback') return 'כניסה בתיקון ל-';
+    return m.action === 'enter' ? 'כניסה' : 'פריצה מעל';
+  }
+
+  readonly bookIcon: { [k: string]: string } = { yes: '✓', partial: '◐', no: '✗' };
+
+  /** Checklist line titles — the six things he checks, in his words. */
+  readonly bookTitleHe: { [k: string]: string } = {
+    trend: 'ממוצע 150', location: 'קרבה לממוצע', event: 'מה קרה',
+    volume: 'ווליום', stop: 'סטופ', potential: 'פוטנציאל',
+  };
+
+  boundCaps(m: Micha): BookCap[] {
+    return (m.book?.caps || []).filter((c) => c.bound);
+  }
+
+  pctOf(i: BookItem): number {
+    return i.max ? Math.max(0, Math.min(100, (i.points / i.max) * 100)) : 0;
   }
 
   /** Math.abs isn't reachable from an Angular template expression. */

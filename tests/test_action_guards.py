@@ -21,7 +21,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from config import CHASE_PAST_TRIGGER_ATR
+from config import CHASE_PAST_TRIGGER_ATR, EARNINGS_SOON_DAYS
 from verdict import Judgement, Signals
 
 ENTERING = ('breakout_now', 'buyers_at_level', 'value_pullback')
@@ -47,10 +47,15 @@ class TestEarningsGuard:
     def test_earnings_today_defers(self, state):
         assert Judgement._action(ctx(), state, sig(), 0, []) == 'wait_event'
 
+    @pytest.mark.parametrize('days', [2, 5, EARNINGS_SOON_DAYS])
+    def test_earnings_within_the_week_defers(self, days):
+        # "מדווחת שבוע הבא. אז זהירות" — he does not open into a report at all;
+        # this used to fire only at <= 1 day, so 3 days out still said "enter"
+        assert Judgement._action(ctx(), 'breakout_now', sig(), days, []) == 'wait_event'
+
     def test_earnings_further_out_does_not_defer(self):
-        # 2 days is outside the guard — it is a caveat the grade caps for,
-        # not a reason to change the instruction
-        assert Judgement._action(ctx(), 'breakout_now', sig(), 2, []) == 'enter'
+        assert Judgement._action(ctx(), 'breakout_now', sig(),
+                                 EARNINGS_SOON_DAYS + 1, []) == 'enter'
 
     def test_unknown_earnings_does_not_block(self):
         # None means "we could not fetch it", which must never be treated as
@@ -129,3 +134,21 @@ class TestNonEnteringStatesUnchanged:
         """The state->action map is a published contract the UI and Radar both
         key off; pin it so a refactor cannot quietly re-point one."""
         assert Judgement._action(ctx(), state, sig(), None, []) == expected
+
+
+class TestRanHotGuard:
+    """"אם שלושה ימים היא כבר ירוקה תדע שזה כבר מאוחר מדי" — the run into the entry
+    was the move. It used to cost structure points and still say enter."""
+
+    @pytest.mark.parametrize('state', ENTERING)
+    def test_ran_hot_becomes_wait_pullback(self, state):
+        s = sig(ext={'ran_hot': True})
+        assert Judgement._action(ctx(), state, s, None, []) == 'wait_pullback'
+
+    def test_ran_hot_never_blocks_holding(self):
+        s = sig(ext={'ran_hot': True})
+        assert Judgement._action(ctx(), 'holding', s, None, []) == 'hold'
+
+    def test_earnings_outranks_ran_hot(self):
+        s = sig(ext={'ran_hot': True})
+        assert Judgement._action(ctx(), 'breakout_now', s, 3, []) == 'wait_event'

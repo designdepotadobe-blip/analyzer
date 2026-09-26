@@ -131,6 +131,17 @@ cards with per-option stops, the target ladder, the three grade bars
 The price axis should NOT show a stack of overlapping `Target`/`Break`/`Stop`/`T2`
 boxes — if it does, the plan lines have regained their default `axisLabelVisible`.
 
+**`--size 390,844` is NOT a 390px viewport.** Headless Chrome/Edge on Windows clamps
+the window to a minimum ~492px width, so a "390" shot is a 492px layout cropped at
+390 — everything on the right looks cut off even when the page fits perfectly
+(measured 2026-09-26: `innerWidth` = 492). For a real phone width use
+`phone.py`, which emulates the device over CDP and also prints
+`scrollWidth` vs `innerWidth` (equal = no horizontal overflow):
+
+```bash
+./venv/Scripts/python.exe .claude/skills/run-stock-analyzer/phone.py "http://localhost:8123/?ticker=ADBE" shot.png 390
+```
+
 On a phone-width shot (`--size 390,844`), the chart must still get real vertical
 space — the panel below it caps itself and scrolls internally rather than pushing
 the chart down to a sliver (see Gotchas). On mobile specifically:

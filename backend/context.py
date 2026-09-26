@@ -15,6 +15,8 @@ import pandas as pd
 from config import (
     ATR_PCT_HIGH,
     ATR_PCT_LOW,
+    MA150_FLAT_PCT,
+    MA150_SLOPE_BARS,
     VOL_AVG_PERIOD,
     jnum,
 )
@@ -57,6 +59,9 @@ class AnalysisContext:
     above_150: bool
     above_200: bool
     ma_context: str
+    # direction of the 150 itself: % change over MA150_SLOPE_BARS, and its reading
+    ma150_slope_pct: float | None
+    ma150_dir: str              # 'rising' | 'flat' | 'falling' | 'unknown'
 
     # swing pivot indices (display window)
     sh_idx: np.ndarray
@@ -117,6 +122,17 @@ class AnalysisContext:
         else:
             ma_context = 'bear'        # below both → bearish bias
 
+        # Which way the 150 is pointing — see MA150_FLAT_PCT. Read off the full
+        # history so a young display window still has the bars to measure it.
+        ma150_slope_pct, ma150_dir = None, 'unknown'
+        fs = full['sma150'].to_numpy(float) if 'sma150' in full else None
+        if fs is not None and len(fs) > MA150_SLOPE_BARS:
+            now_, then_ = fs[-1], fs[-1 - MA150_SLOPE_BARS]
+            if now_ == now_ and then_ == then_ and then_ > 0:
+                ma150_slope_pct = jnum((now_ / then_ - 1) * 100)
+                ma150_dir = ('rising' if ma150_slope_pct > MA150_FLAT_PCT else
+                             'falling' if ma150_slope_pct < -MA150_FLAT_PCT else 'flat')
+
         sh_idx, sl_idx = Geometry.swings(highs, lows, atr)
 
         # Align the benchmark onto this stock's own trading days. Holidays and
@@ -141,6 +157,7 @@ class AnalysisContext:
             sma150=sma150, sma200=sma200, mean_price=mean_price,
             atr_pct=atr_pct, vol_tier=vol_tier, vol_avg=vol_avg,
             above_150=above_150, above_200=above_200, ma_context=ma_context,
+            ma150_slope_pct=ma150_slope_pct, ma150_dir=ma150_dir,
             sh_idx=sh_idx, sl_idx=sl_idx, market_cap=market_cap,
             earnings_days=earnings_days, bench=bench_arr,
             sector=(profile or {}).get('sector'),
