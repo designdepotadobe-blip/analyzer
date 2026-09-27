@@ -372,6 +372,14 @@ def _edge(lvl, side: str) -> Optional[float]:
         e = lvl.get('zone_top') if side == 'res' else lvl.get('zone_bottom')
         if e:
             return float(e)
+    # The RAW levels the engine reads (res_levels / sup_levels) carry `top` / `bottom`
+    # but never `is_zone` — that flag only exists on the serialized display copy — so
+    # this used to fall through to the cluster MEAN. On his own charts the named
+    # breakout is the band's top (EW 88.50, META 692, AAPL 219 — each the top of the
+    # same band we quoted the middle of), which cost a third of the trigger misses.
+    e = lvl.get('top') if side == 'res' else lvl.get('bottom')
+    if e:
+        return float(e)
     return float(lvl['price'])
 
 
@@ -3078,12 +3086,12 @@ class Judgement:
             call_he = "הגיעה לאזור — להמתין לנר קונים לפני כניסה."
         elif action == 'wait_pullback' and s.ext.get('ran_hot') and not s.ext.get('stretched'):
             # his words for it: a run into the entry, not a distance from the average
-            n = s.ext.get('run_days') or 0
+            r_en, r_he = bk.run_phrase(s.ext)
             at_en = f" around {hold['price']:.2f}" if hold else ''
             at_he = f" סביב {hold['price']:.2f}" if hold else ''
-            call = (f"Ran {n} days in a row — too late to chase. Wait for a support test "
-                    f"or a few quiet days{at_en}.")
-            call_he = (f"רצה {n} ימים ברצף — מאוחר מדי לרדוף. מחכים לבדיקת תמיכה "
+            call = (f"{r_en[0].upper()}{r_en[1:]} — too late to chase. Wait for a support "
+                    f"test or a few quiet days{at_en}.")
+            call_he = (f"{r_he} — מאוחר מדי לרדוף. מחכים לבדיקת תמיכה "
                        f"או לכמה ימים של התייצבות{at_he}.")
         elif action == 'wait_pullback' and hold:
             call = f"Don't chase — wait for a pullback toward {hold['price']:.2f}."

@@ -242,6 +242,91 @@ class Geometry:
             return None
         return {'intercept': rail_intercept, 'touches': touches, 'width': width}
 
+    @staticmethod
+    def leg_channel(sh_idx, sl_idx, highs, lows, atr: float, M: int, mean_price: float,
+                    min_bars: int, min_width_atr: float, recent_break_bars: int):
+        """
+        The channel he draws: anchored at the START of the current leg, not the
+        best-touched line anywhere on the chart.
+
+        His channels (IWM from the 2025-04 low, CAH from 195.54 after its gap, ASTS
+        from 49.31, AAPL from 169.21) start at the leg's extreme — a swing low no
+        later low undercuts (rising) / a swing high no later high exceeds
+        (descending) — run a base rail through a later pivot on the same side, and
+        put the parallel rail through the leg's most extreme opposite point, so the
+        whole leg lives inside. The old builder took `segment_trendline`'s pick
+        (most touches over the whole window), which on CAH was a pre-gap line from
+        80.9 and read "top of the channel" where he says "at its bottom".
+
+        Candidates need >= 2 pivots on EACH rail, a span of `min_bars`, and a real
+        width; among valid ones the MOST RECENT anchor wins (his current leg), then
+        the most rail touches. A close through the base rail is allowed only inside
+        the last `recent_break_bars` (a fresh break, not an invalid channel).
+
+        Returns dict(kind, slope, lower_i, upper_i, x0, touches, broke) or None.
+        """
+        tol = atr * TL_TOUCH_TOL_ATR
+        hi = np.asarray(highs, float)
+        lo = np.asarray(lows, float)
+        best = None
+        for kind, base_piv, base_vals, other_piv, other_vals in (
+                ('rising', [int(i) for i in sl_idx], lo, [int(i) for i in sh_idx], hi),
+                ('descending', [int(i) for i in sh_idx], hi, [int(i) for i in sl_idx], lo)):
+            rising = kind == 'rising'
+            for a in base_piv:
+                if M - 1 - a < min_bars:
+                    continue
+                later = [k for k in base_piv if k > a]
+                if not later:
+                    continue
+                # the leg's extreme: never undercut (rising) / exceeded (descending)
+                if rising and any(base_vals[k] < base_vals[a] for k in later):
+                    continue
+                if not rising and any(base_vals[k] > base_vals[a] for k in later):
+                    continue
+                for b in later:
+                    if b - a < PEAK_DISTANCE_BARS:
+                        continue
+                    slope = (base_vals[b] - base_vals[a]) / (b - a)
+                    if rising and slope <= 0 or not rising and slope >= 0:
+                        continue
+                    if abs(slope / mean_price * 100) < MIN_TREND_SLOPE_PCT:
+                        continue
+                    icpt = base_vals[a] - slope * a
+                    xs = np.arange(a, M)
+                    line = slope * xs + icpt
+                    seg = base_vals[a:M]
+                    viol = np.nonzero(seg < line - tol)[0] if rising else np.nonzero(seg > line + tol)[0]
+                    broke = False
+                    if viol.size:
+                        if a + int(viol[0]) < M - recent_break_bars:
+                            continue
+                        broke = True
+                    # the opposite rail through the leg's most extreme opposite point
+                    off = other_vals[a:M] - slope * xs
+                    o_icpt = float(off.max()) if rising else float(off.min())
+                    width = abs(o_icpt - icpt)
+                    if width < min_width_atr * atr:
+                        continue
+                    b_t = sum(1 for j in base_piv if j >= a
+                              and abs(base_vals[j] - (slope * j + icpt)) <= tol)
+                    o_t = sum(1 for j in other_piv if j >= a
+                              and abs(other_vals[j] - (slope * j + o_icpt)) <= tol)
+                    if b_t < 2 or o_t < 2:
+                        continue
+                    cand = {'kind': kind, 'slope': slope, 'x0': a, 'broke': broke,
+                            'touches': b_t + o_t,
+                            'lower_i': icpt if rising else o_icpt,
+                            'upper_i': o_icpt if rising else icpt}
+                    # Most respected channel first — rail touches, less a charge for
+                    # width so an envelope around two years of chop can't win on
+                    # touches alone — then the more recent leg.
+                    cand['score'] = b_t + o_t - (width / atr) / 3.0
+                    key = (round(cand['score'], 3), a)
+                    if best is None or key > (round(best['score'], 3), best['x0']):
+                        best = cand
+        return best
+
     # ── Line primitives ───────────────────────────────────────────────────────
 
     @staticmethod

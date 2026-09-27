@@ -1,0 +1,48 @@
+:host {
+  /* the shell is a fixed-height column (app.component.css) — claim the space and
+     scroll inside it, or a long document would be clipped */
+  display: block;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.lg-page {
+  min-height: 100%;
+  overflow-y: auto;
+  background: #0e1117;
+  color: #d8dce4;
+}
+.lg-nav {
+  display: flex;
+  flex-direction: row-reverse;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #2a2e39;
+  text-align: right;
+}
+.lg-nav a {
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: #c3c9d3;
+  text-decoration: none;
+  font-size: 14px;
+  border: 1px solid #2a2f3c;
+}
+.lg-nav a.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+.lg-nav .lg-home { margin-left: auto; border-color: transparent; color: #9ccaf8; }
+.lg-doc {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 24px 16px 60px;
+  text-align: right;
+  font-size: 15.5px;
+  line-height: 1.75;
+}
+.lg-doc h1 { margin: 0 0 4px; font-size: 26px; font-weight: 800; color: #f2f4f8; }
+.lg-doc h2 { margin: 26px 0 8px; font-size: 18px; font-weight: 700; color: #eef1f6; }
+.lg-doc p, .lg-doc li { color: #d0d5dd; }
+.lg-doc ul { padding-right: 20px; padding-left: 0; }
+.lg-doc li { margin-bottom: 6px; }
+.lg-doc strong { color: #fff; }
+.lg-updated { margin: 0 0 18px; font-size: 13px; color: #9ba3b1; }

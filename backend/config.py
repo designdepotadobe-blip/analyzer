@@ -48,7 +48,7 @@ SWING_PROMINENCE_ATR = 0.5  # a pivot must stand out by ≥ this many ATRs
 # "59.37 - 59.54" 0.05. A single linkage step of 0.6 ATR was as wide as his
 # WIDEST finished band, so one step could already overshoot him; 0.35 keeps a
 # two-pivot cluster inside the range he actually draws.
-CLUSTER_ATR_FACTOR = 0.35   # merge horizontal pivots within this many ATRs
+CLUSTER_ATR_FACTOR = 0.6    # one step up to his widest band (AMD 424.03/437.23 = 0.59 ATR); LEVEL_MAX_SPAN_ATR still caps the total
 # …but a cluster may never grow WIDER than this in total. Clustering is single-linkage
 # (each pivot is compared to the last one admitted), so without a span cap a run of
 # pivots each 0.59 ATR apart chains into one "level" of unlimited width: GTLB carried
@@ -65,13 +65,17 @@ CLUSTER_ATR_FACTOR = 0.35   # merge horizontal pivots within this many ATRs
 # 0.6 is his measured MAXIMUM, so this is still a ceiling and not a target.
 LEVEL_MAX_SPAN_ATR = 0.6
 LEVEL_NEAR_ATR = 4          # only show levels within this many ATRs of price
-LEVEL_STRONG_TOUCHES = 4    # always show levels with this many touches, even if far away
+# `touches` counts swing PIVOTS in the band now (see levels._recount_touches), so 3 is
+# a well-defended line — his bands are anchored on 2-3 pivots. The old "always show,
+# even if far away" exemption is gone: his charts never carry a line hundreds of
+# dollars from the action (AMD showed supports at 94 and 189 under a 456 price).
+LEVEL_STRONG_TOUCHES = 3
 LEVEL_MAX_SHOW = 2          # max levels shown per side (resistance / support)
 LEVEL_NEAR_BUCKET_ATR = 2.0  # levels this close sort ahead of everything else
 MIN_LEVEL_TOUCHES = 2
 
 SR_MERGE_ATR = 0.35         # merge a R+S pair into a zone if they are within this many ATRs
-SR_KEEP_TOUCHES = 4         # but keep both lines if EITHER has this many touches (well-tested)
+SR_KEEP_TOUCHES = 3         # but keep both lines if EITHER has this many pivots (well-tested)
 # …except when they are the SAME line. A price that clustered as both resistance and
 # support is a flipped level, and a flipped level is the single thing he draws with
 # most conviction — as ONE band. Keeping both because it is well-tested drew it
@@ -131,6 +135,9 @@ TL_RELEVANT_ATR = 3.0       # keep a line only if it passes this close to today'
 TRI_RELEVANT_ATR = 6.0      # triangle: BOTH lines must be this close to price (near apex)
 CH_MIN_RAIL_TOUCHES = 2     # the parallel rail needs this many touches of its own
 CH_MIN_WIDTH_ATR = 1.5      # rails closer than this are noise, not a channel
+# A channel is a LEG he can see on the chart — months, not weeks (IWM, CAH, ASTS, AAPL
+# all run 3-15 months). Shorter than this is a flag or a wiggle, not his channel.
+CH_LEG_MIN_BARS = 40
 
 BULLFLAG_POLE_GAIN = 0.18   # pole must rise ≥ 18%
 BULLFLAG_POLE_BARS = 35     # ...within this many bars
@@ -474,7 +481,7 @@ HEADROOM_CLEAR_ATR = 4.0     # real room to run; at/above this, or blue sky, pay
 # real wall" the moment a wall was BROKEN, but the moment a wall is still AHEAD
 # `_headroom()` now defers to res_levels' own MIN_LEVEL_TOUCHES bar instead — see
 # its docstring for why keeping two thresholds was the AMAT bug).
-HEADROOM_HARD_TOUCHES = 4    # matches LEVEL_STRONG_TOUCHES — a well-tested break
+HEADROOM_HARD_TOUCHES = 3    # matches LEVEL_STRONG_TOUCHES — pivots, not bar approaches
 # Breaking a hard wall is the event his whole method is organised around
 # ("פריצה משמעותית מעל"), and breaking a 2-touch high is not the same event.
 # Paid on the setup axis, small, and only while the break is still fresh.
@@ -1163,8 +1170,17 @@ CUP_RIM_TOLERANCE = 0.08     # right rim within 8% of the left rim = the same ri
 # Time spent near the low, as a fraction of the whole cup. The single strongest
 # discriminator: a U spends weeks basing, a V spends days. Raised from 0.35-of-half
 # (an effective 0.175) to a straight fraction of the full span.
-CUP_ROUND_FRACTION = 0.30    # ...of the cup's bars must sit in its lower third
-CUP_HANDLE_MAX_DEPTH = 0.5   # O'Neil: handle no deeper than half the cup
+# 0.30 -> 0.20 (2026-09-27). Measured with tools/lines.py on his 119 cup posts vs a
+# 236-name universe sample: 0.30 found 41% of his cups (21% of the universe), 0.20
+# finds 63% (34%) — the same ~1.9x selectivity, far better recall. 0.15 / 0.10 kept
+# climbing on his posts (71% / 77%) but called 44% / 50% of the market a cup.
+CUP_ROUND_FRACTION = 0.20
+CUP_HANDLE_MAX_DEPTH = 0.8   # his handles run deep (HPE 45.70 in a 40.72-64.25 cup = 79%)
+CUP_HANDLE_MIN_RISE = 0.2    # ...but a handle is a HIGHER low: clear of the cup's bottom fifth
+# The rim band: right-side highs within this of the left rim are the SAME rim (MU
+# 1035.5/1036.13/1042.4, CP 91.58/91.50/91.52) — his measured band widths top out at 0.6.
+CUP_RIM_BAND_ATR = 0.6
+CUP_REQUIRE_RETEST = True   # a right-side high back in the rim band, or price at the rim now
 CUP_HANDLE_MIN_BARS = 3
 CUP_HANDLE_MAX_BARS = 90     # a "handle" longer than this is a second base
 CUP_NEAR_RIM_ATR = 6.0       # only report a cup price is actually working toward
@@ -1199,6 +1215,10 @@ FIB_EXT_RATIOS = (1.272, 1.618, 2.0)
 # a couple of percent overhead — true, useless, and 68% of the universe.
 FIB_EXT_MIN_DROP_PCT = 10.0  # a correction shallower than this is noise
 FIB_EXT_MIN_ROOM_PCT = 8.0   # ...and the 1.618 must sit at least this far above
+# Bounce targets of a fresh decline (setups._detect_fib_bounce, AEHR "110-119"): the
+# peak is looked for inside this many bars, and the low must be this recent.
+FIB_BOUNCE_LOOKBACK = 120
+FIB_BOUNCE_LOW_MAX_AGE = 30
 
 # How far below the entry a previous support level may sit and still be the stop.
 # Owner (2026-08-22): "it can be the previous support level if it's not that far",

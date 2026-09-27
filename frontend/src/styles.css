@@ -7,6 +7,24 @@ body {
   padding: 0;
   height: 100%;
   background: #0e1117;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
-    sans-serif;
+  font-family: 'Heebo', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica,
+    Arial, sans-serif;
+}
+
+
+/* ── Accessibility (IS 5568 / WCAG 2.x AA) ─────────────────────────────────
+   A clearly visible keyboard focus ring on everything focusable, and motion
+   switched off for users who ask their OS for less of it. Stated in the
+   accessibility statement (/legal/accessibility) — keep the two in sync. */
+:focus-visible {
+  outline: 2px solid #ffc46b;
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

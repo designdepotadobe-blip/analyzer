@@ -81,6 +81,20 @@ VERDICT_EN = {
 }
 
 
+def run_phrase(ext: dict) -> tuple:
+    """
+    How the run into the entry is said — (en, he). `ran_hot` fires two ways (see
+    micha._ext20): a streak of up days, or a big move over the last week whatever the
+    day count. Printing "ran 1 days in a row (+17%)" for the second is nonsense, so
+    each gets its own sentence.
+    """
+    n = ext.get('run_days') or 0
+    pct = ext.get('run_pct') or 0
+    if n >= 3:
+        return (f'ran {n} days in a row ({pct:+.0f}%)', f'רצה {n} ימים ברצף ({pct:+.0f}%)')
+    return (f'up {pct:+.0f}% in the last week', f'עלתה {pct:+.0f}% בשבוע האחרון')
+
+
 def _letter(score: float) -> str:
     return next(l for l, lo in BANDS if score >= lo)
 
@@ -121,7 +135,8 @@ def book_target(ctx, s, entry: float) -> Optional[dict]:
             proj = (float(t['price']), t.get('label') or 'measured move',
                     t.get('label_he') or 'מהלך מדוד')
     if proj is None:
-        real = [t for t in ups if t.get('source') in ('resistance', 'flipped_level', 'ath', 'gap')]
+        real = [t for t in ups if t.get('source') in ('resistance', 'flipped_level', 'ath', 'gap',
+                                                      'channel_rail', 'fib_bounce')]
         pool = real or ups
         if pool:
             t = max(pool, key=lambda t: t['price'])
@@ -293,10 +308,10 @@ def grade(j, ctx, s, state: str, action: str, trigger, options, earn, small_cap)
     # ── What makes him say "not now" — deductions ──────────────────────────────
     ext = s.ext or {}
     if ext.get('ran_hot'):
-        n = ext.get('run_days') or 0
+        r_en, r_he = run_phrase(ext)
         minus.append({'key': 'ran_hot', 'points': -8,
-                      'label': f"ran {n} days in a row ({ext.get('run_pct') or 0:+.0f}%) — too late to chase",
-                      'label_he': f"רצה {n} ימים ברצף ({ext.get('run_pct') or 0:+.0f}%) — מאוחר לרדוף"})
+                      'label': f'{r_en} — too late to chase',
+                      'label_he': f'{r_he} — מאוחר לרדוף'})
     if (s.break_level and atr and state == 'breakout_now'
             and (price - s.break_level) / atr > CHASE_PAST_TRIGGER_ATR):
         minus.append({'key': 'chase', 'points': -5,

@@ -7,11 +7,18 @@
      conflict") — reintroducing it to save one more line of chrome is not worth
      it. One line, small type, so it costs as little vertical space as a legal
      requirement can. -->
-<footer class="legal-footer" dir="rtl">
-  המידע, הניתוחים והאיתותים המוצגים באפליקציה זו נועדו למטרות מחקר, לימוד ואינדיקציה טכנית בלבד,
-  ואינם מהווים ייעוץ השקעות, שיווק השקעות או המלצה לביצוע עסקאות בניירות ערך. הנתונים מופקים על
-  ידי אלגוריתם אוטומטי ואינם מתחשבים בצרכיו האישיים של אף משתמש. המסחר בשוק ההון כרוך בסיכון כספי.
-  כל הפועל על פי המידע עושה זאת על אחריותו הבלעדית.
+<footer class="legal-footer">
+  <span class="legal-footer-txt" dir="rtl">
+    המידע, הניתוחים והאיתותים המוצגים באפליקציה זו נועדו למטרות מחקר, לימוד ואינדיקציה טכנית בלבד,
+    ואינם מהווים ייעוץ השקעות, שיווק השקעות או המלצה לביצוע עסקאות בניירות ערך. הנתונים מופקים על
+    ידי אלגוריתם אוטומטי ואינם מתחשבים בצרכיו האישיים של אף משתמש. המסחר בשוק ההון כרוך בסיכון כספי.
+    כל הפועל על פי המידע עושה זאת על אחריותו הבלעדית.
+  </span>
+  <nav class="legal-footer-links" aria-label="מסמכים משפטיים">
+    <a routerLink="/legal/terms">תנאי שימוש</a>
+    <a routerLink="/legal/privacy">מדיניות פרטיות</a>
+    <a routerLink="/legal/accessibility">הצהרת נגישות</a>
+  </nav>
 </footer>
 
 <!-- First-visit clickwrap. Blocks interaction with everything behind it
@@ -28,8 +35,17 @@
       מופקים על ידי אלגוריתם אוטומטי ואינם מתחשבים בצרכיו האישיים של אף משתמש. המסחר בשוק ההון
       כרוך בסיכון כספי. כל הפועל על פי המידע עושה זאת על אחריותו הבלעדית.
     </p>
-    <button type="button" class="legal-modal-btn" (click)="acceptLegal()">
-      הבנתי, איתותים אלגוריתמיים למחקר בלבד
+    <!-- Explicit acceptance of the Terms and the Privacy Policy (clickwrap): the
+         button stays disabled until the box is ticked, so acceptance is an act,
+         not a side effect of dismissing a dialog. -->
+    <label class="legal-modal-agree">
+      <input type="checkbox" [(ngModel)]="agreeChecked" />
+      <span>קראתי ואני מסכים/ה ל<a routerLink="/legal/terms" target="_blank">תנאי השימוש</a>
+        ול<a routerLink="/legal/privacy" target="_blank">מדיניות הפרטיות</a>, ואני מבין/ה שהמידע
+        אינו ייעוץ השקעות. השימוש מיועד לבני 18 ומעלה.</span>
+    </label>
+    <button type="button" class="legal-modal-btn" [disabled]="!agreeChecked" (click)="acceptLegal()">
+      הבנתי ואני מסכים/ה
     </button>
   </div>
 </div>

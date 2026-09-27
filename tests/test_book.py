@@ -148,3 +148,9 @@ def test_floor_includes_the_rising_lows_line_and_channel_bottom():
                 overlays={'trendlines': [{'kind': 'rising_lows', 'broke': False,
                                           'p2': {'price': 99.5}}]})
     assert Judgement._floor(ctx, s) == (99.5, 'rising_lows')
+
+
+def test_run_phrase_matches_how_the_run_happened():
+    # a streak is said as a streak; a fast week is said as a move, never "1 days in a row"
+    assert bk.run_phrase({'run_days': 4, 'run_pct': 6})[1].startswith('רצה 4 ימים ברצף')
+    assert 'בשבוע האחרון' in bk.run_phrase({'run_days': 1, 'run_pct': 17})[1]

@@ -388,6 +388,32 @@ export class AnalyzerPageComponent implements OnInit {
     trend: 'ממוצע 150', location: 'קרבה לממוצע', event: 'מה קרה',
     volume: 'ווליום', stop: 'סטופ', potential: 'פוטנציאל',
   };
+  readonly letterColors: { [g: string]: string } = {
+    A: '#26a69a', B: '#66bb6a', C: '#ffb74d', D: '#ff8a65', F: '#ef5350',
+  };
+
+  /** The rating in words — the TipRanks/Seeking-Alpha pattern (a number is read
+   *  faster with a named band beside it), in his vocabulary. */
+  ratingBand(r: number): { he: string; tone: string } {
+    if (r >= 8) return { he: 'סט-אפ חזק', tone: 'strong' };
+    if (r >= 6) return { he: 'סט-אפ טוב', tone: 'good' };
+    if (r >= 4) return { he: 'במעקב', tone: 'watch' };
+    return { he: 'חלשה — לא עכשיו', tone: 'weak' };
+  }
+
+  /** A letter per checklist factor (Seeking-Alpha factor-grade style), from the
+   *  share of that factor's points it earned. Display only — the score is the book's. */
+  factorLetter(i: BookItem): string {
+    const f = i.max ? i.points / i.max : 0;
+    return f >= 0.9 ? 'A' : f >= 0.75 ? 'B' : f >= 0.55 ? 'C' : f >= 0.35 ? 'D' : 'F';
+  }
+
+  /** The rating ring's fill, as a conic gradient in the grade's colour. */
+  ringStyle(m: Micha): string {
+    const deg = Math.max(0, Math.min(10, m.rating)) * 36;
+    const c = this.gradeColor(m.grade);
+    return `conic-gradient(${c} 0deg ${deg}deg, #262b37 ${deg}deg 360deg)`;
+  }
 
   boundCaps(m: Micha): BookCap[] {
     return (m.book?.caps || []).filter((c) => c.bound);

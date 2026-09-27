@@ -1,6 +1,9 @@
 import { Component } from '@angular/core';
+import { LEGAL } from './legal-config';
 
-const LEGAL_KEY = 'micha_legal_ack_v1';
+// Versioned: bumping LEGAL.version asks every visitor to accept the updated Terms
+// and Privacy Policy again (v1 was the disclaimer alone, before the documents existed).
+const LEGAL_KEY = `micha_legal_ack_v${LEGAL.version}`;
 
 /** The shell. Both pages own their own header/chrome, so this stays a bare outlet
  *  rather than a persistent top-nav bar — every extra fixed row here is a row taken
@@ -15,6 +18,9 @@ const LEGAL_KEY = 'micha_legal_ack_v1';
   styleUrls: ['./app.component.css'],
 })
 export class AppComponent {
+  readonly L = LEGAL;
+  agreeChecked = false;
+
   // Per-browser, not per-account — there is no login in this app. Read once at
   // construction; `localStorage` can throw in a locked-down browser context
   // (private mode in some browsers, embedded webviews) — treat that as
@@ -29,6 +35,7 @@ export class AppComponent {
   })();
 
   acceptLegal(): void {
+    if (!this.agreeChecked) return;
     this.legalAccepted = true;
     try {
       localStorage.setItem(LEGAL_KEY, '1');

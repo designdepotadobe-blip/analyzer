@@ -63,12 +63,33 @@ router-outlet {
      is still one small sideways scroll away rather than silently truncated
      (a disclaimer that gets clipped is worse than one that takes a scroll). */
   white-space: nowrap;
-  overflow-x: auto;
   width: 100%;
   box-sizing: border-box;
   /* never give up its space to a tall page — that is the whole point */
   flex-shrink: 0;
+  /* the disclaimer scrolls sideways; the three document links stay put beside it */
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 12px;
 }
+.legal-footer-txt {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  text-align: right;
+}
+.legal-footer-links {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 10px;
+}
+.legal-footer-links a {
+  color: #9ccaf8;
+  text-decoration: none;
+  font-weight: 600;
+}
+.legal-footer-links a:hover { text-decoration: underline; }
 
 .legal-modal-backdrop {
   position: fixed;
@@ -107,3 +128,18 @@ router-outlet {
   cursor: pointer;
 }
 .legal-modal-btn:active { background: #1e8e83; }
+.legal-modal-btn:disabled { background: #3a4150; color: #9ba3b1; cursor: not-allowed; }
+.legal-modal-agree {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #dfe3ea;
+  text-align: right;
+  cursor: pointer;
+}
+.legal-modal-agree input { margin-top: 4px; width: 16px; height: 16px; flex: 0 0 auto; }
+.legal-modal-agree a { color: #9ccaf8; }

@@ -213,7 +213,16 @@ class LevelEngine:
                 last_i = i
 
             avg_q = float(np.mean(q_list)) if q_list else 0.0
-            lvl[f'{pfx}_touches'] = max(lvl['touches'], len(q_list))
+            # ── Pivots are the touches; bars are only tests ────────────────────
+            # This used to be max(pivots, bars-within-0.4-ATR over 3 years), so a
+            # stock that chopped around a price for months carried ten "18-24 touch"
+            # walls (DLTR), every minor edge read as a hard wall, and the trigger
+            # stopped at them instead of his line (38% of his named breakout prices
+            # sat ABOVE the wall we quoted). His bands are anchored on the 2-3 swing
+            # pivots that made them, so that is what `touches` counts now; the bar
+            # approaches stay available as `tests` and still drive quality.
+            lvl[f'{pfx}_touches'] = lvl['touches']
+            lvl[f'{pfx}_tests'] = len(q_list)
             lvl[f'{pfx}_quality'] = round(avg_q, 3)
             lvl[f'{pfx}_has_pin'] = has_pin
 
@@ -235,13 +244,17 @@ class LevelEngine:
             pfx = 'res' if is_res else 'sup'
             other = 'sup' if is_res else 'res'
             lvl['touches'] = lvl.get(f'{pfx}_touches', lvl['touches'])
+            lvl['tests'] = lvl.get(f'{pfx}_tests', 0)
             lvl['quality'] = lvl.get(f'{pfx}_quality', 0.0)
             lvl['has_pin'] = lvl.get(f'{pfx}_has_pin', False)
             lvl['strength'] = ('strong' if lvl['touches'] >= LEVEL_STRONG_TOUCHES
                                or lvl['quality'] >= 0.40 else 'normal')
             # flipped = genuinely tested from the OTHER side too (not just the
             # min-2-point cluster minimum) — a real role reversal, not noise.
-            lvl['flipped'] = bool(lvl.get(f'{other}_touches', 0) >= MIN_LEVEL_TOUCHES)
+            # Read off the OTHER side's bar TESTS. It used to read `{other}_touches`,
+            # which was max(cluster pivots, bars) and a cluster always has >= 2
+            # pivots — so every level in the map was "flipped", always.
+            lvl['flipped'] = bool(lvl.get(f'{other}_tests', 0) >= MIN_LEVEL_TOUCHES)
 
     @staticmethod
     def _mark_freshness(levels: list, closes_full, closes_display, atr: float) -> list:
@@ -256,6 +269,18 @@ class LevelEngine:
         keep = []
         for lvl in levels:
             lp = lvl['price']
+            # ── A line broken in TODAY's direction is not absorbed, it is THE line ──
+            # A resistance cleared upward a few days ago spent the rest of the month
+            # below it by definition, so "65% of recent closes are on the other side"
+            # read it as dead support and deleted it — the exact moment it became the
+            # most important price on the chart. MU 2026-09-23: three highs at
+            # 1035.5 / 1036.13 / 1042.4, broken, and his post reads "מחיר פריצה $1041.
+            # תנו לה לנשום"; the engine had no level there at all and quoted a 1089
+            # "cup rim" instead. The same holds mirrored for a support just lost.
+            if LevelEngine._just_broken(recent, lp, lvl['type']):
+                lvl['freshness'] = 'just_broken'
+                keep.append(lvl)
+                continue
             if lvl['type'] == 'resistance':
                 ever_above = bool(np.any(closes_full > lp + tol))
                 lvl['freshness'] = 'retested' if ever_above else 'fresh'
@@ -268,6 +293,22 @@ class LevelEngine:
                     continue
             keep.append(lvl)
         return keep
+
+    @staticmethod
+    def _just_broken(recent, lp: float, level_type: str) -> bool:
+        """
+        True when the LAST close-cross of `lp` in `recent` went the way today's role
+        implies — up through a level now acting as support, down through one now
+        acting as resistance — and price has stayed on that side since.
+        """
+        up = level_type == 'support'
+        last = None
+        for i in range(1, len(recent)):
+            if recent[i - 1] <= lp < recent[i]:
+                last = 'up'
+            elif recent[i - 1] >= lp > recent[i]:
+                last = 'down'
+        return last == ('up' if up else 'down')
 
     @staticmethod
     def _consolidation_zones(highs, lows, closes, atr: float, M: int) -> list:
@@ -383,12 +424,12 @@ class LevelEngine:
         nearby_res = sorted(
             [r for r in res_levels
              if r.get('freshness') != 'absorbed'
-             and ((r['price'] - price) / atr <= LEVEL_NEAR_ATR or r['touches'] >= LEVEL_STRONG_TOUCHES)],
+             and (r['price'] - price) / atr <= LEVEL_NEAR_ATR],
             key=res_key)[:LEVEL_MAX_SHOW]
         nearby_sup = sorted(
             [s for s in sup_levels
              if s.get('freshness') != 'absorbed'
-             and ((price - s['price']) / atr <= LEVEL_NEAR_ATR or s['touches'] >= LEVEL_STRONG_TOUCHES)],
+             and (price - s['price']) / atr <= LEVEL_NEAR_ATR],
             key=sup_key)[:LEVEL_MAX_SHOW]
 
         zone_thr = ZONE_MIN_SPREAD_ATR * atr

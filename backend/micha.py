@@ -769,6 +769,24 @@ class MichaAnalyzer:
                               f"cup target (+{cup.get('target_big_pct') or 0:.0f}%)",
                               f"יעד הקאפ (+{cup.get('target_big_pct') or 0:.0f}%)", 80,
                               'pattern_projection', None))
+            # ── The bounce targets of a fresh decline ("Fib הפוך", AEHR) ──────
+            for lv in ((overlays.get('fib_bounce') or {}).get('levels') or []):
+                if lv['price'] > floor_price:
+                    cands.append((float(lv['price']),
+                                  f"Fib {lv['ratio'] * 100:.1f}% of the decline",
+                                  f"פיבונאצ'י {lv['ratio'] * 100:.1f}% מהירידה", 55,
+                                  'fib_bounce', None))
+            # ── The other side of the channel ─────────────────────────────────
+            # His channel target is the opposite rail: CAH's blue box "+8.60%" and
+            # ASTS "+18.48%" both run from the price to the upper rail. Only while
+            # price is in the lower part of a RISING channel — from the top of it
+            # the rail is not a target, it is the "זהירות" he writes (IWM).
+            for ch in (overlays.get('channels') or [])[:1]:
+                up = ch.get('upper_now')
+                if (ch.get('kind') == 'rising' and up and up > floor_price
+                        and (ch.get('pos_pct') or 100) <= 60):
+                    cands.append((float(up), 'channel upper rail', 'הקצה העליון של התעלה',
+                                  65, 'channel_rail', None))
             for lv in ((overlays.get('fib_ext') or {}).get('levels') or []):
                 if lv['price'] > floor_price:
                     cands.append((float(lv['price']), f"Fib extension {lv['ratio']}",

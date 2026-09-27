@@ -1,15 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="he">
 <head>
   <meta charset="utf-8">
   <title>Stock Analyzer</title>
   <base href="/">
-  <!-- user-scalable=no: without this, pinching the chart to zoom its own price/
-       time scale (lightweight-charts' own touch handling) fought with the browser's
-       native page-zoom for the same gesture, so a pinch zoomed the whole screen
-       instead of the chart. The app has no page content that benefits from
-       pinch-zoom anyway (it's a fixed dashboard layout, not text to zoom into). -->
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <!-- Page zoom is ALLOWED — blocking it (maximum-scale=1, user-scalable=no) fails
+       WCAG 1.4.4 "resize text", which IS 5568 / the Israeli accessibility regulations
+       require. It had been blocked so pinching the chart wouldn't zoom the page; the
+       chart host already sets `touch-action: none` (chart.component.ts), which hands
+       every gesture on the chart to the chart and leaves the rest of the page zoomable. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Heebo is self-hosted (@fontsource/heebo, bundled via angular.json) rather than
+       loaded from Google Fonts: every Google Fonts request hands the visitor's IP
+       address to a third party, and under Privacy Protection Law Amendment 13 an IP
+       address is personal data. Serving it ourselves keeps that transfer from
+       happening at all. -->
+  <meta name="description" content="ניתוח טכני אלגוריתמי של מניות לפי שיטת מיכה — למטרות מחקר ולימוד בלבד, אינו ייעוץ השקעות.">
 </head>
 <body>
   <app-root></app-root>

@@ -10,6 +10,7 @@ import { RadarPageComponent } from './radar-page.component';
 import { PortfolioPageComponent } from './portfolio-page.component';
 import { ChartComponent } from './chart.component';
 import { StockQuicklookComponent } from './stock-quicklook.component';
+import { LegalPageComponent } from './legal-page.component';
 
 // Three pages, one shell (`AppComponent` is just `<router-outlet>`). The analyzer
 // stays at '' — it's the app's front door, same as before routing existed. Radar
@@ -20,13 +21,15 @@ const routes: Routes = [
   { path: '', component: AnalyzerPageComponent },
   { path: 'radar', component: RadarPageComponent },
   { path: 'portfolio', component: PortfolioPageComponent },
+  // Terms of Use / Privacy Policy / Accessibility Statement — see legal-page.component.ts
+  { path: 'legal/:doc', component: LegalPageComponent },
   { path: '**', redirectTo: '' },
 ];
 
 @NgModule({
   declarations: [
     AppComponent, AnalyzerPageComponent, RadarPageComponent, PortfolioPageComponent, ChartComponent,
-    StockQuicklookComponent,
+    StockQuicklookComponent, LegalPageComponent,
   ],
   imports: [
     BrowserModule,

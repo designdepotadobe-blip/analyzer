@@ -17,8 +17,17 @@
             "main": "src/main.ts",
             "polyfills": "src/polyfills.ts",
             "tsConfig": "tsconfig.app.json",
-            "assets": [],
-            "styles": ["src/styles.css"],
+            "assets": [
+              "src/serve.json"
+            ],
+            "styles": [
+              "node_modules/@fontsource/heebo/400.css",
+              "node_modules/@fontsource/heebo/500.css",
+              "node_modules/@fontsource/heebo/600.css",
+              "node_modules/@fontsource/heebo/700.css",
+              "node_modules/@fontsource/heebo/800.css",
+              "src/styles.css"
+            ],
             "scripts": []
           },
           "configurations": {

@@ -9,13 +9,17 @@
     },
     "book_caps": [],
     "book_minus": [],
-    "bound_caps": [],
+    "bound_caps": [
+      "no_room"
+    ],
     "grade": "B",
-    "grade_score": 75.3,
+    "grade_score": 74.7,
     "headline_action": "WAIT",
-    "rating": 8,
+    "rating": 7,
     "setup_codes": [
       "bearish_to_bullish",
+      "cup_handle",
+      "descending_channel",
       "fibonacci",
       "ma_bounce",
       "resistance_retest",
@@ -60,13 +64,15 @@
       "risk": 8,
       "structure": 25
     },
-    "book_caps": [],
+    "book_caps": [
+      "small_move"
+    ],
     "book_minus": [],
     "bound_caps": [],
-    "grade": "B",
-    "grade_score": 73.3,
+    "grade": "C",
+    "grade_score": 64.0,
     "headline_action": "READY",
-    "rating": 7,
+    "rating": 6,
     "setup_codes": [
       "fibonacci",
       "ma_bounce",
@@ -88,9 +94,9 @@
     "book_minus": [],
     "bound_caps": [],
     "grade": "A",
-    "grade_score": 95.0,
+    "grade_score": 86.3,
     "headline_action": "ENTER",
-    "rating": 10,
+    "rating": 9,
     "setup_codes": [
       "fibonacci",
       "ma_bounce",
@@ -107,22 +113,21 @@
       "risk": 8,
       "structure": 25
     },
-    "book_caps": [
-      "stop_wide"
-    ],
+    "book_caps": [],
     "book_minus": [
       "ran_hot"
     ],
     "bound_caps": [
-      "stop_wide"
+      "stretched_far"
     ],
-    "grade": "D",
-    "grade_score": 49.0,
+    "grade": "C",
+    "grade_score": 61.5,
     "headline_action": "WAIT",
-    "rating": 5,
+    "rating": 6,
     "setup_codes": [
       "fibonacci",
       "ma_bounce",
+      "resistance_retest",
       "support_test"
     ],
     "state": "at_trigger"
@@ -135,14 +140,17 @@
       "risk": 8,
       "structure": 25
     },
-    "book_caps": [],
+    "book_caps": [
+      "not_an_entry"
+    ],
     "book_minus": [],
     "bound_caps": [],
     "grade": "B",
-    "grade_score": 77.3,
+    "grade_score": 79.0,
     "headline_action": "READY",
     "rating": 8,
     "setup_codes": [
+      "cup_handle",
       "descending_channel",
       "fibonacci",
       "ma_bounce",
@@ -164,11 +172,12 @@
     "book_minus": [],
     "bound_caps": [],
     "grade": "D",
-    "grade_score": 41.2,
+    "grade_score": 37.6,
     "headline_action": "READY",
     "rating": 4,
     "setup_codes": [
       "bull_flag",
+      "descending_channel",
       "fibonacci",
       "resistance_retest",
       "support_test"
@@ -183,16 +192,15 @@
       "risk": 8,
       "structure": 25
     },
-    "book_caps": [
-      "small_move"
-    ],
+    "book_caps": [],
     "book_minus": [],
     "bound_caps": [],
-    "grade": "C",
-    "grade_score": 64.0,
+    "grade": "B",
+    "grade_score": 76.8,
     "headline_action": "WAIT",
-    "rating": 6,
+    "rating": 8,
     "setup_codes": [
+      "cup_handle",
       "fibonacci",
       "resistance_retest",
       "rising_channel",
@@ -221,6 +229,7 @@
     "setup_codes": [
       "bearish_to_bullish",
       "cup_handle",
+      "descending_channel",
       "fibonacci",
       "ma_bounce",
       "resistance_retest",

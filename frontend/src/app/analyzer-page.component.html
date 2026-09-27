@@ -2,7 +2,7 @@
   <main class="main">
     <!-- ── Top bar: ticker search + Micha toggle — always visible ────────── -->
     <div class="topbar">
-      <span class="brand">📈</span>
+      <span class="brand" aria-hidden="true">📈</span>
       <div class="search-wrap">
         <input
           [(ngModel)]="ticker"
@@ -11,6 +11,7 @@
           (focus)="onTickerFocus()"
           (blur)="onBlur()"
           placeholder="Ticker e.g. GTLB"
+          aria-label="סימול מניה לניתוח"
           spellcheck="false"
           autocomplete="off"
           autocapitalize="characters"
@@ -36,11 +37,11 @@
            bare, meaningless coloured circle as the ENTIRE tap target. 📡 and 🏗️
            read as "Radar" and "Builder" on their own, so the icon-only mobile
            state now says something instead of nothing. -->
-      <a routerLink="/radar" class="radar-link" title="Radar — stocks close to a decision">
+      <a routerLink="/radar" class="radar-link" title="Radar — stocks close to a decision" aria-label="רדאר — מניות קרובות להחלטה">
         <span class="radar-icon">📡</span>
         <span class="radar-link-label">Radar</span>
       </a>
-      <a routerLink="/portfolio" class="radar-link portfolio-link" title="Portfolio — build a diverse basket">
+      <a routerLink="/portfolio" class="radar-link portfolio-link" title="Portfolio — build a diverse basket" aria-label="בניית תיק">
         <span class="radar-icon portfolio-icon">🏗️</span>
         <span class="radar-link-label">Portfolio</span>
       </a>
@@ -181,6 +182,7 @@
            range where the panel is a fixed-width sidebar rather than a
            stacked/peek panel, so it never fights the mobile expand toggle. -->
       <button type="button" class="panel-collapse-btn" *ngIf="michaMode && analysis"
+              [attr.aria-label]="panelCollapsed ? 'הצג ניתוח' : 'הסתר ניתוח'"
               (click)="togglePanelCollapsed()"
               [title]="panelCollapsed ? 'הצג ניתוח' : 'הסתר ניתוח — הצג את הגרף'">
         {{ panelCollapsed ? '❮' : '❯' }}
@@ -195,15 +197,22 @@
          `row-reverse`, because an rtl ancestor of a flex row makes text vanish in
          headless Chromium (see memory: micha-radar-page). -->
     <aside class="micha bk" [class.expanded]="michaExpanded" *ngIf="michaMode && analysis as a">
-      <!-- ── 1. The verdict ── -->
+      <!-- ── 1. The verdict ──
+           A ring, not a speedometer: one number, its fill, and a named band beside
+           it (the TipRanks / Seeking Alpha pattern — "8, Outperform" reads faster
+           than a bare 8). The letter stays as a small tag for the scan filters. -->
       <div class="bk-head" [ngClass]="'act-' + a.micha.action">
-        <div class="bk-rating" [style.borderColor]="gradeColor(a.micha.grade)"
+        <div class="bk-ring" [style.background]="ringStyle(a.micha)"
              [title]="a.micha.grade_why_he" (click)="onGradeBadgeClick()">
-          <span class="bk-rating-n" [style.color]="gradeColor(a.micha.grade)">{{ a.micha.rating }}</span>
-          <span class="bk-rating-of">/10</span>
-          <span class="bk-letter" [style.background]="gradeColor(a.micha.grade)">{{ a.micha.grade }}</span>
+          <div class="bk-ring-in">
+            <span class="bk-ring-n">{{ a.micha.rating }}</span>
+            <span class="bk-ring-of">מתוך 10</span>
+          </div>
         </div>
         <div class="bk-verdict">
+          <span class="bk-band" [ngClass]="'band-' + ratingBand(a.micha.rating).tone">
+            <span class="bk-band-letter">{{ a.micha.grade }}</span><span dir="rtl">{{ ratingBand(a.micha.rating).he }}</span>
+          </span>
           <span class="bk-verdict-word" [ngClass]="'hl-' + a.micha.headline_action" dir="rtl">{{ a.micha.book.verdict_he }}</span>
           <span class="bk-state" dir="rtl">{{ a.micha.state_label_he }}</span>
         </div>
@@ -235,6 +244,7 @@
       </div>
 
       <!-- ── 2. The plan: the prices ── -->
+      <div class="bk-sec" *ngIf="planOption(a.micha)"><span dir="rtl">התוכנית</span></div>
       <div class="bk-plan" *ngIf="planOption(a.micha) as o">
         <div class="bk-row role-entry" (mouseenter)="setHighlight('entry')" (mouseleave)="setHighlight(null)"
              (click)="toggleHighlight('entry')" [class.active]="chartHighlight === 'entry'">
@@ -277,22 +287,28 @@
         <span class="bk-sub">+{{ al.distance_pct | number: '1.1-1' }}% · {{ al.distance_atr | number: '1.1-1' }} ATR</span>
       </div>
 
-      <!-- ── 3. Why this grade: the checklist IS the grade ── -->
+      <!-- ── 3. Why this grade: the checklist IS the grade ──
+           Factor tiles first (a letter per thing he checks, Seeking-Alpha style),
+           then the same six in sentences. Every point of the score is on screen. -->
+      <div class="bk-sec">
+        <span dir="rtl">למה {{ a.micha.rating }}/10</span>
+        <span class="bk-sec-aside">{{ a.micha.grade_score | number: '1.0-0' }}/100</span>
+      </div>
       <div class="bk-grade">
-        <div class="bk-grade-title">
-          <span dir="rtl">למה {{ a.micha.rating }}/10</span>
-          <span class="bk-score">{{ a.micha.grade_score | number: '1.0-0' }}/100</span>
-        </div>
         <p class="bk-why" dir="rtl">{{ a.micha.grade_why_he }}</p>
 
-        <div class="bk-item" *ngFor="let i of a.micha.book.items" [ngClass]="'ok-' + i.ok">
-          <div class="bk-item-top">
-            <span class="bk-ic">{{ bookIcon[i.ok] }}</span>
-            <span class="bk-it" dir="rtl">{{ bookTitleHe[i.key] }}</span>
-            <span class="bk-bar"><span class="bk-fill" [style.width.%]="pctOf(i)"></span></span>
-            <span class="bk-pts">{{ i.points | number: '1.0-0' }}/{{ i.max }}</span>
+        <div class="bk-tiles">
+          <div class="bk-tile" *ngFor="let i of a.micha.book.items" [ngClass]="'ok-' + i.ok"
+               [title]="i.label_he">
+            <span class="bk-tile-l" [style.color]="letterColors[factorLetter(i)]">{{ factorLetter(i) }}</span>
+            <span class="bk-tile-t" dir="rtl">{{ bookTitleHe[i.key] }}</span>
+            <span class="bk-tile-p">{{ i.points | number: '1.0-0' }}/{{ i.max }}</span>
           </div>
-          <div class="bk-item-txt" dir="rtl">{{ i.label_he }}</div>
+        </div>
+
+        <div class="bk-item" *ngFor="let i of a.micha.book.items" [ngClass]="'ok-' + i.ok">
+          <span class="bk-ic" [attr.aria-label]="i.ok">{{ bookIcon[i.ok] }}</span>
+          <span class="bk-item-txt" dir="rtl"><b>{{ bookTitleHe[i.key] }}:</b> {{ i.label_he }}</span>
         </div>
 
         <div class="bk-minus" *ngFor="let x of a.micha.book.minus">
@@ -300,7 +316,7 @@
           <span class="bk-item-txt" dir="rtl">{{ x.label_he }}</span>
         </div>
         <div class="bk-cap" *ngFor="let c of boundCaps(a.micha)">
-          <span class="bk-pts cap">≤{{ c.ceiling }}</span>
+          <span class="bk-pts cap">תקרה {{ c.ceiling }}</span>
           <span class="bk-item-txt" dir="rtl">{{ c.label_he }}</span>
         </div>
 

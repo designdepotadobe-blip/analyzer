@@ -15,6 +15,9 @@ import numpy as np
 
 from config import (
     BOUNCE_LOOKBACK,
+    CH_LEG_MIN_BARS,
+    CH_MIN_WIDTH_ATR,
+    TL_MAX_VIOLATION_BARS,
     CUP_HANDLE_MAX_BARS,
     CUP_HANDLE_MAX_DEPTH,
     CUP_HANDLE_MIN_BARS,
@@ -24,10 +27,15 @@ from config import (
     CUP_NEAR_RIM_ATR,
     CUP_RECOVERY_MIN,
     CUP_RIM_REACH_PCT,
+    CUP_HANDLE_MIN_RISE,
+    CUP_REQUIRE_RETEST,
+    CUP_RIM_BAND_ATR,
     CUP_RIM_TOLERANCE,
     CUP_MIN_LEG_FRACTION,
     CUP_ROUND_FRACTION,
     CUP_TROUGH_CENTER,
+    FIB_BOUNCE_LOOKBACK,
+    FIB_BOUNCE_LOW_MAX_AGE,
     FIB_EXT_MIN_DROP_PCT,
     FIB_EXT_MIN_ROOM_PCT,
     FIB_EXT_RATIOS,
@@ -112,24 +120,19 @@ class SetupScanner:
                         'triangle', 'Converging triangle',
                         f'Falling highs + rising lows converging ~{int(x_cross - (M - 1))} bars ahead.'))
 
-        # ── Channels: base trendline + parallel rail over the SAME segment ─────
-        # Micha's way: find the rising-lows line first, then check whether the highs
-        # of that same move ride a parallel rail (BOX: "put a channel here or a
-        # highs-line — doesn't matter"). A channel exists only if the rail has its
-        # own touches and real width.
+        # ── Channels: a leg-anchored base rail + its parallel ──────────────────
+        # Built by `Geometry.leg_channel` — anchored at the current leg's extreme,
+        # the way he draws them (see its docstring for the CAH case the old
+        # trendline-plus-parallel-rail builder got backwards). Measured on his 41
+        # channel posts 2025-01 → 2026-09: the old builder found 13 and agreed with
+        # his bottom/middle/top wording on 2 of 8.
         channel_kind = None
-        if rl_meta and rl_meta['slope'] > 0:
-            rail = Geometry.parallel_rail(rl_meta, sh_idx, highs, atr, M)
-            if rail:
-                channel_kind = 'rising'
-                base_meta, sC, x0 = rl_meta, rl_meta['slope'], rl_meta['x0']
-                lower_i, upper_i = rl_meta['intercept'], rail['intercept']
-        if channel_kind is None and fh_meta and fh_meta['slope'] < 0:
-            rail = Geometry.parallel_rail(fh_meta, sl_idx, lows, atr, M)
-            if rail:
-                channel_kind = 'descending'
-                base_meta, sC, x0 = fh_meta, fh_meta['slope'], fh_meta['x0']
-                upper_i, lower_i = fh_meta['intercept'], rail['intercept']
+        chn = Geometry.leg_channel(sh_idx, sl_idx, highs, lows, atr, M, mean_price,
+                                   CH_LEG_MIN_BARS, CH_MIN_WIDTH_ATR, TL_MAX_VIOLATION_BARS)
+        if chn:
+            channel_kind = chn['kind']
+            sC, x0 = chn['slope'], chn['x0']
+            lower_i, upper_i = chn['lower_i'], chn['upper_i']
         if channel_kind:
             lower_now = sC * (M - 1) + lower_i
             upper_now = sC * (M - 1) + upper_i
@@ -173,6 +176,9 @@ class SetupScanner:
         fx = self._detect_fib_extension(highs, lows, price, atr, M, sh_idx, sl_idx)
         if fx:
             overlays['fib_ext'] = fx
+        fb = self._detect_fib_bounce(highs, lows, price, atr, M)
+        if fb:
+            overlays['fib_bounce'] = fb
 
         # ── VCP: a staircase of tightening, quieting-volume legs ────────────
         # Distinct from `_long_base`/`_consolidation_zones` (both ONE flat box,
@@ -388,6 +394,41 @@ class SetupScanner:
         return best
 
     @staticmethod
+    def _detect_fib_bounce(highs, lows, price, atr, M):
+        """
+        The OTHER reverse Fibonacci: the bounce targets of a decline still in progress.
+
+        AEHR (2026-09-07): Fib drawn from the 147.40 peak down to the 74.23 low, and
+        "ההערכה שלי היא שהיעד הראשוני יושב 110-119$" — the 50% and 61.8% of that drop.
+        `_detect_fib_extension` only projects ABOVE a reclaimed high, so a stock
+        bouncing off the bottom of a fresh decline had no Fib target at all.
+
+        The latest peak inside FIB_BOUNCE_LOOKBACK bars, the lowest low after it; the
+        drop must be real (FIB_EXT_MIN_DROP_PCT and 1.5 ATR), the low recent, and price
+        must already be lifting off it. Returns the 38.2 / 50 / 61.8 levels above price.
+        """
+        if not atr or M < 20:
+            return None
+        lo_start = max(0, M - FIB_BOUNCE_LOOKBACK)
+        pk = lo_start + int(np.argmax(highs[lo_start:M]))
+        if pk >= M - 3:
+            return None
+        tr = pk + int(np.argmin(lows[pk:M]))
+        peak, trough = float(highs[pk]), float(lows[tr])
+        drop = peak - trough
+        if drop < 1.5 * atr or drop / peak * 100 < FIB_EXT_MIN_DROP_PCT:
+            return None
+        if M - 1 - tr > FIB_BOUNCE_LOW_MAX_AGE or price < trough + 0.5 * atr:
+            return None                       # not bouncing off a fresh low
+        levels = [{'ratio': r, 'price': jnum(trough + drop * r),
+                   'pct': jnum((trough + drop * r) / price * 100 - 100)}
+                  for r in (0.382, 0.5, 0.618) if trough + drop * r > price * 1.005]
+        if not levels:
+            return None
+        return {'peak': jnum(peak), 'trough': jnum(trough), 'peak_i': pk,
+                'trough_i': tr, 'levels': levels}
+
+    @staticmethod
     def _detect_vcp(highs, lows, vols, price, atr, M, sh_idx, sl_idx):
         """
         Volatility Contraction Pattern: a run of successive high-to-low legs,
@@ -528,27 +569,43 @@ class SetupScanner:
             if in_lower < CUP_ROUND_FRACTION * span:
                 continue
 
-            # ── The right rim, and the handle behind it ───────────────────────
-            # The right rim is the highest close since the trough. If price has since
-            # eased off it by a little, that dip IS the handle.
-            after = closes[ti:]
-            ri = int(np.argmax(after)) + ti
-            right_rim = float(highs[ri])
-            if abs(right_rim - left_rim) / left_rim > CUP_RIM_TOLERANCE:
-                # not back to the rim yet — still a cup, rim stays the left one
-                right_rim = None
+            # ── The rim is a BAND, not the single highest high ─────────────────
+            # His rim is the horizontal the left high and the right-side highs line
+            # up on — MU "1036-1041.50" (highs 1035.5 / 1036.13 / 1042.4), CP 91.58
+            # (91.58 / 91.50 / 91.52), DLTR "137.07 - 141.85". Taking max(left, the
+            # highest high since the trough) put the rim on a breakout-day spike
+            # instead (MU 1097, CP 96.9) and inflated every target built on it (MU
+            # 1448 against his ~1344). So: the swing highs from the rim pivot on that
+            # come back within CUP_RIM_BAND_ATR of it, excluding the last two bars
+            # (a breakout in progress is not part of the rim); the band's top is the
+            # rim he quotes.
+            band_i = [int(j) for j in sh_idx
+                      if li <= int(j) < M - 2
+                      and abs(float(highs[int(j)]) - left_rim) <= CUP_RIM_BAND_ATR * atr]
+            right_i = [j for j in band_i if j > ti]
+            # A cup he posts has been BACK to its rim — a right-side high in the band
+            # (MU, CP, HPE, DLTR all do) — or is at the rim right now. A U that has
+            # not yet climbed back is a base in progress, not the pattern he names,
+            # and requiring the retest is what keeps a looser roundness gate from
+            # calling half the market a cup.
+            if CUP_REQUIRE_RETEST and not right_i and price < left_rim - CUP_RIM_BAND_ATR * atr:
+                continue
+            rim = max(float(highs[j]) for j in band_i) if band_i else left_rim
+            right_rim = max(float(highs[j]) for j in right_i) if right_i else None
+            ri = max(right_i) if right_i else None
 
-            rim = max(left_rim, right_rim or 0.0)
             handle_low = handle_bars = None
-            if right_rim is not None and M - 1 - ri >= CUP_HANDLE_MIN_BARS:
+            if ri is not None and M - 1 - ri >= CUP_HANDLE_MIN_BARS:
                 hseg = lows[ri:]
                 hl = float(np.min(hseg))
                 hb = M - 1 - ri
-                # O'Neil: shallower than half the cup, and sitting in the cup's
-                # UPPER HALF. Both, not either — a "handle" that drops through the
-                # midpoint is a failed rally back into the base.
-                if (rim - hl) <= CUP_HANDLE_MAX_DEPTH * depth and hl >= trough + depth / 2 \
-                        and hb <= CUP_HANDLE_MAX_BARS:
+                # A handle is a HIGHER LOW after the right rim. O'Neil's "upper half"
+                # rule rejected his own handles — HPE's 45.70 in a 40.72-64.25 cup,
+                # DLTR's 84.71 / 85.88 under a 60-141 base — so it only has to hold
+                # clear of the cup's bottom fifth and not undo most of the cup.
+                if ((rim - hl) <= CUP_HANDLE_MAX_DEPTH * (rim - trough)
+                        and hl >= trough + CUP_HANDLE_MIN_RISE * (rim - trough)
+                        and hb <= CUP_HANDLE_MAX_BARS):
                     handle_low, handle_bars = hl, hb
 
             # ── Which cup, when several qualify ───────────────────────────────
@@ -558,8 +615,10 @@ class SetupScanner:
             # BELOW today's price whose projection lands underneath the current
             # quote. Those are rejected outright just below: a target you are
             # already trading above is not a target.
-            target_big = rim_c = max(left_rim, 0.0)
-            if left_rim + depth <= price:
+            # the measured move is copied off the rim BAND's top — the price he names
+            depth = rim - trough
+            depth_pct = depth / rim * 100
+            if rim + depth <= price:
                 continue
             if best is None or depth_pct > best['depth_pct']:
                 best = {

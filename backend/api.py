@@ -30,7 +30,7 @@ from functools import lru_cache
 
 from datetime import datetime, timezone
 
-from fastapi import Body, FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -46,16 +46,18 @@ from analyzer import StockAnalyzer  # noqa: E402
 from config import ATR_PCT_HIGH, ATR_PCT_LOW, STOP_IDEAL_ATR  # noqa: E402
 from ticker_finder import TickerFinder  # noqa: E402
 from verdict import Judgement  # noqa: E402
+import security as sec  # noqa: E402
 
-app = FastAPI(title="Stock Analyzer API", version="1.0")
+# /docs and /openapi.json are off unless ENABLE_DOCS=1 — a public API map is not
+# something the production site needs to hand out (see security.py).
+app = FastAPI(title="Stock Analyzer API", version="1.0",
+              docs_url='/docs' if sec.docs_enabled() else None,
+              redoc_url=None,
+              openapi_url='/openapi.json' if sec.docs_enabled() else None)
 
-# Angular dev server runs on :6000
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS restricted to the app's own frontends (was "*") — see security.cors_kwargs
+app.add_middleware(CORSMiddleware, **sec.cors_kwargs())
+app.middleware('http')(sec.security_headers_middleware)
 
 analyzer = StockAnalyzer()
 
@@ -84,7 +86,7 @@ def root():
     # GET / — this API otherwise has no route there, which made Railway treat
     # an actually-healthy container as failed and never cut public traffic
     # over to it (502 at the edge despite a clean startup log).
-    return {"status": "ok", "docs": "/docs"}
+    return {"status": "ok"}
 
 
 @app.get("/api/health")
@@ -99,29 +101,32 @@ def tickers():
 
 
 @app.get("/api/analyze/{ticker}")
-def analyze(ticker: str):
+def analyze(ticker: str, request: Request):
     import traceback
-    ticker = ticker.strip().upper()
+    sec.limiter.check(request)
+    ticker = sec.clean_ticker(ticker)
     try:
         result = analyzer.analyze(ticker)
-    except Exception as e:
-        traceback.print_exc()          # full stack trace in the backend terminal
-        raise HTTPException(status_code=502, detail=f"analysis failed: {e}")
+    except Exception:
+        # full stack trace in the backend log; the client gets no internals
+        traceback.print_exc()
+        raise HTTPException(status_code=502, detail="analysis failed")
     if result is None:
         raise HTTPException(status_code=404, detail=f"no usable data for {ticker}")
     return result
 
 
 @app.get("/api/micha/{ticker}")
-def micha(ticker: str):
+def micha(ticker: str, request: Request):
     """Just the Micha-style verdict + scorecard for one ticker (lighter payload)."""
     import traceback
-    ticker = ticker.strip().upper()
+    sec.limiter.check(request)
+    ticker = sec.clean_ticker(ticker)
     try:
         result = analyzer.analyze(ticker)
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
-        raise HTTPException(status_code=502, detail=f"analysis failed: {e}")
+        raise HTTPException(status_code=502, detail="analysis failed")
     if result is None:
         raise HTTPException(status_code=404, detail=f"no usable data for {ticker}")
     return {
@@ -214,6 +219,7 @@ def scan(
     sort: str = Query("setups", description="setups | alert | grade | expectancy | rr | gain | risk"),
     stream: bool = Query(False, description="server-sent events: one hit per line, "
                                             "as it completes, instead of one blob at the end"),
+    request: Request = None,
 ):
     """
     Scan the universe. `alerting=true` answers the question the per-stock panel can
@@ -232,6 +238,9 @@ def scan(
     unchanged either way — streaming only changes how already-computed hits leave the
     process, one `as_completed()` result at a time instead of collected into a list.
     """
+    # a scan fans out over up to 1,120 tickers — it costs 10 of the per-IP budget
+    if request is not None:
+        sec.limiter.check(request, cost=10)
     universe = _universe()[:limit]
     hits = []
 
@@ -416,11 +425,16 @@ NOTES_PATH = os.path.join(_ROOT, 'analyst_notes.jsonl')
 
 
 @app.post("/api/notes")
-def add_note(payload: dict = Body(...)):
-    ticker = str(payload.get('ticker') or '').strip().upper()
+def add_note(request: Request, payload: dict = Body(...)):
+    # Anonymous writes to a file on the server: capped in size and rate so the
+    # endpoint can't be used to fill the disk (see security.py).
+    sec.limiter.check(request, per_min=sec.NOTE_MAX_PER_MIN, bucket='notes')
+    ticker = sec.clean_ticker(str(payload.get('ticker') or ''))
     note = str(payload.get('note') or '').strip()
-    if not ticker or not note:
+    if not note:
         raise HTTPException(status_code=400, detail="ticker and note are required")
+    if len(note) > sec.NOTE_MAX_CHARS:
+        raise HTTPException(status_code=413, detail="note too long")
     row = {
         'ts': datetime.now(timezone.utc).isoformat(),
         'ticker': ticker,
@@ -442,9 +456,13 @@ def add_note(payload: dict = Body(...)):
 
 
 @app.get("/api/notes")
-def list_notes():
+def list_notes(request: Request):
     """Read back everything `add_note` has appended — newest first, since that's
-    the order a reviewer actually wants ("what did I just leave myself")."""
+    the order a reviewer actually wants ("what did I just leave myself").
+
+    Owner-only: requires the `X-Admin-Token` header to match NOTES_ADMIN_TOKEN. It
+    was publicly listable, i.e. anyone could read every note ever left."""
+    sec.require_admin(request)
     if not os.path.exists(NOTES_PATH):
         return {'count': 0, 'notes': []}
     with open(NOTES_PATH, encoding='utf-8') as f:
