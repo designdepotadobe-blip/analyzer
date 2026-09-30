@@ -21,11 +21,11 @@
               "src/serve.json"
             ],
             "styles": [
-              "node_modules/@fontsource/heebo/400.css",
-              "node_modules/@fontsource/heebo/500.css",
-              "node_modules/@fontsource/heebo/600.css",
-              "node_modules/@fontsource/heebo/700.css",
-              "node_modules/@fontsource/heebo/800.css",
+              "node_modules/@fontsource/rubik/400.css",
+              "node_modules/@fontsource/rubik/500.css",
+              "node_modules/@fontsource/rubik/600.css",
+              "node_modules/@fontsource/rubik/700.css",
+              "node_modules/@fontsource/rubik/800.css",
               "src/styles.css"
             ],
             "scripts": []

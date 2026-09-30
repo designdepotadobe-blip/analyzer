@@ -8,16 +8,19 @@
      it. One line, small type, so it costs as little vertical space as a legal
      requirement can. -->
 <footer class="legal-footer">
-  <span class="legal-footer-txt" dir="rtl">
-    המידע, הניתוחים והאיתותים המוצגים באפליקציה זו נועדו למטרות מחקר, לימוד ואינדיקציה טכנית בלבד,
-    ואינם מהווים ייעוץ השקעות, שיווק השקעות או המלצה לביצוע עסקאות בניירות ערך. הנתונים מופקים על
-    ידי אלגוריתם אוטומטי ואינם מתחשבים בצרכיו האישיים של אף משתמש. המסחר בשוק ההון כרוך בסיכון כספי.
-    כל הפועל על פי המידע עושה זאת על אחריותו הבלעדית.
-  </span>
+  <!-- One calm row: a short, complete statement on the right, the three documents
+       on the left. The full disclaimer lives in the acceptance modal and in the
+       Terms (/legal/terms) — a 300-character paragraph squeezed into a sideways-
+       scrolling strip was neither readable nor good-looking. -->
+  <p class="legal-footer-txt" dir="rtl">
+    <span class="lf-lead">למטרות מחקר ולימוד בלבד · </span><span class="lf-core">אינו ייעוץ השקעות</span><span class="lf-more"> · המסחר בשוק ההון כרוך בסיכון</span>
+  </p>
   <nav class="legal-footer-links" aria-label="מסמכים משפטיים">
     <a routerLink="/legal/terms">תנאי שימוש</a>
-    <a routerLink="/legal/privacy">מדיניות פרטיות</a>
-    <a routerLink="/legal/accessibility">הצהרת נגישות</a>
+    <span class="lf-dot" aria-hidden="true">·</span>
+    <a routerLink="/legal/privacy">פרטיות</a>
+    <span class="lf-dot" aria-hidden="true">·</span>
+    <a routerLink="/legal/accessibility">נגישות</a>
   </nav>
 </footer>
 
