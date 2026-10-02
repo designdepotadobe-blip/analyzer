@@ -77,10 +77,11 @@ class MichaAnalyzer:
         fib = self._fib(ctx)
         fib_r = fib['retracement'] if fib else 0.0
         golden = bool(fib and GOLDEN_POCKET[0] <= fib_r <= GOLDEN_POCKET[1])
-        nearest_res = min((r for r in res_levels if r['price'] > price),
-                          key=lambda r: r['price'], default=None)
-        nearest_sup = max((s for s in sup_levels if s['price'] < price),
-                          key=lambda s: s['price'], default=None)
+        # HIS line on each side, not the nearest bump — see LevelEngine.his_line. Every
+        # reader of "the resistance" / "the support" (trigger, floor, stop, candle,
+        # level context) goes through these two.
+        nearest_res = next((r for r in res_levels if r.get('his_line')), None)
+        nearest_sup = next((s for s in sup_levels if s.get('his_line')), None)
         vol = self._volume_trend(ctx)
         candle = self._buyers_candle(ctx, nearest_sup)
         ext = self._ext20(ctx)
@@ -735,6 +736,9 @@ class MichaAnalyzer:
         #             report how well defended it is. None for a projection.
         cands: list[tuple[float, str, str, int, str, Optional[int]]] = []
         for r in res_levels:
+            # his stations are his lines — the next real reversal, not every bump
+            if not (r.get('major') or r.get('his_line')):
+                continue
             if r['price'] > floor_price:
                 flipped = r.get('flipped')
                 # a wall's rank rises with how well defended it is
@@ -874,12 +878,14 @@ class MichaAnalyzer:
         """
         price, atr = ctx.price, ctx.atr
         out = []
-        nearest_res = min((r for r in res_levels if r['price'] > price * 1.002),
-                          key=lambda r: r['price'], default=None)
-        sups = sorted((s for s in sup_levels if s['price'] < price * 0.998),
+        # his lines, and below them only the major ones — a minor bump is not
+        # "the next support" he would send the reader to
+        nearest_res = next((r for r in res_levels if r.get('his_line')), None)
+        nearest_sup = next((s for s in sup_levels if s.get('his_line')), None)
+        sups = sorted((s for s in sup_levels if s['price'] < price * 0.998
+                       and (s.get('major') or s is nearest_sup)),
                       key=lambda s: -s['price'])
-        nearest_sup = sups[0] if sups else None
-        next_sup = next((s for s in sups[1:]
+        next_sup = next((s for s in sups
                          if nearest_sup and nearest_sup['price'] - s['price'] > atr), None)
 
         if nearest_res:

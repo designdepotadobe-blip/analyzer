@@ -95,3 +95,61 @@ def test_fib_bounce_levels_are_the_retracements_of_the_drop():
     assert fb is not None
     got = {lv['ratio']: lv['price'] for lv in fb['levels']}
     assert abs(got[0.5] - 110.815) < 0.01 and abs(got[0.618] - 119.449) < 0.01
+
+
+# ── HIS line: the strongest nearby reversal, not the nearest bump ────────────
+
+def _lvl(lo, hi, sig, dom, side='resistance'):
+    return {'type': side, 'price': (lo + hi) / 2, 'top': hi, 'bottom': lo,
+            'pivot_lo': lo, 'pivot_hi': hi, 'sig': sig, 'dom': dom}
+
+
+def test_his_line_skips_a_minor_bump_under_a_major_high():
+    # META 2026-09-20: price 665.75, ATR ~22. A 1.5-ATR bump at 672-683 sits under
+    # the 7.1-ATR reversal at 686-692 — he named 692, the engine named 677.
+    bump = _lvl(672.2, 683.3, 1.5, 40)
+    major = _lvl(686.1, 691.7, 7.1, 150)
+    got = LevelEngine.his_line([bump, major], 665.75, 22.0, 'resistance')
+    assert got is major
+
+
+def test_his_line_skips_the_band_price_is_inside():
+    # KEEL / CLSK / UBER: price trades inside the nearest band — he names the next
+    inside = _lvl(3.15, 3.28, 7.3, 200)
+    nxt = _lvl(3.56, 3.60, 6.7, 200)
+    assert LevelEngine.his_line([inside, nxt], 3.24, 0.22, 'resistance') is nxt
+
+
+def test_his_line_prefers_the_nearer_of_two_equal_lines():
+    a, b = _lvl(101, 101.5, 3.0, 100), _lvl(104, 104.5, 3.0, 100)
+    assert LevelEngine.his_line([a, b], 100.0, 2.0, 'resistance') is a
+
+
+def test_his_line_mirrors_for_support():
+    near_minor = _lvl(98.8, 99.0, 0.8, 10, 'support')
+    major = _lvl(96.5, 97.0, 6.0, 300, 'support')
+    assert LevelEngine.his_line([near_minor, major], 100.0, 2.0, 'support') is major
+
+
+def test_a_single_major_pivot_is_a_level_a_single_minor_one_is_not():
+    # DLTR's 142.40 was one 11.6-ATR high and never became a level (needed 2 pivots)
+    lv = LevelEngine._cluster([(142.4, 11.6, 400), (120.0, 0.7, 5)], 4.0)
+    assert [round(l['price'], 1) for l in lv] == [142.4]
+    assert lv[0]['touches'] == 1 and lv[0]['sig'] == 11.6
+
+
+def test_pivot_strength_prominence_and_dominance():
+    highs = np.array([10, 11, 12, 20, 12, 11, 10, 11, 15, 11, 10, 9], float)
+    lows = highs - 1
+    ph, _ = Geometry.pivot_strength(highs, lows, np.array([3, 8]), np.array([], int), 1.0, 252)
+    assert ph[3][1] == 3 + 252               # the highest high: never exceeded
+    assert ph[8][1] == 5                     # stood as the extreme back to bar 3
+    assert ph[3][0] > ph[8][0]               # the bigger reversal
+
+
+def test_support_his_line_counts_the_band_price_is_sitting_on():
+    # LITE 2026-09-16: "נכנסים קונים על ממוצע 150" with price inside its just-broken
+    # 897-937 band — the support he means is the one price is ON, not 1.5 ATR lower
+    on = _lvl(897.0, 937.0, 2.6, 60, 'support')
+    lower = _lvl(776.0, 817.0, 2.2, 300, 'support')
+    assert LevelEngine.his_line([on, lower], 919.4, 68.6, 'support') is on

@@ -124,6 +124,7 @@ export class RadarPageComponent implements OnInit, OnDestroy {
     if (this.hoverTimer) clearTimeout(this.hoverTimer);
     if (this.closeTimer) clearTimeout(this.closeTimer);
     this.scanSub?.unsubscribe();
+    this.cancelScheduledRefresh();
   }
 
   @HostListener('window:resize')
@@ -145,6 +146,7 @@ export class RadarPageComponent implements OnInit, OnDestroy {
     this.results = [];
     this.scanned = 0;
     this.matched = 0;
+    this.cancelScheduledRefresh();
     this.refreshBuckets();
     this.scanSub = this.api.scanStream({
       limit: this.limit,
@@ -165,6 +167,7 @@ export class RadarPageComponent implements OnInit, OnDestroy {
           this.streaming = false;
           this.lastScan = new Date();
           this.loading = false;
+          this.cancelScheduledRefresh();
           this.refreshBuckets();
           return;
         }
@@ -173,9 +176,10 @@ export class RadarPageComponent implements OnInit, OnDestroy {
         if (i >= 0) { this.results[i] = hit; } else { this.results.push(hit); }
         // first hit: drop the full-screen loader, buckets start rendering live
         this.loading = false;
-        this.refreshBuckets();
+        this.scheduleRefresh();
       },
       error: () => {
+        this.cancelScheduledRefresh();
         this.error = 'הסריקה נכשלה — האם ה-API רץ?';
         this.loading = false;
         this.streaming = false;
@@ -241,6 +245,26 @@ export class RadarPageComponent implements OnInit, OnDestroy {
 
   private isReady(h: ScanHit): boolean {
     return h.state === 'at_trigger' && (h.alert?.tier === 'imminent' || h.alert?.tier === 'close');
+  }
+
+  // A full-size scan streams a hit every few hundred ms, and each `refreshBuckets()`
+  // re-sorts both buckets and swaps the template-outlet contexts — which rebuilds
+  // every card. Done per hit that is quadratic work on the main thread, enough to
+  // freeze the page mid-scan so that search and navigation stop responding.
+  // Coalesced here so the grid is rebuilt a few times a second at most.
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly REFRESH_EVERY_MS = 400;
+
+  private scheduleRefresh(): void {
+    if (this.refreshTimer) return;
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = null;
+      this.refreshBuckets();
+    }, this.REFRESH_EVERY_MS);
+  }
+
+  private cancelScheduledRefresh(): void {
+    if (this.refreshTimer) { clearTimeout(this.refreshTimer); this.refreshTimer = null; }
   }
 
   private refreshBuckets(): void {

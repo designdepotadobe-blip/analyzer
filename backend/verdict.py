@@ -75,8 +75,6 @@ from config import (
     ALERT_MIN_ATR,
     ALERT_MIN_PCT,
     ALERT_NEAR_ATR,
-    CUP_RIM_DEPTH_ATR,
-    CUP_RIM_NEAR_ATR,
     EARNINGS_SOON_DAYS,
     CHASE_PAST_TRIGGER_ATR,
     EXTENDED_ATR,
@@ -673,9 +671,15 @@ class Judgement:
         # the whole setup further away than he calls it. No `wall`: a rim has no
         # touch history, and inventing one would be exactly the fabricated strength
         # the level-backed candidates above are careful to avoid.
-        rim = self._cup_rim(ctx, price)
-        if rim:
-            cands.append((rim, 'cup_rim', 'the cup rim', 'שפת הקאפ', None))
+        # The rim of the cup the pattern detector actually found. `_cup_rim` (any
+        # swing high with a 3-ATR drop behind it) is no longer a candidate: on his
+        # named breakout prices it was the nearest small bump 0.1-0.5 ATR overhead in
+        # 20 of 42 misses (META 672 against his 692, SOFI 19.17 against 20, DLTR
+        # 132.1 against 142) — a bump, not a cup.
+        cup = ov.get('cup') or {}
+        rim = cup.get('rim')
+        if rim and rim > price:
+            cands.append((float(rim), 'cup_rim', 'the cup rim', 'שפת הקאפ', None))
 
         if s.base and s.base.get('top') and s.base['top'] > price:
             cands.append((float(s.base['top']), 'base', 'the top of the base',
@@ -754,6 +758,10 @@ class Judgement:
             rp = r.get('price')
             if rp <= zone_top:
                 continue
+            # only his lines make the zone — a minor bump just above his line is
+            # not "the next wall", and must not move the quote off it
+            if not (r.get('major') or r.get('his_line')):
+                continue
             # ── Adjacency is EDGE to EDGE, not centre to centre ───────────────
             # A level is a band everywhere else in this file: `_trigger` quotes
             # `zone_top` as the price to clear, anchors the stop under `zone_lo`'s
@@ -785,8 +793,9 @@ class Judgement:
                 # the strongest wall in the zone is the one being described
                 if tch > zone_touches:
                     zone_touches, wall, kind = tch, describe(r), 'level'
-            elif tch >= max(zone_touches * TRIGGER_REANCHOR_TOUCH_MULT,
-                            HEADROOM_HARD_TOUCHES):
+            elif (tch >= max(zone_touches * TRIGGER_REANCHOR_TOUCH_MULT,
+                             HEADROOM_HARD_TOUCHES)
+                  and (r.get('sig') or 0) >= ((s.nearest_res or {}).get('sig') or 0)):
                 # ── Re-anchor rather than quote the weaker line ────────────────
                 # The span cap is doing its job — this wall is too far from the
                 # BOTTOM of the zone to be part of it — but the thing it is
@@ -843,10 +852,15 @@ class Judgement:
         # `zone_lo` already holds the lowest wall of an absorbed cluster; drop to
         # that wall's own lower edge, so this works for the ordinary single-level
         # case too and not only for a level wide enough to be DRAWN as a band.
+        # The quote is the band's TOP (`_edge`), so the lookup matches on the top as
+        # well as the centre — matching the centre alone never found the band, and
+        # the stop fell through to whatever older level sat below (MRNA: trigger
+        # 176.66 on a 167.73-176.66 band, stop at 132.79, a 33% risk).
         floor = zone_lo
         for r in (s.res_levels or []):
             b = r.get('bottom')
-            if b and abs(float(r.get('price') or 0) - zone_lo) <= atr * 0.05:
+            if b and min(abs(float(r.get('price') or 0) - zone_lo),
+                         abs(float(r.get('top') or 0) - zone_lo)) <= atr * 0.05:
                 floor = min(floor, float(b))
 
         d_atr = (p - price) / atr if atr else 0.0
@@ -884,39 +898,6 @@ class Judgement:
                 'tier': _tier((nw_price - price) / atr if atr else 0.0),
             } if nw_wall and nw_price != p else None),
         }
-
-    @staticmethod
-    def _cup_rim(ctx, price: float) -> Optional[float]:
-        """
-        The left rim of a cup: a swing high price fell away from by a real depth and
-        has since climbed back toward.
-
-        He names exactly this price as the breakout even though a lone pivot can
-        never become a clustered level, which is why the trigger used to fall
-        through to the all-time high instead. Gated on the SHAPE, not on the pivot:
-        the decline behind the rim must be deep enough to be a cup rather than a
-        shelf, and price must have recovered back near it — from the bottom of the
-        cup the rim is not the next obstacle, it is a different trade.
-
-        Returns the LOWEST qualifying rim above price (the first obstacle), or None.
-        """
-        atr = ctx.atr
-        if not atr or ctx.sh_idx is None or not len(ctx.sh_idx):
-            return None
-        highs, lows, M = ctx.highs, ctx.lows, ctx.M
-        best = None
-        for i in (int(x) for x in ctx.sh_idx):
-            if i >= M - 2:
-                continue                    # no room behind it to have formed a cup
-            rim = float(highs[i])
-            if rim <= price or (rim - price) / atr > CUP_RIM_NEAR_ATR:
-                continue
-            trough = float(lows[i + 1:].min())
-            if (rim - trough) / atr < CUP_RIM_DEPTH_ATR:
-                continue                    # a shelf, not a cup
-            if best is None or rim < best:
-                best = rim
-        return best
 
     # ── 1b. "מתקרב להכרעה" — not a trade today, but close to becoming one ──────
 
@@ -1363,6 +1344,9 @@ class Judgement:
             if not rp:
                 continue
             if float(rp) <= base + atr * 0.01:
+                continue
+            # a wall is one of his lines — a minor bump is something price walks through
+            if not (r.get('major') or r.get('his_line')):
                 continue
             hard.append(r)
         hard.sort(key=lambda r: r['price'])

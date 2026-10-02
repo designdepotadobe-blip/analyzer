@@ -39,6 +39,7 @@ from typing import Optional
 
 from config import (
     CHASE_PAST_TRIGGER_ATR,
+    BOOK_TARGET_REACH_ATR,
     EARNINGS_SOON_DAYS,
     EVENT_BASIS,
     MA150_RECLAIM_GRACE_BARS,
@@ -117,7 +118,7 @@ def book_target(ctx, s, entry: float) -> Optional[dict]:
     פוטנציאל של 96%" — and checks it against real prices on the left ("157 ... תסתכלו
     שמאלה, 152"). A Fibonacci 2.0 extension or a record high three years back is a
     station he may mention, never "the potential". So: the pattern projection when
-    there is one; otherwise the farthest REAL price on the ladder (a wall, a flipped
+    there is one; otherwise the farthest REAL price within BOOK_TARGET_REACH_ATR (a wall, a flipped
     level, the prior high, a gap to close); a Fibonacci level only when nothing else
     exists. The near station is returned beside it as the conservative target.
     """
@@ -137,9 +138,38 @@ def book_target(ctx, s, entry: float) -> Optional[dict]:
     if proj is None:
         real = [t for t in ups if t.get('source') in ('resistance', 'flipped_level', 'ath', 'gap',
                                                       'channel_rail', 'fib_bounce')]
+        # `s.targets` is the DISPLAY ladder, cut to the four nearest rungs. A chart with
+        # four minor levels just above price therefore never reached the prior high or a
+        # far wall, and its potential read as the fourth rung (+11%) however far it could
+        # run. The same truncation was already fixed for the REWARD axis
+        # (`Judgement._opportunity_top`); the potential item was still reading the cut list.
+        floor = entry * 1.002
+        for r in (s.res_levels or []):
+            if not (r.get('major') or r.get('his_line')):
+                continue
+            if r.get('price') and r['price'] > floor:
+                real.append({'price': r['price'], 'label': 'next resistance',
+                             'label_he': 'התנגדות הבאה'})
+        if s.ath and s.ath > floor:
+            real.append({'price': float(s.ath), 'label': 'prior high (ATH)',
+                         'label_he': 'השיא הקודם'})
+        for g in ((s.overlays or {}).get('gaps') or []):
+            if g.get('dir') == 'down' and g.get('far') and g['far'] > floor:
+                real.append({'price': float(g['far']), 'label': 'gap close',
+                             'label_he': 'סגירת הגאפ'})
+        # The farthest real price WITHIN REACH, not the farthest one on the chart: an
+        # uncapped max quoted BULL +1031% (a 2021 resistance over a $7 stock) and MBLY
+        # +430% (its record high). Over his 63 stated targets since 2025 (as of each
+        # post) the uncapped farthest price matched within 5% in 11, the nearest in
+        # 14, the farthest within BOOK_TARGET_REACH_ATR in 17 (median error 15% / 13%
+        # / 11%) — a weak preference at n=63, but the only rule with no absurd tail.
         pool = real or ups
         if pool:
-            t = max(pool, key=lambda t: t['price'])
+            atr = getattr(ctx, 'atr', None)
+            near = ([t for t in pool if (t['price'] - entry) / atr <= BOOK_TARGET_REACH_ATR]
+                    if atr else pool)
+            t = (max(near, key=lambda t: t['price']) if near
+                 else min(pool, key=lambda t: t['price']))
             proj = (float(t['price']), t.get('label') or 'target', t.get('label_he') or 'יעד')
     if proj is None:
         return None
@@ -159,7 +189,7 @@ def book_target(ctx, s, entry: float) -> Optional[dict]:
 
 def grade(j, ctx, s, state: str, action: str, trigger, options, earn, small_cap) -> dict:
     """
-    `j` is the Judgement instance — its `_event`, `_headroom` and `_best_option` are
+    `j` is the Judgement instance — its `_event` and `_best_option` are
     reused rather than re-derived, so the book can never disagree with the state
     machine about what happened, what is overhead or which plan is being graded.
     """
@@ -279,30 +309,21 @@ def grade(j, ctx, s, state: str, action: str, trigger, options, earn, small_cap)
             pts, he, en = 7, f'סטופ רחוק מתחת ל{sw_he}' + tail_he, f'Far stop under {sw_en}' + tail_en
     items.append(_item('stop', pts, en, he))
 
-    # ── 6. Potential, and room to run ──────────────────────────────────────────
+    # ── 6. Potential ───────────────────────────────────────────────────────────
+    # The % to the target he would quote, and nothing else. The wall-overhead cost
+    # and the "room to run" bonus are gone: over 493 names x 6-10 years a line 0-0.5
+    # ATR overhead did not lower 20- or 60-day returns against nothing within 4 ATR,
+    # and lines held / broke like random prices. The line overhead is the TRIGGER
+    # (the state machine waits for it) and the first station — not a second penalty.
     entry = float(best['entry']) if best and best.get('entry') else price
     tgt = book_target(ctx, s, entry)
     pct = tgt['pct'] if tgt else None
     if pct is None:
         pts, he, en = 0, 'אין יעד מעל הכניסה', 'No target above the entry'
     else:
-        pts = 12 if pct >= 30 else 10 if pct >= 20 else 7 if pct >= 12 else 4 if pct >= 8 else 0
+        pts = 15 if pct >= 30 else 12 if pct >= 20 else 8 if pct >= 12 else 5 if pct >= 8 else 0
         he = f"פוטנציאל {pct:+.0f}% — {tgt['what_he']} ({tgt['price']:.2f})"
         en = f"Potential {pct:+.0f}% — {tgt['what']} ({tgt['price']:.2f})"
-    hr = j._headroom(ctx, s, max(price, entry)) if state not in ('broken', 'avoid') else {}
-    room = (hr or {}).get('level')
-    if room == 'tight':
-        pts -= 5
-        he += f" · קיר עם {hr.get('touches') or 0} נגיעות ממש מעל ({hr['price']:.2f})"
-        en += f" · a {hr.get('touches') or 0}-touch wall right overhead ({hr['price']:.2f})"
-    elif room == 'close':
-        pts -= 2
-        he += f" · התנגדות קרובה ב-{hr['price']:.2f}"
-        en += f" · resistance close at {hr['price']:.2f}"
-    elif room in ('clear', 'open') and pct is not None:
-        pts += 3
-        he += ' · יש מקום לרוץ'
-        en += ' · room to run'
     items.append(_item('potential', pts, en, he))
 
     # ── What makes him say "not now" — deductions ──────────────────────────────

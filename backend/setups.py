@@ -46,6 +46,7 @@ from config import (
     FIB_MIN_RISE_PCT,
     FIB_ZONE,
     GAP_LOOKBACK,
+    GAP_MIN_ATR,
     NEAR_ATR,
     TRI_RELEVANT_ATR,
     VCP_CONTRACTION_RATIO,
@@ -260,7 +261,7 @@ class SetupScanner:
         # verdict engine trades them: an unfilled gap overhead supplies target stations
         # ("פתח הגאפ" then "סגירת הגאפ") and one below price is a stop reference.
         # Previously these were drawn as markers and nothing else could see them.
-        for g in self._detect_gaps(highs, lows, M):
+        for g in self._detect_gaps(highs, lows, M, atr):
             overlays['markers'].append({
                 'time': times[g['idx']], 'position': 'aboveBar' if g['dir'] == 'down' else 'belowBar',
                 'color': '#ef5350' if g['dir'] == 'down' else '#66bb6a',
@@ -723,7 +724,7 @@ class SetupScanner:
                 return {'idx': i}
         return None
 
-    def _detect_gaps(self, highs, lows, M):
+    def _detect_gaps(self, highs, lows, M, atr):
         """
         Unfilled gaps, WITH their price boundaries — Micha trades the two edges by
         name: "פתח הגאפ" (the near edge, where the gap starts) is the first target and
@@ -752,7 +753,10 @@ class SetupScanner:
         how much is shown.
         """
         out = []
+        min_size = GAP_MIN_ATR * atr if atr else 0.0
         for i in range(1, M):
+            if max(lows[i] - highs[i - 1], lows[i - 1] - highs[i]) < min_size:
+                continue
             if lows[i] > highs[i - 1]:
                 if not np.any(lows[i + 1:] <= highs[i - 1]):
                     out.append({'idx': i, 'dir': 'up',

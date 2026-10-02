@@ -9,11 +9,9 @@
     },
     "book_caps": [],
     "book_minus": [],
-    "bound_caps": [
-      "no_room"
-    ],
+    "bound_caps": [],
     "grade": "B",
-    "grade_score": 74.7,
+    "grade_score": 74.3,
     "headline_action": "WAIT",
     "rating": 7,
     "setup_codes": [
@@ -94,9 +92,9 @@
     "book_minus": [],
     "bound_caps": [],
     "grade": "A",
-    "grade_score": 86.3,
+    "grade_score": 84.3,
     "headline_action": "ENTER",
-    "rating": 9,
+    "rating": 8,
     "setup_codes": [
       "fibonacci",
       "ma_bounce",
@@ -120,10 +118,10 @@
     "bound_caps": [
       "stretched_far"
     ],
-    "grade": "C",
-    "grade_score": 61.5,
+    "grade": "B",
+    "grade_score": 69.5,
     "headline_action": "WAIT",
-    "rating": 6,
+    "rating": 7,
     "setup_codes": [
       "fibonacci",
       "ma_bounce",
@@ -147,7 +145,7 @@
     "bound_caps": [],
     "grade": "B",
     "grade_score": 79.0,
-    "headline_action": "READY",
+    "headline_action": "WAIT",
     "rating": 8,
     "setup_codes": [
       "cup_handle",
@@ -172,7 +170,7 @@
     "book_minus": [],
     "bound_caps": [],
     "grade": "D",
-    "grade_score": 37.6,
+    "grade_score": 37.3,
     "headline_action": "READY",
     "rating": 4,
     "setup_codes": [
@@ -196,9 +194,9 @@
     "book_minus": [],
     "bound_caps": [],
     "grade": "B",
-    "grade_score": 76.8,
+    "grade_score": 74.8,
     "headline_action": "WAIT",
-    "rating": 8,
+    "rating": 7,
     "setup_codes": [
       "cup_handle",
       "fibonacci",
@@ -223,7 +221,7 @@
     ],
     "bound_caps": [],
     "grade": "C",
-    "grade_score": 58.2,
+    "grade_score": 60.2,
     "headline_action": "WAIT",
     "rating": 6,
     "setup_codes": [

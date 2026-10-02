@@ -71,8 +71,33 @@ LEVEL_NEAR_ATR = 4          # only show levels within this many ATRs of price
 # dollars from the action (AMD showed supports at 94 and 189 under a 456 price).
 LEVEL_STRONG_TOUCHES = 3
 LEVEL_MAX_SHOW = 2          # max levels shown per side (resistance / support)
-LEVEL_NEAR_BUCKET_ATR = 2.0  # levels this close sort ahead of everything else
 MIN_LEVEL_TOUCHES = 2
+
+# ── HIS line: which of the levels he would name ──────────────────────────────
+# A level's SIGNIFICANCE is how hard price reversed there (the largest swing
+# prominence among its pivots, in ATR) and how long it had stood as the extreme
+# (bars since a higher high / lower low — "dominance"; never exceeded = full window
+# plus LEVEL_DOM_NEVER_BONUS). Fitted on his 89 named breakout prices 2025-07 →
+# 2026-09 (as of each post): a band sat at his price in 82, and the rule below picks
+# it in 64 (72%; 32/43 before 2026-03, 32/46 after) against 47 for the nearest
+# level. The band price is trading INSIDE is excluded — that is where price is, he
+# names the next one (KEEL, CLSK, UBER, ASTS, RKLB, AAPL all missed on it).
+# score = sqrt(sig) * sqrt(1 + dom / LEVEL_DOM_SCALE) / (1 + dist_atr) ** 2
+LEVEL_DOM_SCALE = 50
+LEVEL_DOM_NEVER_BONUS = 252
+HIS_LINE_REACH_ATR = 2.5     # beyond this the nearest level is used, as before
+# The book's "potential" with no pattern projection is the farthest real price within
+# this many ATR of the entry (book.book_target) — see the measurement there.
+BOOK_TARGET_REACH_ATR = 4.0
+# A single pivot is a line on its own when it was a real reversal: DLTR's 142.40
+# (11.6 ATR), NOW's 141 (7.1), RKLB's 73.97 (5.5) are single highs he names, and
+# MIN_LEVEL_TOUCHES=2 dropped every one of them.
+LEVEL_SINGLE_SIG_ATR = 1.5
+# Major = a line he would draw / treat as a wall: a real reversal, or a high/low
+# that stood as the extreme for half a year (MU's 1036 double top: prominence only
+# 1.4 because the reversal is still in progress, but it is the all-time high).
+LEVEL_MAJOR_SIG_ATR = 2.0
+LEVEL_MAJOR_DOM_BARS = 120
 
 SR_MERGE_ATR = 0.35         # merge a R+S pair into a zone if they are within this many ATRs
 SR_KEEP_TOUCHES = 3         # but keep both lines if EITHER has this many pivots (well-tested)
@@ -151,6 +176,12 @@ RALLY_LOOKBACK_BARS = 252
 
 BOUNCE_LOOKBACK = 15        # bars to look back for an MA bounce
 GAP_LOOKBACK = 60           # bars to look back for unfilled gaps
+# A gap he marks is a real hole in the chart — NVO's 14% / 4.6-ATR earnings gap, ANET's
+# 9% / 2 ATR. The detector kept every unfilled gap of any size: 6.2 per chart, half of
+# them under 0.2 ATR (cents). Measured over his 116 gap posts since 2025, even the
+# gap NEAREST price (a lower bound on the one he names) was >= 0.5 ATR in 54%, against
+# 25% of all gaps in a 250-name universe.
+GAP_MIN_ATR = 0.5
 
 # ── Volatility + volume ───────────────────────────────────────────────────────
 # Calibrated against Micha's actual watermark circles: PM 2.67%=🟢, NVDA 3.46%=🟡,
@@ -975,19 +1006,6 @@ FAR_FROM_MA200_PCT = 0.50
 # reached 72.7% of the time, 6-9 ATR 53.0%, 9-13 ATR 24.8%. Set between the 6-9 and
 # 9-13 bands — a coin flip still qualifies for full marks, a 1-in-4 does not.
 TARGET_ODDS_FLOOR = 0.40
-
-# The rim of a cup is a price he names as the breakout even though it is a SINGLE
-# pivot and therefore can never become a clustered level (MIN_LEVEL_TOUCHES=2):
-# MMM "קאם אנד הנדל, פריצה פוטנציאלית מעל 177.5", LVS "cup … breakout above 55.66",
-# GTLB "cup and handle, פריצה אחרי מחיר $34". With no candidate for it, `_trigger`
-# fell through to the all-time high and the setup read as further away than he calls
-# it. Gated on the SHAPE rather than on the pivot alone, or every ordinary pullback
-# high qualifies:
-#   • the decline after the rim must be deep enough to be a cup, not a shelf;
-#   • price must have climbed back near the rim — from the bottom of the cup the rim
-#     is not today's obstacle, it is a different trade entirely.
-CUP_RIM_DEPTH_ATR = 3.0     # min drop from the rim to the trough behind it
-CUP_RIM_NEAR_ATR = 3.0      # ...and how close price must be back to the rim now
 
 # "הבעיה שלי זה שהיא רצה כל כך הרבה בימים האחרונים … 6 ימים רצופים של עליות" (CRWD).
 # The short-term twin of the extension gauge: he refused a stock that had just

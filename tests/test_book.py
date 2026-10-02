@@ -154,3 +154,16 @@ def test_run_phrase_matches_how_the_run_happened():
     # a streak is said as a streak; a fast week is said as a move, never "1 days in a row"
     assert bk.run_phrase({'run_days': 4, 'run_pct': 6})[1].startswith('רצה 4 ימים ברצף')
     assert 'בשבוע האחרון' in bk.run_phrase({'run_days': 1, 'run_pct': 17})[1]
+
+
+def test_book_target_stays_within_reach_of_the_entry():
+    # BULL: a $7 stock read "+1031%" off a 2021 resistance at 79.56. The farthest real
+    # price within BOOK_TARGET_REACH_ATR is the potential; the far wall is not.
+    from types import SimpleNamespace
+    from verdict import Signals
+    import book
+    ctx = SimpleNamespace(atr=0.5, price=7.0)
+    s = Signals(targets=[], overlays={}, ath=None,
+                res_levels=[{'price': 8.34, 'major': True}, {'price': 79.56, 'major': True}])
+    t = book.book_target(ctx, s, 7.0)
+    assert t['price'] == 8.34

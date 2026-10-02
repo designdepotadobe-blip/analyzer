@@ -81,6 +81,29 @@ class Geometry:
         lo, _ = spsignal.find_peaks(-lows, distance=PEAK_DISTANCE_BARS, prominence=prom)
         return hi, lo
 
+    @staticmethod
+    def pivot_strength(highs, lows, sh_idx, sl_idx, atr, never_bonus: int):
+        """
+        Per pivot: prominence in ATR (how far price reversed before taking the pivot
+        out) and dominance in bars (how long it had stood as the extreme — bars back to
+        a higher high / lower low; never exceeded = its index plus `never_bonus`).
+        Returns two dicts keyed by bar index: highs, lows → (prominence, dominance).
+        """
+        a = max(atr, 1e-9)
+
+        def one(series, idx, sign):
+            out = {}
+            if not len(idx):
+                return out
+            prom = spsignal.peak_prominences(sign * series, idx)[0] / a
+            for i, p in zip((int(x) for x in idx), prom):
+                beyond = np.where(sign * series[:i] > sign * series[i])[0]
+                dom = (i - int(beyond[-1])) if len(beyond) else i + never_bonus
+                out[i] = (float(p), int(dom))
+            return out
+
+        return one(np.asarray(highs, float), sh_idx, 1.0), one(np.asarray(lows, float), sl_idx, -1.0)
+
     # ── Regression ────────────────────────────────────────────────────────────
 
     @staticmethod

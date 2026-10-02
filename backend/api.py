@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 
@@ -243,6 +244,7 @@ def scan(
         sec.limiter.check(request, cost=10)
     universe = _universe()[:limit]
     hits = []
+    cancelled = threading.Event()
 
     def work(tk: str):
         # The WHOLE body is guarded, not just `analyze()` — a scan is 60-517
@@ -253,6 +255,8 @@ def scan(
         # here kills the whole generator mid-stream and the client loses every
         # result already shown — found via a real end-to-end run at limit=517,
         # not by inspection, which is exactly the failure mode this guards.
+        if cancelled.is_set():
+            return None
         try:
             r = analyzer.analyze(tk)
             if not r:
@@ -359,7 +363,16 @@ def scan(
         # so a server-side sort would just be thrown away work.
         def sse():
             matched = 0
-            with ThreadPoolExecutor(max_workers=workers) as ex:
+            # NOT `with ThreadPoolExecutor(...)`: when the client leaves (closes the
+            # Radar tab, changes the scan size, searches another stock) Starlette
+            # closes this generator ON THE EVENT-LOOP THREAD, and `with` then
+            # blocks in `shutdown(wait=True)` until every ticker still queued
+            # (up to 1,120) has been analysed — the whole server froze for minutes
+            # (py-spy: MainThread parked in `__exit__` -> `join`). On exit we flag
+            # `work()` to skip what is left, drop the queued futures, and return
+            # at once; the few already running finish in the background.
+            ex = ThreadPoolExecutor(max_workers=workers)
+            try:
                 for fut in as_completed([ex.submit(work, tk) for tk in universe]):
                     # Belt-and-suspenders on top of `work()`'s own guard: `work`
                     # should never raise now, but for a LIVE view losing every
@@ -374,7 +387,10 @@ def scan(
                     if res:
                         matched += 1
                         yield f"data: {json.dumps(res)}\n\n"
-            yield f"data: {json.dumps({'done': True, 'scanned': len(universe), 'matched': matched})}\n\n"
+                yield f"data: {json.dumps({'done': True, 'scanned': len(universe), 'matched': matched})}\n\n"
+            finally:
+                cancelled.set()
+                ex.shutdown(wait=False, cancel_futures=True)
 
         return StreamingResponse(sse(), media_type="text/event-stream")
 

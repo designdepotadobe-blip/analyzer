@@ -27,17 +27,24 @@ Also emits volume-confirmed breakout markers.
 
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
 
 from config import (
     ABSORPTION_PCT,
+    HIS_LINE_REACH_ATR,
+    LEVEL_DOM_NEVER_BONUS,
+    LEVEL_DOM_SCALE,
+    LEVEL_MAJOR_DOM_BARS,
+    LEVEL_MAJOR_SIG_ATR,
+    LEVEL_SINGLE_SIG_ATR,
     CLUSTER_ATR_FACTOR,
     LEVEL_MAX_SPAN_ATR,
     CONSOL_MAX_RANGE,
     CONSOL_MIN_BARS,
     LEVEL_MAX_SHOW,
     LEVEL_NEAR_ATR,
-    LEVEL_NEAR_BUCKET_ATR,
     LEVEL_STRONG_TOUCHES,
     MIN_LEVEL_TOUCHES,
     PEAK_DISTANCE_BARS,
@@ -49,6 +56,7 @@ from config import (
     ZONE_MIN_SPREAD_ATR,
     jnum,
 )
+from geometry import Geometry
 
 
 class LevelEngine:
@@ -56,7 +64,10 @@ class LevelEngine:
 
     def build(self, ctx) -> tuple[list, list]:
         """Full clustered/scored/filtered R and S level lists for `ctx`."""
-        all_pivots = np.concatenate([ctx.highs[ctx.sh_idx], ctx.lows[ctx.sl_idx]])
+        ph, pl = Geometry.pivot_strength(ctx.highs, ctx.lows, ctx.sh_idx, ctx.sl_idx,
+                                         ctx.atr, LEVEL_DOM_NEVER_BONUS)
+        all_pivots = ([(float(ctx.highs[i]), *ph[int(i)]) for i in ctx.sh_idx]
+                      + [(float(ctx.lows[i]), *pl[int(i)]) for i in ctx.sl_idx])
         levels = self._cluster(all_pivots, ctx.atr)
 
         # Score every bar in the full 3-year history from BOTH directions — a level
@@ -74,7 +85,17 @@ class LevelEngine:
 
         for cz in self._consolidation_zones(ctx.highs, ctx.lows, ctx.closes, ctx.atr, ctx.M):
             cz['type'] = 'resistance' if cz['price'] > ctx.price else 'support'
+            cz.update(sig=0.0, dom=0, pivot_lo=cz['bottom'], pivot_hi=cz['top'])
             levels.append(cz)
+
+        for lvl in levels:
+            lvl['major'] = bool(lvl['sig'] >= LEVEL_MAJOR_SIG_ATR
+                                or lvl['dom'] >= LEVEL_MAJOR_DOM_BARS)
+            lvl['his_line'] = False
+        for side in ('resistance', 'support'):
+            mine = self.his_line(levels, ctx.price, ctx.atr, side)
+            if mine is not None:
+                mine['his_line'] = True
 
         res_levels = [lvl for lvl in levels if lvl['type'] == 'resistance']
         sup_levels = [lvl for lvl in levels if lvl['type'] == 'support']
@@ -119,33 +140,83 @@ class LevelEngine:
     # ── Clustering ────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _cluster(prices, atr: float) -> list:
-        if len(prices) == 0:
+    def _cluster(pivots, atr: float) -> list:
+        """
+        `pivots` are (price, prominence_atr, dominance_bars). A band needs
+        MIN_LEVEL_TOUCHES pivots, or one pivot that was a real reversal on its own
+        (LEVEL_SINGLE_SIG_ATR) — his named lines are often a single major high.
+        """
+        if len(pivots) == 0:
             return []
         thr = atr * CLUSTER_ATR_FACTOR
         span = atr * LEVEL_MAX_SPAN_ATR
-        prices = sorted(prices)
-        clusters = [[prices[0]]]
-        for p in prices[1:]:
+        pivots = sorted(pivots, key=lambda p: p[0])
+        clusters = [[pivots[0]]]
+        for p in pivots[1:]:
             # Both tests matter. The first keeps genuinely adjacent pivots together;
             # the second stops single-linkage chaining from walking a cluster across
             # the whole chart one 0.59-ATR step at a time (see LEVEL_MAX_SPAN_ATR).
-            if p - clusters[-1][-1] <= thr and p - clusters[-1][0] <= span:
+            if p[0] - clusters[-1][-1][0] <= thr and p[0] - clusters[-1][0][0] <= span:
                 clusters[-1].append(p)
             else:
                 clusters.append([p])
         result = []
         for c in clusters:
-            if len(c) < MIN_LEVEL_TOUCHES:
+            sig = max(p[1] for p in c)
+            if len(c) < MIN_LEVEL_TOUCHES and sig < LEVEL_SINGLE_SIG_ATR:
                 continue
+            prices = [p[0] for p in c]
             result.append({
-                'price':  float(np.mean(c)),
-                'top':    float(max(c)),
-                'bottom': float(min(c)),
-                'spread': float(max(c) - min(c)),
+                'price':  float(np.mean(prices)),
+                'top':    float(max(prices)),
+                'bottom': float(min(prices)),
+                'spread': float(max(prices) - min(prices)),
                 'touches': len(c),
+                'sig': round(float(sig), 2),
+                'dom': int(max(p[2] for p in c)),
+                # the pivot extremes, before `_refine_boundaries` widens to bodies —
+                # what `his_line` measures distance and "inside" from
+                'pivot_lo': float(min(prices)),
+                'pivot_hi': float(max(prices)),
             })
         return result
+
+    @staticmethod
+    def line_score(lvl: dict, dist_atr: float) -> float:
+        return (max(lvl.get('sig') or 0.0, 0.0) ** 0.5
+                * (1 + (lvl.get('dom') or 0) / LEVEL_DOM_SCALE) ** 0.5
+                / (1 + max(dist_atr, 0.0)) ** 2)
+
+    @classmethod
+    def his_line(cls, levels: list, price: float, atr: float, side: str) -> Optional[dict]:
+        """
+        The level he would name on `side` — the strongest nearby reversal, not the
+        nearest bump (see HIS_LINE_REACH_ATR). With nothing within reach, the
+        nearest level, as before.
+
+        The two sides treat a band price is trading INSIDE differently. Overhead,
+        it is skipped: that is where price is, and the breakout he names is the next
+        line up. Underneath, it is exactly his entry — "נכנסים קונים על הקו", price
+        sitting on the support (LITE 2026-09-16 on its just-broken 897-937 band) —
+        so it counts, at distance zero.
+        """
+        if not atr:
+            return None
+        res = side == 'resistance'
+        pool = [l for l in levels if l.get('type') == side
+                and ((l.get('pivot_lo', l['bottom']) > price) if res
+                     else (l.get('pivot_lo', l['bottom']) < price))]
+        if not pool:
+            return None
+
+        def dist(l):
+            return max(0.0, (l.get('pivot_lo', l['bottom']) - price) if res
+                       else (price - l.get('pivot_hi', l['top']))) / atr
+
+        near = [l for l in pool if dist(l) <= HIS_LINE_REACH_ATR]
+        if near:
+            return max(near, key=lambda l: cls.line_score(l, dist(l)))
+        return min(pool, key=dist)
 
     @staticmethod
     def _recount_touches(levels: list, highs, lows, opens, closes, vols, atr: float,
@@ -408,29 +479,28 @@ class LevelEngine:
     @staticmethod
     def _select_nearby(ctx, res_levels: list, sup_levels: list) -> list:
         """
-        Keep only levels within LEVEL_NEAR_ATR of price (or very well-tested), nearest
-        first, capped at LEVEL_MAX_SHOW per side, and serialize them for the frontend.
+        His lines within LEVEL_NEAR_ATR of price, capped at LEVEL_MAX_SHOW per side,
+        serialized for the frontend.
         """
         price, atr = ctx.price, ctx.atr
 
-        def res_key(x):
-            near = (x['price'] - price) / atr
-            return (0 if near <= LEVEL_NEAR_BUCKET_ATR else 1, -x['quality'], near)
+        # His charts carry one or two lines a side: THE line (his_line), the line
+        # that just broke (the must-hold), then the next major reversal. Minor bumps
+        # are never drawn — that is the 21-28-line chart he does not make.
+        def pick(levels):
+            def dist(x):
+                return abs(x['price'] - price) / atr
+            pool = [x for x in levels if x.get('freshness') != 'absorbed'
+                    and dist(x) <= LEVEL_NEAR_ATR]
+            out = [x for x in pool if x.get('his_line')]
+            out += [x for x in pool if x.get('freshness') == 'just_broken'
+                    and x.get('major') and x not in out]
+            rest = sorted((x for x in pool if x.get('major') and x not in out),
+                          key=lambda x: -LevelEngine.line_score(x, dist(x)))
+            return (out + rest)[:LEVEL_MAX_SHOW]
 
-        def sup_key(x):
-            near = (price - x['price']) / atr
-            return (0 if near <= LEVEL_NEAR_BUCKET_ATR else 1, -x['quality'], near)
-
-        nearby_res = sorted(
-            [r for r in res_levels
-             if r.get('freshness') != 'absorbed'
-             and (r['price'] - price) / atr <= LEVEL_NEAR_ATR],
-            key=res_key)[:LEVEL_MAX_SHOW]
-        nearby_sup = sorted(
-            [s for s in sup_levels
-             if s.get('freshness') != 'absorbed'
-             and (price - s['price']) / atr <= LEVEL_NEAR_ATR],
-            key=sup_key)[:LEVEL_MAX_SHOW]
+        nearby_res = pick(res_levels)
+        nearby_sup = pick(sup_levels)
 
         zone_thr = ZONE_MIN_SPREAD_ATR * atr
         out: list[dict] = []
@@ -466,6 +536,9 @@ class LevelEngine:
             'dist_pct':  dist_pct,
             'dist_atr':  dist_atr,
             'touches': lvl['touches'], 'quality': lvl['quality'],
+            # how hard price reversed there (ATR) and whether it is the line he'd name
+            'sig': lvl.get('sig'), 'major': bool(lvl.get('major')),
+            'his_line': bool(lvl.get('his_line')),
             'label': label,
         }
 

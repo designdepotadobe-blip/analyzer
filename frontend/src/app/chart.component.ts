@@ -481,7 +481,10 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
     if (tg.levels) {
       for (const lvl of a.overlays.levels) {
         if (isKeyPrice(lvl.price)) { continue; }
-        const strong = lvl.strength === 'strong';
+        // Every drawn line is now one of HIS lines (backend levels._select_nearby),
+        // and a single major high has 1 touch — so significance, not touch count,
+        // decides a firm line.
+        const strong = lvl.strength === 'strong' || !!lvl.his_line || !!lvl.major;
         const lw: 1 | 2 = strong ? 2 : 1;
         const color = strong ? LEVEL_COLOR_STRONG : LEVEL_COLOR_WEAK;
 

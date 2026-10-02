@@ -38,6 +38,12 @@ export interface Level {
   dist_atr: number | null;
   touches: number;
   quality: number;
+  /** How hard price reversed at this line, in ATR (absent on older payloads). */
+  sig?: number | null;
+  /** A real reversal / long-standing extreme — a line he would draw. */
+  major?: boolean;
+  /** THE line he would name on its side (the trigger / the support). */
+  his_line?: boolean;
   label: string;
 }
 
