@@ -141,7 +141,21 @@ export interface Setup {
   active: boolean;
 }
 
+/** The live quote (single-stock view only) — see market_data.quote. */
+export interface Quote {
+  state: string | null;
+  price: number | null;
+  change: number | null;
+  change_pct: number | null;
+  prev_close: number | null;
+  pre_price: number | null;
+  pre_change_pct: number | null;
+  post_price: number | null;
+  post_change_pct: number | null;
+}
+
 export interface Meta {
+  quote?: Quote | null;
   price: number;
   atr: number;
   atr_pct: number | null;
@@ -196,6 +210,22 @@ export interface MacroTarget {
   pct: number;
   label: string;
   label_he: string;
+}
+
+/** A dip and the floors it touched (the 150, his support, rising lows, channel
+ *  bottom, a Fib of the rally, the line it broke, a gap). `ok` = his pullback entry:
+ *  a real dip, still on a floor other than only the line it just broke. */
+export interface MichaPullback {
+  floors: { kind: string; price: number; en: string; he: string }[];
+  confluence: number;
+  depth_atr: number;
+  off_high20_pct: number;
+  red_days: number;
+  deep: boolean;
+  ret5_atr: number;
+  ok: boolean;
+  en: string;
+  he: string;
 }
 
 /** How proven the EVENT behind the grade is — see verdict._confirmation. Reuses
@@ -364,9 +394,18 @@ export interface MichaAlert {
 }
 
 /** The write-up, in his shape: what to do → what the chart is → why → what kills it. */
+export interface MichaReadLine {
+  tone: 'pos' | 'neg' | 'neu';
+  en: string;
+  he: string;
+}
+
 export interface MichaReport {
   call: string;
   call_he: string;
+  /** How he reads this chart, indicator by indicator (150, size, breakout price,
+   *  next resistance line, trendlines, channel, cup, Fib, buyers, volume, run, gaps). */
+  micha_read?: MichaReadLine[];
   read: string;
   read_he: string;
   /** Present only when the call is NOT "enter" and the trigger is close — the
@@ -643,6 +682,8 @@ export interface Micha {
   action_label_he: string;
   headline_action: HeadlineAction;
   confirmation: Confirmation;
+  /** his pullback entry read as a pattern — see micha._pullback_entry */
+  pullback?: MichaPullback | null;
   macro_target: MacroTarget | null;
   report: MichaReport;
   reasons: MichaReasonGroup[];

@@ -121,27 +121,6 @@ def test_book_target_is_never_a_fibonacci_when_a_real_price_exists():
     assert t['price'] == 110.0
 
 
-# ── the 150-method entry: a pullback ONTO the floor, not a run into the ceiling ──
-
-class TestCameDownToIt:
-    def _ctx(self, highs, closes, atr=1.0, atr_pct=1.0):
-        closes = np.asarray(closes, float)
-        return SimpleNamespace(highs=np.asarray(highs, float), closes=closes,
-                               price=float(closes[-1]), atr=atr, atr_pct=atr_pct,
-                               M=len(closes))
-
-    def test_pullback_from_the_recent_high(self):
-        # 2 ATR under the 10-day high: "תיקנה ישירות לממוצע"
-        c = [100] * 10 + [98.0]
-        assert Judgement._came_down_to_it(self._ctx([101] * 11, c))
-
-    def test_running_up_into_the_ceiling_is_not(self):
-        # rising every day into the level: "תנועה לכיוון ההתנגדות"
-        c = [95, 96, 97, 98, 99, 100, 100.5, 101, 101.5, 102, 102.3]
-        h = [x + 0.2 for x in c]
-        assert not Judgement._came_down_to_it(self._ctx(h, c))
-
-
 def test_floor_includes_the_rising_lows_line_and_channel_bottom():
     ctx = SimpleNamespace(price=100.0, atr=2.0, sma150=80.0)
     s = Signals(nearest_sup=None, channel={'kind': 'rising', 'lower': 99.0},

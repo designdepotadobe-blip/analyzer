@@ -101,6 +101,7 @@ class MarketData:
         self.cache_ttl = cache_ttl
         self._cache: dict[str, tuple[float, pd.DataFrame]] = {}
         self._cap_cache: dict[str, Optional[float]] = {}
+        self._quote_cache: dict = {}
         self._earn_cache: dict[str, Optional[int]] = {}
         self._profile_cache: dict[str, dict] = {}
         self._session = None            # yahooquery's own session, from the 1st Ticker
@@ -230,6 +231,44 @@ class MarketData:
         cap = float(cap) if cap else None
         self._cap_cache[ticker] = cap
         return cap
+
+    def quote(self, ticker: str) -> Optional[dict]:
+        """
+        The live quote: price, today's change, pre-market / after-hours prices and
+        the market state. Cached for QUOTE_TTL seconds (the single-stock view asks
+        for it; the scan does not — a thousand extra requests per scan).
+        """
+        now = time.monotonic()
+        hit = self._quote_cache.get(ticker)
+        if hit is not None and now - hit[0] < 60:
+            return hit[1]
+        out = None
+        try:
+            pr = self._tk(ticker).price
+            p = pr.get(ticker) if isinstance(pr, dict) else None
+            if isinstance(p, dict) and p.get('regularMarketPrice') is not None:
+                def f(k, mult=1.0):
+                    v = p.get(k)
+                    try:
+                        return float(v) * mult if v is not None else None
+                    except (TypeError, ValueError):
+                        return None
+                out = {
+                    'state': p.get('marketState'),
+                    'price': f('regularMarketPrice'),
+                    'change': f('regularMarketChange'),
+                    'change_pct': f('regularMarketChangePercent', 100.0),
+                    'prev_close': f('regularMarketPreviousClose'),
+                    'open': f('regularMarketOpen'), 'high': f('regularMarketDayHigh'),
+                    'low': f('regularMarketDayLow'), 'volume': f('regularMarketVolume'),
+                    'time': str(p.get('regularMarketTime') or ''),
+                    'pre_price': f('preMarketPrice'), 'pre_change_pct': f('preMarketChangePercent', 100.0),
+                    'post_price': f('postMarketPrice'), 'post_change_pct': f('postMarketChangePercent', 100.0),
+                }
+        except Exception:
+            out = None
+        self._quote_cache[ticker] = (now, out)
+        return out
 
     def profile(self, ticker: str) -> dict:
         """

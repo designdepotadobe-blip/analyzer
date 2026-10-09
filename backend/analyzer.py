@@ -20,6 +20,8 @@ All distance thresholds scale with ATR so calm and volatile stocks are judged fa
 from __future__ import annotations
 
 import math
+
+import pandas as pd
 from typing import Optional
 
 from config import DISPLAY_BARS, HISTORY_PERIOD, MIN_BARS, SMA_PERIODS, jnum
@@ -38,7 +40,7 @@ class StockAnalyzer:
         self.setups = SetupScanner()
         self.micha = MichaAnalyzer()
 
-    def analyze(self, ticker: str) -> Optional[dict]:
+    def analyze(self, ticker: str, live: bool = False) -> Optional[dict]:
         # Warm history + market cap + earnings + profile together. They are four
         # independent GETs that used to run one after another, each building its own
         # `Ticker` (~3 s of cookie/crumb setup apiece); priming pays that once and
@@ -49,6 +51,31 @@ class StockAnalyzer:
         raw = self.data.fetch(ticker)
         if raw is None or len(raw) < MIN_BARS:
             return None
+
+        # ── The latest price, not the last close (single-stock view) ──────────
+        # In session, today's bar is refreshed from the live quote so every reading
+        # — and the call — sits on the current price. Pre-market / after-hours carry
+        # no real volume, so they are NOT folded into the bars (a fake bar would
+        # corrupt the volume and candle reads); they are reported beside the call.
+        quote = self.data.quote(ticker) if live else None
+        if quote and quote.get('state') == 'REGULAR' and quote.get('price'):
+            raw = raw.copy()
+            last = raw.index[-1]
+            qd = pd.Timestamp(quote['time'][:10]) if quote.get('time') else None
+            if qd is not None and last.normalize() == qd.normalize():
+                raw.loc[last, 'close'] = quote['price']
+                if quote.get('high'):
+                    raw.loc[last, 'high'] = max(raw.loc[last, 'high'], quote['high'], quote['price'])
+                if quote.get('low'):
+                    raw.loc[last, 'low'] = min(raw.loc[last, 'low'], quote['low'], quote['price'])
+                if quote.get('volume'):
+                    raw.loc[last, 'volume'] = max(raw.loc[last, 'volume'], quote['volume'])
+            elif qd is not None and qd > last and quote.get('open'):
+                raw.loc[qd] = {**{c: raw[c].iloc[-1] for c in raw.columns},
+                               'open': quote['open'], 'high': quote.get('high') or quote['price'],
+                               'low': quote.get('low') or quote['price'], 'close': quote['price'],
+                               'volume': quote.get('volume') or 0}
+                raw = raw.sort_index()
 
         # Indicators are computed on the full 3-year fetch, so SMA150 is already
         # warmed up by the time the display window begins — no NaN gap.
@@ -92,10 +119,13 @@ class StockAnalyzer:
 
         # ── Micha-style verdict (read-only side service) ───────────────────────
         micha = self.micha.evaluate(ctx, res_levels, sup_levels, setups, overlays)
+        if quote:
+            from verdict import extended_hours
+            extended_hours(micha, quote, float(ctx.price))
 
         return {
             'ticker': ticker,
-            'meta': self._meta(ctx, setups),
+            'meta': {**self._meta(ctx, setups), 'quote': quote},
             'bars': self._bars(ctx),
             'indicators': self._indicators(ctx),
             'overlays': overlays,

@@ -153,3 +153,22 @@ def test_support_his_line_counts_the_band_price_is_sitting_on():
     on = _lvl(897.0, 937.0, 2.6, 60, 'support')
     lower = _lvl(776.0, 817.0, 2.2, 300, 'support')
     assert LevelEngine.his_line([on, lower], 919.4, 68.6, 'support') is on
+
+
+def test_only_lines_a_number_is_built_from_are_drawn():
+    # AMZN: the stop 256.44 is 0.5% under the trigger band's bottom 257.73; a band
+    # whose CENTRE happens to sit at 256.40 is not used and must not be drawn
+    from types import SimpleNamespace
+    from micha import MichaAnalyzer
+    from verdict import Signals
+    ctx = SimpleNamespace(atr=6.0)
+    trig_band = {'type': 'resistance', 'price': 259.74, 'zone_bottom': 257.73,
+                 'zone_top': 261.12, 'his_line': True}
+    unrelated = {'type': 'resistance', 'price': 256.40, 'zone_bottom': 254.99,
+                 'zone_top': 258.08}
+    far_sup = {'type': 'support', 'price': 230.0, 'zone_bottom': 229.0, 'zone_top': 231.0}
+    j = {'trigger': {'price': 261.12, 'floor': 257.73}, 'action': 'wait_trigger',
+         'options': [{'kind': 'breakout', 'entry': 261.12, 'stop': 256.44}]}
+    s = Signals(nearest_res=None, nearest_sup=None, break_level=None)
+    kept = MichaAnalyzer._used_levels(ctx, [trig_band, unrelated, far_sup], j, s)
+    assert kept == [trig_band]

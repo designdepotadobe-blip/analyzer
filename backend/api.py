@@ -107,7 +107,7 @@ def analyze(ticker: str, request: Request):
     sec.limiter.check(request)
     ticker = sec.clean_ticker(ticker)
     try:
-        result = analyzer.analyze(ticker)
+        result = analyzer.analyze(ticker, live=True)
     except Exception:
         # full stack trace in the backend log; the client gets no internals
         traceback.print_exc()
@@ -124,7 +124,7 @@ def micha(ticker: str, request: Request):
     sec.limiter.check(request)
     ticker = sec.clean_ticker(ticker)
     try:
-        result = analyzer.analyze(ticker)
+        result = analyzer.analyze(ticker, live=True)
     except Exception:
         traceback.print_exc()
         raise HTTPException(status_code=502, detail="analysis failed")
@@ -195,6 +195,14 @@ def _preset_ok(preset: str, m: dict, meta: dict, best: dict | None, al: dict | N
         # a downtrend, but the same "reclaiming structure" shape.
         return m['state'] in ('turning', 'value_pullback', 'buyers_at_level')
     return True
+
+
+def _prefer_key(h: dict) -> tuple:
+    """Tie-break: bigger company first, then closer to the 150 (owner, 2026-10-09)."""
+    cap = h.get('market_cap') or 0
+    size = 4 if cap >= 2e11 else 3 if cap >= 5e10 else 2 if cap >= 1e10 else 1 if cap >= 2e9 else 0
+    d = h.get('sma150_dist_pct')
+    return (-size, abs(d) if d is not None else 1e9)
 
 
 @app.get("/api/scan")
@@ -422,7 +430,8 @@ def scan(
         hits.sort(key=lambda h: (h.get('stop_atr') if h.get('stop_atr') is not None else 1e9))
     else:
         hits.sort(key=lambda h: (-h['setup_count'],
-                                 -sum(1 for s in h['setups'] if s['active'])))
+                                 -sum(1 for s in h['setups'] if s['active']),
+                                 *_prefer_key(h)))
     return {"scanned": len(universe), "matched": len(hits), "results": hits}
 
 

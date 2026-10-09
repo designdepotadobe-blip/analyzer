@@ -1,7 +1,7 @@
 import { Component, Input, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { ApiService } from './api.service';
-import { Analysis, BookCap, BookItem, Meta, Micha, MichaOption, MichaReasonGroup, MichaState, Toggles } from './models';
+import { Analysis, BookCap, BookItem, Meta, Micha, MichaOption, MichaPullback, MichaReasonGroup, MichaState, Toggles } from './models';
 
 @Component({
   selector: 'app-analyzer-page',
@@ -323,6 +323,20 @@ export class AnalyzerPageComponent implements OnInit {
     return this.setupColors[code] || '#787b86';
   }
 
+  /** Pre-market / after-hours price when the session is not regular — shown beside
+   *  the live price, never instead of it. */
+  extQuote(meta: Meta): { label: string; price: number; pct: number } | null {
+    const q = meta.quote;
+    if (!q || !q.state) return null;
+    if (q.state.startsWith('PRE') && q.pre_price != null) {
+      return { label: 'פרה-מרקט', price: q.pre_price, pct: q.pre_change_pct ?? 0 };
+    }
+    if ((q.state.startsWith('POST') || q.state === 'CLOSED') && q.post_price != null) {
+      return { label: 'אפטר-מרקט', price: q.post_price, pct: q.post_change_pct ?? 0 };
+    }
+    return null;
+  }
+
   maContextLabel(meta: Meta): string {
     const pct = meta.sma150_dist_pct != null
       ? ` (${meta.sma150_dist_pct.toFixed(1)}%)` : '';
@@ -413,6 +427,25 @@ export class AnalyzerPageComponent implements OnInit {
     const deg = Math.max(0, Math.min(10, m.rating)) * 36;
     const c = this.gradeColor(m.grade);
     return `conic-gradient(${c} 0deg ${deg}deg, #262b37 ${deg}deg 360deg)`;
+  }
+
+  /** The pullback line is shown only when the dip touched a floor of its own —
+   *  the line it just broke alone is not one (see micha._pullback_entry). */
+  pullbackShown(m: Micha): MichaPullback | null {
+    const pb = m.pullback;
+    if (!pb || !(pb.floors || []).some((f) => f.kind !== 'broken_line')) return null;
+    return pb;
+  }
+
+  pullbackTone(pb: MichaPullback): 'good' | 'warn' {
+    return pb.ok ? 'good' : 'warn';
+  }
+
+  pullbackTagHe(pb: MichaPullback): string {
+    if (pb.ok) return 'תבנית תיקון ✓';
+    if (!pb.deep) return 'תיקון רדוד — עוד לא התבנית';
+    if (pb.ret5_atr > 0.5) return 'כבר קפצה מהרצפה';
+    return 'תיקון אל רצפה';
   }
 
   boundCaps(m: Micha): BookCap[] {
@@ -525,7 +558,10 @@ export class AnalyzerPageComponent implements OnInit {
       // beside the grade, so the chart no longer has to carry it. Both checkboxes
       // stay available on every chart that has the overlay.
       triangles: f.triangles, fib: false, markers: false, gaps: false,
-      cup: false,
+      // Back ON wherever a cup exists (owner, 2026-10-09: "when there is a cup or a
+      // cup & handle we want to know it"). The drawing is now his minimal one — the
+      // rim, the depth arrow and the target arrow — not the old arc.
+      cup: !!a.overlays?.cup,
     };
   }
 

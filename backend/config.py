@@ -1022,6 +1022,11 @@ RUN_UP_DAYS = 4             # consecutive up closes — "ארבעה ימים ר�
 RUN_UP_SHORT_DAYS = 3       # "שלושה ימים ירוקים" ...
 RUN_UP_SHORT_ATR = 2.0      # ...when they covered at least this many ATR
 RUN_UP_ATR = 3.0            # or this much ground covered in RUN_UP_LOOKBACK days
+# "לא רודפים" in money terms: over 2025-26 only 6% of his ENTER calls came after a
+# 5-session run of 8%+, against 22% of his "wait for it" calls (334 calls, as of each
+# post) — above 8% almost nothing he called an entry is left.
+RUN_UP_5D_BARS = 5
+RUN_UP_5D_PCT = 8.0
 
 # ── The 150 has a direction, not just a side ─────────────────────────────────
 # His 150 method is "price arrives at the 150, calms, buyers come in" on an average that
@@ -1040,14 +1045,48 @@ MA150_RECLAIM_GRACE_BARS = 25
 # entry: ABNB +3%, ALAB +5%, C +5%, AVGO +6%, DOW +6%, AMZN +7% — all called "על
 # הממוצע / באיזור הממוצע". ATR-only (1.4 ATR) missed most of them on calm names.
 FLOOR_150_PCT = 0.08
-# "Came down to the floor" vs "ran up to the ceiling" — see verdict._came_down_to_it.
-# Measured as of the evenings he posted (2025-07 → 2026-09, above the 150): 10-day
-# pullback ≥1.5 ATR on 58% of his entries vs 25% of his "wait for the break" calls;
-# 5-day return median -0.06 ATR on entries vs +0.93 on waits.
+# "Came down to the floor" vs "ran up to the ceiling" — read by micha._pullback_entry
+# (the dip off the 10-day high). Measured as of the evenings he posted (2025-07 →
+# 2026-09, above the 150): 10-day pullback ≥1.5 ATR on 58% of his entries vs 25% of his
+# "wait for the break" calls.
 PULLBACK_LOOKBACK = 10
 PULLBACK_MIN_ATR = 1.5
-PULLBACK_RET_BARS = 5
-PULLBACK_MAX_RUN_ATR = 0.0
+# His pullback entry, read as a PATTERN (micha._pullback_entry): the dip TOUCHED a
+# floor and closed back above it, and the dip was a real one. Measured 2026-10-02 on
+# 102 of his entry calls (2025-01 → 2026-09, as of the evening he posted) against 236
+# of his "wait" calls, 447 random days on the same names and 2,976 random universe
+# days, scored 20 sessions forward against the same stock's ±30-day neighbours:
+#   • a floor TOUCHED in the last 3 bars (low within 0.3 ATR, close not more than
+#     0.15 ATR under it, close within 1.5 ATR over it). "Sitting within reach of a
+#     support" was true on 61% of random days and told nothing; touching the 150
+#     (19% his / 7% random), the rising-lows line (19/11), a Fib 38-62% of the last
+#     rally (54/29) or a gap edge (14/7) did.
+#   • DEPTH: inside the "came down + buyers candle" pool, a ≥2.5-ATR dip beat its
+#     neighbours by +3.6% (t 4.8), 1.5-2.5 ATR +2.0%, <1.5 ATR +1.0% (n.s.); on his
+#     own calls the shallow ones (<1.5 ATR) were the losers (-3.9% vs neighbours).
+#     Deep = ≥1.5 ATR off the 10-day high, or ≥8% off the 20-day high, or 5 of the last
+#     7 closes red ("6 ימים אדומים זה חריג לאפל", AAPL).
+PULLBACK_TEST_BARS = 3
+PULLBACK_TEST_ATR = 0.3
+PULLBACK_HOLD_ATR = 0.15
+PULLBACK_FLOOR_REACH_ATR = 1.5
+PULLBACK_DEEP_PCT = 8.0
+PULLBACK_DEEP_RED = 5
+PULLBACK_FIB_RATIOS = (0.382, 0.5, 0.618)
+# Two more conditions the first version of the pattern lacked, both found replaying
+# his "wait" calls (2025-07 → 2026-09) through it — it said "enter" on 31 of 204:
+#   • the line it JUST broke does not count as a floor on its own. On those waits it
+#     was a minor line under the wall he named ("פריצה ב 46", SEDG), and across the
+#     universe touching it trailed its neighbours by -2.1% over 20 sessions (t -2.8).
+#   • the dip has not already bounced: 5-day return ≤ 0.5 ATR. Most of the rest had
+#     touched the floor and were already climbing back to the ceiling ("תנועה לכיוון
+#     ההתנגדות", OKE) — his entries sit at a 5-day return of -0.1 ATR, his waits +0.9.
+# Through the full pipeline: tools/agree.py on his 2025-07 → 2026-09 calls reads enter
+# 13/41, wait 175/204 (was 16/41, 180/204 — of the 14 calls that flipped, 4 of the
+# "waits" offer both ways in, e.g. IREN "לפי שיטת ה 150 - נקודת כניסה ... מי שמעדיף
+# לחכות לפריצה"); on 2,976 random universe days the entries beat their ±30-day
+# neighbours by +1.5% / +4.0% at 20 / 40 sessions, against +0.2% / +2.0% before.
+PULLBACK_BOUNCED_ATR = 0.5
 
 # (An OVERHEAD_WALL_PENALTY lived here and was removed after measurement — it charged
 #  a stock for owning a target ladder and cost TEAM its A. See the note in
@@ -1243,3 +1282,11 @@ FIB_BOUNCE_LOW_MAX_AGE = 30
 # and separately "a far stop is not so bad a thing" — so this is generous. Past it
 # the level stops being this trade's invalidation and becomes a different trade's.
 STOP_SUPPORT_MAX_ATR = 3.0
+
+
+# ── A drawn resistance line right above the entry ────────────────────────────
+# Owner's rule (2026-10-09): when one of the lines the chart DRAWS sits within this
+# many percent above price, the call is "wait for the break above it" and that line
+# is named — never "enter" a hair under a line. Measured in % (money, not ATR): it is
+# the room the trade has before its first resistance.
+RESISTANCE_OVERHEAD_PCT = 2.0

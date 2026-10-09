@@ -268,6 +268,8 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
   // fill runs between its value and a price baseline (see `drawBand`).
   private overlaySeries: (ISeriesApi<'Line'> | ISeriesApi<'Baseline'>)[] = [];
   private priceLines: IPriceLine[] = [];
+  /** a future date the view should reach so the cup's target arrow is on screen */
+  private futureTo: string | null = null;
   /** The entry/stop/target lines, kept addressable so the panel can emphasise one
    *  without a full re-render (which would also reset zoom on a ticker change). */
   private planLines: {
@@ -395,6 +397,7 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
       return;
     }
     this.clearOverlays();
+    this.futureTo = null;
 
     if (!this.analysis) {
       this.candle.setData([]);
@@ -427,6 +430,31 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
         close: b.close,
       }))
     );
+    // today's change on the live price, and the pre-market / after-hours price as
+    // its own dashed line — the reader sees the latest price, not only the close
+    const q = a.meta?.quote;
+    if (q && q.change_pct != null && sortedBars.length) {
+      const last = sortedBars[sortedBars.length - 1].close;
+      const up = q.change_pct >= 0;
+      this.priceLines.push(this.candle.createPriceLine({
+        price: last, color: up ? '#26a69a' : '#ef5350', lineWidth: 1,
+        lineStyle: LineStyle.Dotted, axisLabelVisible: false,
+        title: `${up ? '+' : ''}${q.change_pct.toFixed(2)}% היום`,
+      }));
+    }
+    if (q && q.state) {
+      const pre = q.state.startsWith('PRE') && q.pre_price != null;
+      const post = (q.state.startsWith('POST') || q.state === 'CLOSED') && q.post_price != null;
+      if (pre || post) {
+        const px = (pre ? q.pre_price : q.post_price) as number;
+        const pc = (pre ? q.pre_change_pct : q.post_change_pct) ?? 0;
+        this.priceLines.push(this.candle.createPriceLine({
+          price: px, color: '#b39ddb', lineWidth: 1, lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: `${pre ? 'פרה' : 'אפטר'} ${pc >= 0 ? '+' : ''}${pc.toFixed(2)}%`,
+        }));
+      }
+    }
     this.volume.setData(
       sortedBars.map((b) => ({
         time: b.time as Time,
@@ -593,97 +621,84 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
     }
 
     // ── Cup & handle, drawn the way he draws it ───────────────────────────
-    // Three marks, taken off his own charts (MMM 2026-08-09, KRE 07-01, ET 08-12):
-    //
-    //   1. a thin white ARC tracing the base, left rim → trough → right rim. He
-    //      draws it freehand; a parabola through those three points is the same
-    //      shape and is the only curve lightweight-charts can express (a line
-    //      series of synthesized points — there is no arc primitive).
-    //   2. a RED near-vertical arrow from the rim up to the target, which is the
-    //      one mark present on every cup chart he posts — MMM's is labelled
-    //      "59.36%", KRE's "35.55 (50.34%)", ET's "82.02%".
-    //   3. the percentage in a grey pill at the arrowhead. The percentage is the
-    //      point: it is what he says out loud, and the price alone does not say
-    //      how much money the move is worth.
-    //
-    // Drawing the target as a real series point (rather than only a price line)
-    // is also what makes it VISIBLE: autoscale then includes it, so a target 70%
-    // overhead brings the scale with it instead of rendering off-screen. His own
-    // charts are squashed for exactly this reason.
+    // Taken off his 2026 charts (PLTR 09-27, HPE 09-21, MU 09-23):
+    //   1. the RIM: a white line from the cup's left high to the price axis, its
+    //      price on the axis — not a full-width line, and no big outline of the cup;
+    //   2. a red DEPTH arrow from the cup's lowest low straight up to the rim, with
+    //      the depth in % (PLTR 76.76%, HPE 52.63%, MU 40.82%);
+    //   3. a red TARGET arrow in the empty space right of the last candle, from the
+    //      rim up by the same dollar depth, with the potential in % (43.24%,
+    //      36.38%, 28.84%) — the measured move he quotes;
+    //   4. green "smile" arcs under the cup's bottom and under the handle (HPE).
     if (tg.cup && a.overlays.cup) {
       const c = a.overlays.cup;
-      const bars = a.bars;
+      const bars = sortedBars;
+      const n = bars.length;
       const li = bars.findIndex((b) => b.time >= c.left_time);
       const ti = bars.findIndex((b) => b.time >= c.trough_time);
-      // the arc: a parabola pinned to (left rim, trough, right edge)
-      if (li >= 0 && ti > li && bars.length - 1 > ti) {
-        const ri = bars.length - 1;
-        const arc: { time: Time; value: number }[] = [];
-        for (let i = li; i <= ri; i++) {
-          // normalized position across the cup, -1 at the left rim, +1 at the right
-          const half = (ri - li) / 2;
-          const x = half > 0 ? (i - li - half) / half : 0;
-          arc.push({ time: bars[i].time as Time,
-                     value: c.trough + (c.rim - c.trough) * x * x });
+      const depth = c.rim - c.trough;
+      // future business days, for the arrow that lives right of the last candle
+      const bizAfter = (iso: string, k: number): string => {
+        const d = new Date(iso + 'T00:00:00Z');
+        let left = k;
+        while (left > 0) {
+          d.setUTCDate(d.getUTCDate() + 1);
+          const wd = d.getUTCDay();
+          if (wd !== 0 && wd !== 6) left--;
         }
-        const arcSeries = this.chart.addLineSeries({
-          color: 'rgba(255,255,255,0.62)', lineWidth: 2,
-          priceLineVisible: false, lastValueVisible: false,
-          crosshairMarkerVisible: false,
+        return d.toISOString().slice(0, 10);
+      };
+      const addLine = (pts: { time: string; value: number }[], color: string, width: 1 | 2 | 3,
+                       style: LineStyle = LineStyle.Solid, axis = false) => {
+        const s = this.chart!.addLineSeries({
+          color, lineWidth: width, lineStyle: style,
+          priceLineVisible: false, lastValueVisible: axis, crosshairMarkerVisible: false,
         });
-        arcSeries.setData(arc);
-        this.overlaySeries.push(arcSeries);
-      }
-      // the rim, as the band he draws across the top
-      this.priceLines.push(this.candle.createPriceLine({
-        price: c.rim, color: '#e0e0e0', lineWidth: 2, lineStyle: LineStyle.Solid,
-        axisLabelVisible: true, title: c.has_handle ? 'cup rim' : 'rim',
-      }));
-      if (c.handle_low) {
-        this.priceLines.push(this.candle.createPriceLine({
-          price: c.handle_low, color: '#b39ddb', lineWidth: 1,
-          lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: 'handle',
-        }));
-      }
-      // the arrow: rim → target over the last two bars, so it reads as vertical
-      const n = a.bars.length;
-      if (n >= 20) {
-        // Inset from the right edge, not pinned to the last bar. The label renders
-        // to the RIGHT of the arrowhead, so an arrow on the final bar has its
-        // percentage clipped by the price axis — "+48" instead of "+48%". His own
-        // charts inset it the same way, into the empty future space past the last
-        // candle. Four bars apart still reads as vertical across a 750-bar window.
-        const t0 = a.bars[n - 14].time as Time;
-        const t1 = a.bars[n - 10].time as Time;
-        const shaft = this.chart.addLineSeries({
-          color: '#ef5350', lineWidth: 2,
-          priceLineVisible: false, lastValueVisible: false,
-          crosshairMarkerVisible: false,
-        });
-        shaft.setData([{ time: t0, value: c.rim }, { time: t1, value: c.target_big }]);
-        this.overlaySeries.push(shaft);
-        // The label goes on the SHAFT, not on the candle series. `aboveBar` is
-        // relative to the series it belongs to, so a marker on the candles lands
-        // above today's price — the bottom of the arrow — while the number it is
-        // labelling is at the top. On the shaft it sits at the arrowhead, which is
-        // where he puts the pill.
-        shaft.setMarkers([{
-          time: t1, position: 'aboveBar', color: '#ef5350', shape: 'arrowUp',
-          text: `+${c.target_big_pct.toFixed(0)}%`,
-        }]);
-        if (c.target_small) {
-          const shaft2 = this.chart.addLineSeries({
-            color: '#ffb74d', lineWidth: 1, lineStyle: LineStyle.Dashed,
-            priceLineVisible: false, lastValueVisible: false,
-            crosshairMarkerVisible: false,
-          });
-          shaft2.setData([{ time: t0, value: c.rim },
-                          { time: t1, value: c.target_small }]);
-          shaft2.setMarkers([{
-            time: t1, position: 'aboveBar', color: '#ffb74d', shape: 'arrowUp',
-            text: `+${(c.target_small_pct ?? 0).toFixed(0)}%`,
-          }]);
-          this.overlaySeries.push(shaft2);
+        s.setData(pts.map((x) => ({ time: x.time as Time, value: x.value })));
+        this.overlaySeries.push(s);
+        return s;
+      };
+      if (li >= 0 && n >= 20 && depth > 0) {
+        const last = bars[n - 1].time;
+        const tA = bizAfter(last, 5), tB = bizAfter(last, 6);
+        this.futureTo = bizAfter(last, 30);
+        // 1. the rim, from the left high to past the last candle
+        addLine([{ time: bars[li].time, value: c.rim }, { time: this.futureTo, value: c.rim }], '#e0e0e0', 2,
+                LineStyle.Solid, true);
+        // 2. the depth arrow, at the low
+        if (ti > li && ti + 1 < n) {
+          const shaft = addLine([{ time: bars[ti].time, value: c.trough },
+                                 { time: bars[ti + 1].time, value: c.rim }], '#ef5350', 2);
+          shaft.setMarkers([{ time: bars[ti + 1].time as Time, position: 'aboveBar', color: '#ef5350',
+                              shape: 'arrowUp', text: `${(depth / c.trough * 100).toFixed(2)}%` }]);
+        }
+        // 3. the target arrow, in the future space
+        const tgt = c.target_big ?? (c.rim + depth);
+        const up = addLine([{ time: tA, value: c.rim }, { time: tB, value: tgt }], '#ef5350', 2);
+        up.setMarkers([{ time: tB as Time, position: 'aboveBar', color: '#ef5350', shape: 'arrowUp',
+                         text: `${((tgt / c.rim - 1) * 100).toFixed(2)}%` }]);
+        // 4. green smiles under the bottom and the handle
+        const smile = (ci: number, w: number, base: number, h: number) => {
+          const pts: { time: string; value: number }[] = [];
+          for (let i = Math.max(0, ci - w); i <= Math.min(n - 1, ci + w); i++) {
+            const x = (i - ci) / w;
+            pts.push({ time: bars[i].time, value: base + h * x * x });
+          }
+          if (pts.length >= 3) addLine(pts, '#00e676', 2);
+        };
+        if (ti > li) {
+          const w = Math.max(3, Math.round((n - 1 - li) * 0.12));
+          smile(ti, w, c.trough - depth * 0.05, depth * 0.10);
+        }
+        if (c.has_handle && c.handle_low && ti > 0) {
+          let hi = -1;
+          for (let i = n - 1; i > ti; i--) {
+            if (Math.abs(bars[i].low - c.handle_low) <= Math.abs(c.handle_low) * 0.002) { hi = i; break; }
+          }
+          if (hi > 0) {
+            const w2 = Math.max(2, Math.round((n - 1 - li) * 0.05));
+            smile(hi, w2, c.handle_low - depth * 0.04, depth * 0.06);
+          }
         }
       }
     }
@@ -918,7 +933,7 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
         const startIdx = sortedBars.length - visibleBars;
         this.chart.timeScale().setVisibleRange({
           from: sortedBars[startIdx].time as Time,
-          to: sortedBars[sortedBars.length - 1].time as Time,
+          to: (this.futureTo || sortedBars[sortedBars.length - 1].time) as Time,
         });
       } else {
         this.chart.timeScale().fitContent();

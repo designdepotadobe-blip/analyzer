@@ -1796,6 +1796,27 @@ button:disabled {
   line-height: 1.55;
   color: #eef1f6;
 }
+/* his pullback pattern — the dip and the floors it stopped on */
+.bk-pattern {
+  display: flex;
+  flex-direction: row-reverse;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #cfd5de;
+  background: #151a25;
+  border: 1px solid #2a2f3c;
+  border-right: 3px solid #787b86;
+  border-radius: 6px;
+}
+.bk-pattern.pb-good { border-right-color: #26a69a; }
+.bk-pattern.pb-warn { border-right-color: #ffa726; }
+.bk-pattern-tag { font-weight: 600; color: #eef1f6; white-space: nowrap; }
+.bk-pattern-txt { color: #b7bfcc; }
 .bk-badges { display: flex; flex-direction: row-reverse; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
 .bk-badge {
   display: inline-flex;
@@ -1958,3 +1979,17 @@ button:disabled {
   .bk-verdict-word { font-size: 19px; }
   .bk-call { font-size: 15px; }
 }
+
+/* how Micha reads it — one line per indicator */
+.bk-mread { list-style: none; margin: 6px 0 10px; padding: 0; font-size: 13px; line-height: 1.5; }
+.bk-mread li { display: flex; gap: 6px; align-items: baseline; padding: 1px 0; }
+.bk-mread .mr-ic { width: 14px; flex: 0 0 14px; text-align: center; font-weight: 700; }
+.bk-mread .mr-pos .mr-ic { color: #26a69a; }
+.bk-mread .mr-neg .mr-ic { color: #ef5350; }
+.bk-mread .mr-neu .mr-ic { color: #9e9e9e; }
+
+/* today's change + pre-market / after-hours beside the price */
+.title .day-chg, .title .ext-px { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.title .ext-px { font-weight: 500; opacity: 0.85; border: 1px solid #2a2e39; border-radius: 4px; padding: 1px 6px; }
+.title .up { color: #26a69a; }
+.title .down { color: #ef5350; }

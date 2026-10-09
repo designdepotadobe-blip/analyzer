@@ -301,15 +301,24 @@ export class RadarPageComponent implements OnInit, OnDestroy {
   private sortRows(rows: ScanHit[]): ScanHit[] {
     const key = this.sort;
     return [...rows].sort((a, b) => {
+      let d = 0;
       switch (key) {
-        case 'expectancy': return (b.expectancy_r ?? -9) - (a.expectancy_r ?? -9);
-        case 'risk': return (a.stop_atr ?? 1e9) - (b.stop_atr ?? 1e9);
-        case 'gain': return (b.gain_pct ?? -1e9) - (a.gain_pct ?? -1e9);
-        case 'rr': return (b.risk_reward ?? -1e9) - (a.risk_reward ?? -1e9);
-        case 'grade': return b.grade_score - a.grade_score;
-        default: return 0;
+        case 'expectancy': d = (b.expectancy_r ?? -9) - (a.expectancy_r ?? -9); break;
+        case 'risk': d = (a.stop_atr ?? 1e9) - (b.stop_atr ?? 1e9); break;
+        case 'gain': d = (b.gain_pct ?? -1e9) - (a.gain_pct ?? -1e9); break;
+        case 'rr': d = (b.risk_reward ?? -1e9) - (a.risk_reward ?? -1e9); break;
+        case 'grade': d = b.grade_score - a.grade_score; break;
       }
+      return d !== 0 ? d : this.preferCompare(a, b);
     });
+  }
+
+  /** Tie-break (owner, 2026-10-09): bigger company first, then closer to the 150. */
+  private preferCompare(a: ScanHit, b: ScanHit): number {
+    const size = (c: number | null) => !c ? 0 : c >= 2e11 ? 4 : c >= 5e10 ? 3 : c >= 1e10 ? 2 : c >= 2e9 ? 1 : 0;
+    const s = size(b.market_cap) - size(a.market_cap);
+    if (s !== 0) return s;
+    return Math.abs(a.sma150_dist_pct ?? 1e9) - Math.abs(b.sma150_dist_pct ?? 1e9);
   }
 
   /** Sector groups for a bucket, each already internally sorted, groups ordered by

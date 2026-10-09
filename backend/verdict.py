@@ -85,10 +85,6 @@ from config import (
     GRADE_BANDS,
     GRADE_BUDGET,
     FLOOR_150_PCT,
-    PULLBACK_LOOKBACK,
-    PULLBACK_MAX_RUN_ATR,
-    PULLBACK_MIN_ATR,
-    PULLBACK_RET_BARS,
     MA150_RECLAIM_GRACE_BARS,
     MIN_MARKET_CAP,
     NEAR_ATR,
@@ -113,6 +109,7 @@ from config import (
     REWARD_OFF_HIGH_REAL_PCT,
     REWARD_PRIZE_MAX,
     REWARD_ROOM_MAX,
+    RESISTANCE_OVERHEAD_PCT,
     TIME_EFFICIENCY_MAX,
     TIME_GLACIAL_DAYS,
     TIME_SLOW_DAYS,
@@ -225,6 +222,9 @@ class Signals:
     channel: Optional[dict] = None
     targets: list = field(default_factory=list)
     pattern: Optional[tuple] = None
+    # his pullback entry as a pattern — the floors the dip touched and how deep it
+    # was; see micha._pullback_entry
+    pullback: Optional[dict] = None
     recent_low: Optional[float] = None    # lowest low of the last few bars
     # richer readings, used by reasons.py to argue the call
     vol_detail: Optional[dict] = None
@@ -232,6 +232,48 @@ class Signals:
     rel_strength: Optional[dict] = None
     pattern_detail: Optional[dict] = None
     level_context: Optional[dict] = None
+
+
+def extended_hours(micha: dict, quote: dict, last: float) -> None:
+    """
+    Pre-market / after-hours: the price the reader sees before the bell is not the
+    close the chart ends on. Said out loud at the top of the read — and on the call
+    when it already crossed the breakout price or the stop, because that changes
+    what he would say ("בפרה-מרקט כבר מעל 104 — מי שמחכה לפריצה, היא קורית").
+    """
+    st = (quote or {}).get('state') or ''
+    if st.startswith('PRE'):
+        px, ch, he_w, en_w = quote.get('pre_price'), quote.get('pre_change_pct'), 'בפרה-מרקט', 'Pre-market'
+    elif st.startswith('POST') or st == 'CLOSED':
+        px, ch, he_w, en_w = quote.get('post_price'), quote.get('post_change_pct'), 'באפטר-מרקט', 'After hours'
+    else:
+        return
+    if not px or not last:
+        return
+    if ch is None:
+        ch = (px / last - 1) * 100
+    if abs(px / last - 1) < 0.001:
+        return
+    tone, en, he = 'neu', f'{en_w} {px:.2f} ({ch:+.1f}%)', f'{he_w} {px:.2f} ({ch:+.1f}%)'
+    trig = (micha.get('trigger') or {}).get('price')
+    opts = micha.get('options') or []
+    stop = opts[0].get('stop') if opts else None
+    crossed = None
+    if trig and last < trig <= px:
+        tone, crossed = 'pos', True
+        en += f' — already above the breakout price {trig:.2f}; the break counts only on a close above it'
+        he += f' — כבר מעל מחיר הפריצה {trig:.2f}; הפריצה נספרת רק בסגירה מעליו'
+    elif stop and px <= stop < last:
+        tone, crossed = 'neg', True
+        en += f' — under the stop {stop:.2f}'
+        he += f' — מתחת לסטופ {stop:.2f}'
+    rep = micha.setdefault('report', {})
+    rep.setdefault('micha_read', []).insert(0, {'tone': tone, 'en': en, 'he': he})
+    rep['extended'] = {'session': 'pre' if st.startswith('PRE') else 'post', 'price': px,
+                       'change_pct': ch, 'crossed': bool(crossed)}
+    if crossed:
+        rep['call_he'] = (rep.get('call_he') or '') + f' ⚠ {he}.'
+        rep['call'] = (rep.get('call') or '') + f' ⚠ {en}.'
 
 
 def drawn_line(overlays, kind: str) -> Optional[dict]:
@@ -398,7 +440,15 @@ class Judgement:
                                        small_cap, earn)
         confirmation = _confirmation(breakdown)
         macro_target = _macro_target(breakdown)
-        alert = self._alert(ctx, s, trigger, action)
+        # When a DRAWN resistance line right above the price is what holds the entry
+        # back (see `_line_overhead`), that line is the price the reader waits for —
+        # the alert and the call name it, even when the engine's own trigger sits
+        # farther up. The grade keeps reading the engine's trigger.
+        call_trigger = trigger
+        ov = self._line_overhead(ctx, s) if action == 'wait_trigger' else None
+        if ov and (not trigger or ov['price'] < float(trigger['price']) - 1e-9):
+            call_trigger = self._overhead_trigger(ctx, ov)
+        alert = self._alert(ctx, s, call_trigger, action)
         # ── The grade, by the book (see book.py) ──────────────────────────────
         # The letter, the 0-100 score and the 1-10 rating every consumer reads are
         # the book's. `_grade`'s four-axis breakdown above is kept intact as
@@ -410,7 +460,7 @@ class Judgement:
         grade = book['letter']
         if_break = self._grade_if_break(ctx, s, state, trigger, options, grade,
                                         breakdown, small_cap, earn, book)
-        report = self._report(ctx, s, state, action, trigger, hold, options, grade,
+        report = self._report(ctx, s, state, action, call_trigger, hold, options, grade,
                               breakdown, earn, small_cap, alert)
 
         # ── The plan in R space ───────────────────────────────────────────────
@@ -887,8 +937,8 @@ class Judgement:
             # returns. Real information for the reader; not a predictive edge.
             'wall': wall,
             'distance_atr': jnum(d_atr), 'distance_pct': jnum(d_pct), 'tier': tier,
-            'label': f"break above {p:.2f} ({en}) — {d_pct:.1f}% / {d_atr:.1f} ATR away",
-            'label_he': f"פריצה מעל {p:.2f} ({he}) — {d_pct:.1f}% / {d_atr:.1f} ATR",
+            'label': f"break above {p:.2f} ({en}) — {d_atr:.1f} ATR away",
+            'label_he': f"פריצה מעל {p:.2f} ({he}) — {d_atr:.1f} ATR",
             # the nearest REAL wall, whether or not it's the price actually being
             # quoted above — see the comment where this is built. None when the
             # quoted trigger already IS the nearest real wall (nothing further
@@ -953,8 +1003,8 @@ class Judgement:
 
         d_en, d_he = self._days_phrase(d)
         tp = trigger['price']
-        label = (f"{d_en} from {tp:.2f} ({trigger['what']}, +{pct:.1f}%) — worth an alert")
-        label_he = (f"{d_he} מ-{tp:.2f} ({trigger['what_he']}, +{pct:.1f}%) — שווה להציב התראה")
+        label = (f"{d_en} from {tp:.2f} ({trigger['what']}, {d:.1f} ATR) — worth an alert")
+        label_he = (f"{d_he} מ-{tp:.2f} ({trigger['what_he']}, {d:.1f} ATR) — שווה להציב התראה")
         if gate:
             label += f"; the 150MA at {gate['price']:.2f} is still the real gate"
             label_he += f"; ממוצע 150 ב-{gate['price']:.2f} עדיין השער האמיתי"
@@ -1016,7 +1066,6 @@ class Judgement:
     def _state(self, ctx, s: Signals, trigger, hold) -> str:
         price, atr = ctx.price, ctx.atr
         vol_ok = s.vol.get('trend') != 'falling' or s.vol.get('falling_streak', 0) <= 2
-        rl_broke = bool(s.dir_change and s.dir_change.get('rising_lows_broke'))
 
         # ── BEARISH TO BULLISH — the turn, confirmed ──────────────────────────
         # "שינוי כיוון" with all four dictated stages done, the breakout included.
@@ -1081,11 +1130,12 @@ class Judgement:
         # to hold; losing IT is what ends the setup.
         on_floor = self._floor(ctx, s) is not None and (
             self._floor(ctx, s)[1] != 'ma150' or ctx.price >= ctx.sma150 * 0.99)
+        # Losing the rising-lows line on its own no longer ends the setup. Measured on
+        # 11,337 engine snapshots of his tickers (2021-26): the 10 sessions after a
+        # rising-lows break returned +1.3% over the next 20 vs the same volatility third
+        # (t 3.1) — a dip, not a breakdown. What ends it is the stop: losing the level.
         if (s.lost_level and not ctx.above_150 and not turned and not recovering
                 and not on_floor):
-            return 'broken'
-        if (rl_broke and not ctx.above_150 and s.trend != 'uptrend'
-                and not turned and not recovering and not on_floor):
             return 'broken'
 
         # A base sitting RIGHT AT the 150, with the shorter-term structure already
@@ -1182,28 +1232,31 @@ class Judgement:
         rc = s.ma150_reclaim or {}
         ma_ok = (getattr(ctx, 'ma150_dir', 'unknown') != 'falling'
                  or (rc.get('bars') is not None and rc['bars'] <= MA150_RECLAIM_GRACE_BARS))
+        #
+        # Since 2026-10-02 "on a floor, came down to it" is read as his PATTERN
+        # (`_pullback_pattern`): a real dip that touched a floor, closed back above
+        # it and has not bounced off it yet. Replayed through the full pipeline on
+        # 2,976 random universe days (2025-01 → 2026-08): "enter" on 8.3% of days
+        # instead of 11.8%, and those entries beat the same stock's ±30-day
+        # neighbours by +1.5% at 20 sessions (was +0.2%) and +4.0% at 40 (was
+        # +2.0%, t 3.5). The 130 entries it stopped making trailed by -2.3% (t -2.5).
         if (ctx.above_150 and ma_ok and s.candle.get('found') and vol_ok
-                and self._at_floor(ctx, s) and self._came_down_to_it(ctx)):
+                and self._pullback_pattern(s)):
             if self._is_value(ctx, s):
                 return 'value_pullback'
             return 'buyers_at_level'
 
+        # Only his literal rule is left: price coiled right under the line he would
+        # name (≤1 ATR) — the entry is the break. The wider veto (a touch-tested wall
+        # 1-2.5 ATR overhead, or one hiding behind the quoted trigger) assumed the wall
+        # turns price back. Measured on 11,337 snapshots / 117k break trades of his
+        # tickers 2021-26 vs placebo lines at the same distance: lines hold at the
+        # placebo rate (drawn 50% vs 50%), trades breaking a real line do no better
+        # (R 0.13 vs 0.10), and on reaching the next resistance price dropped 1 ATR
+        # first 45.9% of the time vs 45.8% at a placebo level.
         has_real_wall = bool(trigger and (trigger.get('wall') or {}).get('touches'))
-        # A real HORIZONTAL wall doesn't have to be the thing actually NAMED as
-        # the trigger to matter here — see `_trigger`'s own `nearest_wall`
-        # (level-kind only; see its own comment for why trendlines are left out
-        # for now): a cup rim, the ATH, a flag top or the 150MA can legitimately
-        # be the QUOTED price (none of them carry touch history of their own,
-        # correctly) while a well-tested level sits just behind it, at the same
-        # at_hand/near distance this rule already treats as too close to call an
-        # entry. Found from real analyst feedback: ES graded ENTER with a
-        # 20-touch, retested resistance level 0.8 ATR behind its quoted cup rim
-        # — invisible to `has_real_wall` alone because it was never the price
-        # actually being quoted.
-        nw = (trigger or {}).get('nearest_wall')
-        nearby_real_wall = has_real_wall or bool(nw and nw.get('tier') in ('at_hand', 'near'))
-        if (trigger and trigger.get('tier') in ('at_hand', 'near') and trigger.get('price')
-                and nearby_real_wall):
+        if (trigger and trigger.get('tier') == 'at_hand' and trigger.get('price')
+                and has_real_wall):
             atr_eps = (ctx.atr * 0.01) if ctx.atr else 0.0
             if float(trigger['price']) > price + atr_eps:
                 return 'at_trigger'
@@ -1228,7 +1281,11 @@ class Judgement:
         # BUYERS AT THE LEVEL — "כניסת קונים באיזור הממוצע" (AVGO), "קפצה על קו
         # תמיכה/התנגדות מהעבר + נכנס ווליום + נר קונים חזק" (LMND). An entry in its own
         # right, no breakout required.
-        if ctx.above_150 and at_floor and s.candle.get('found') and vol_ok:
+        # The same pattern gate as the 150-method branch above: a buyers candle merely
+        # somewhere above a support is not his entry (this state, gated on reach
+        # alone, trailed its own neighbours by -1.3% over 20 sessions).
+        if (ctx.above_150 and at_floor and s.candle.get('found') and vol_ok
+                and self._pullback_pattern(s)):
             return 'buyers_at_level'
 
         # VALUE — the deep pullback back to the average. "מה זה מחיר טוב? קרוב לממוצע."
@@ -1396,16 +1453,17 @@ class Judgement:
         """One phrase for the headroom row, worded to match the sign of what it scored."""
         if not hr or not hr.get('price'):
             return 'אין התנגדות משמעותית מעל' if he else 'no hard resistance overhead'
-        a, p, t = hr['atr'], hr['price'], hr.get('touches') or 0
+        # room is money: shown in %, not ATR (owner, 2026-10-09)
+        q, p = hr.get('pct') or 0.0, hr['price']
         lvl = hr.get('level')
         if lvl == 'tight':
-            return (f"רמה עם {t} נגיעות רק {a:.1f} ATR מעל ({p:.2f})" if he
-                    else f"a {t}-touch wall only {a:.1f} ATR above ({p:.2f})")
+            return (f"קו התנגדות ב-{p:.2f}, רק {q:.1f}% מעל" if he
+                    else f"a resistance line at {p:.2f}, only {q:.1f}% above")
         if lvl == 'close':
-            return (f"רק {a:.1f} ATR עד הרמה הבאה ({p:.2f})" if he
-                    else f"only {a:.1f} ATR to the next wall ({p:.2f})")
-        return (f"פנוי {a:.1f} ATR עד {p:.2f}" if he
-                else f"clear for {a:.1f} ATR to {p:.2f}")
+            return (f"רק {q:.1f}% עד קו ההתנגדות הבא ({p:.2f})" if he
+                    else f"only {q:.1f}% to the next resistance line ({p:.2f})")
+        return (f"פנוי {q:.1f}% עד {p:.2f}" if he
+                else f"clear for {q:.1f}% to {p:.2f}")
 
     @staticmethod
     def _break_strength(s: Signals, atr: float) -> Optional[dict]:
@@ -1493,16 +1551,9 @@ class Judgement:
 
 
     @staticmethod
-    def _came_down_to_it(ctx) -> bool:
-        """A pullback onto the floor, not a run up to the ceiling — see `_state`."""
-        atr = ctx.atr
-        if not atr or ctx.M < PULLBACK_LOOKBACK + 1:
-            return False
-        hi = float(max(ctx.highs[-PULLBACK_LOOKBACK:]))
-        pulled = (hi - ctx.price) / atr
-        ref = float(ctx.closes[-1 - PULLBACK_RET_BARS])
-        ret_atr = ((ctx.price / ref - 1) * 100 / ctx.atr_pct) if (ref and ctx.atr_pct) else 0.0
-        return pulled >= PULLBACK_MIN_ATR or ret_atr <= PULLBACK_MAX_RUN_ATR
+    def _pullback_pattern(s: Signals) -> bool:
+        """A real dip, still on one of his floors — see micha._pullback_entry."""
+        return bool((s.pullback or {}).get('ok'))
 
     @staticmethod
     def _only_floor_is_falling_150(ctx, s: Signals) -> bool:
@@ -1859,6 +1910,41 @@ class Judgement:
                  and (price - g['near']) <= GAP_STOP_MAX_ATR * (atr or 0)]
         return max(cands) if cands else None
 
+    # ── 5b. A drawn resistance line right above the price ──────────────────────
+
+    @staticmethod
+    def _line_overhead(ctx, s: Signals) -> Optional[dict]:
+        """The nearest line the chart DRAWS whose band starts within
+        RESISTANCE_OVERHEAD_PCT above price, or None. Measured in % — it is the room
+        the trade has before its first resistance, a money question, not ATR."""
+        price = ctx.price
+        best = None
+        for lv in (s.overlays or {}).get('levels') or []:
+            lo = lv.get('zone_bottom') or lv.get('price')
+            hi = lv.get('zone_top') or lv.get('price')
+            if not lo or lo <= price * 1.0005:
+                continue
+            pct = (lo / price - 1) * 100
+            if pct <= RESISTANCE_OVERHEAD_PCT and (best is None or lo < best['bottom']):
+                best = {'bottom': float(lo), 'price': float(hi), 'pct': pct,
+                        'touches': lv.get('touches')}
+        return best
+
+    @staticmethod
+    def _overhead_trigger(ctx, ov: dict) -> dict:
+        """That line in the trigger's own shape, so the alert and the call can name it."""
+        p, price, atr = ov['price'], ctx.price, ctx.atr
+        d_atr = (p - price) / atr if atr else 0.0
+        tier = ('at_hand' if d_atr <= TRIGGER_AT_HAND_ATR else
+                'near' if d_atr <= TRIGGER_NEAR_ATR else 'moderate')
+        return {'price': jnum(p), 'kind': 'level', 'what': 'resistance line', 'what_he': 'קו התנגדות',
+                'floor': jnum(ov['bottom']), 'wall': None,
+                'distance_atr': jnum(d_atr), 'distance_pct': jnum((p / price - 1) * 100), 'tier': tier,
+                'overhead_pct': jnum(ov['pct']),
+                'label': f"break above {p:.2f} (resistance line) — {d_atr:.1f} ATR away",
+                'label_he': f"פריצה מעל {p:.2f} (קו התנגדות) — {d_atr:.1f} ATR",
+                'nearest_wall': None}
+
     # ── 6. The action ─────────────────────────────────────────────────────────
 
     @staticmethod
@@ -1880,7 +1966,7 @@ class Judgement:
         # תמיכה או אפילו שבוע שלא תעשה כלום" (NOW, 06-01). The run INTO the entry was
         # the move; this used to cost five structure points and still say "enter".
         # Same shape as `stretched`: it blocks chasing, never holding.
-        if entering and s.ext.get('ran_hot'):
+        if entering and (s.ext.get('ran_hot') or s.ext.get('ran_5d')):
             return 'wait_pullback'
         # The same "don't chase" idea, measured a different way: distance from the
         # level THIS break actually happened at, not from the 150/200MA. `stretched`
@@ -1897,6 +1983,10 @@ class Judgement:
         if (entering and s.break_level and ctx.atr
                 and (ctx.price - s.break_level) / ctx.atr > CHASE_PAST_TRIGGER_ATR):
             return 'wait_pullback'
+        # A drawn resistance line a hair above the price: not an entry under it — the
+        # break above it is (owner's rule, in %; see RESISTANCE_OVERHEAD_PCT).
+        if entering and Judgement._line_overhead(ctx, s):
+            return 'wait_trigger'
         if entering:
             return 'enter'
         return {
@@ -2058,9 +2148,12 @@ class Judgement:
                               f'the breakout, then the retest',
                               f'קונים נכנסו על הקו שהיא פרצה ({lvl:.2f}) — '
                               f'הפריצה, ואז בדיקת התמיכה'))
-            cands.append((EVENT_BOUNCE, 'bounce', None,
-                          s.candle.get('label') or 'buyers stepped in at the level',
-                          s.candle.get('label_he') or 'קונים נכנסו על הרמה'))
+            pb = s.pullback or {}
+            c_en = s.candle.get('label') or 'buyers stepped in at the level'
+            c_he = s.candle.get('label_he') or 'קונים נכנסו על הרמה'
+            if pb.get('floors'):
+                c_en, c_he = f"{pb['en']} — {c_en.lower()}", f"{pb['he']} — {c_he}"
+            cands.append((EVENT_BOUNCE, 'bounce', None, c_en, c_he))
         if s.capitulation:
             cands.append((EVENT_CAPITULATION, 'capitulation', None,
                           'a high-volume wash-out then stabilizing — the flush that '
@@ -2141,8 +2234,8 @@ class Judgement:
         if ceiling is not None and pts > ceiling:
             pts, capped = float(ceiling), True
             tp, tpc = trigger['price'], trigger['distance_pct']
-            en += f", but the wall that caps this move — {tp:.2f} — is still {tpc:+.0f}% overhead"
-            he += f", אבל הרמה שחוסמת את המהלך — {tp:.2f} — עדיין {tpc:+.0f}% מעל"
+            en += f", but the resistance line at {tp:.2f} is still {tpc:+.1f}% overhead"
+            he += f", אבל קו ההתנגדות ב-{tp:.2f} עדיין {tpc:+.1f}% מעל"
         if state in ('broken', 'avoid'):
             pts = min(pts, 5.0)
         return {'points': pts, 'key': key, 'age': age, 'en': en, 'he': he, 'capped': capped}
@@ -2464,22 +2557,22 @@ class Judgement:
             if lvl == 'tight':
                 headroom = -HEADROOM_MAX
                 note('structure', -HEADROOM_MAX,
-                     f"a {hr['touches']}-touch wall at {hr['price']:.2f} is only "
-                     f"{hr['atr']:.1f} ATR overhead — no room to run",
-                     f"רמה עם {hr['touches']} נגיעות ב-{hr['price']:.2f} רק "
-                     f"{hr['atr']:.1f} ATR מעל — אין מקום לרוץ")
+                     f"a resistance line at {hr['price']:.2f} is only "
+                     f"{hr['pct']:.1f}% overhead — no room to run",
+                     f"קו התנגדות ב-{hr['price']:.2f} רק "
+                     f"{hr['pct']:.1f}% מעל — אין מקום לרוץ")
             elif lvl == 'close':
                 headroom = -HEADROOM_MAX / 2
                 note('structure', -HEADROOM_MAX / 2,
-                     f"the next wall at {hr['price']:.2f} is {hr['atr']:.1f} ATR up — "
+                     f"the next resistance line at {hr['price']:.2f} is {hr['pct']:.1f}% up — "
                      f"the move is cramped",
-                     f"הרמה הבאה ב-{hr['price']:.2f} במרחק {hr['atr']:.1f} ATR — "
+                     f"קו ההתנגדות הבא ב-{hr['price']:.2f} במרחק {hr['pct']:.1f}% — "
                      f"מעט מקום למהלך")
             elif lvl == 'clear' and live:
                 headroom = HEADROOM_MAX / 2
                 note('structure', HEADROOM_MAX / 2,
-                     f"clear to {hr['price']:.2f} — {hr['atr']:.1f} ATR of room",
-                     f"פנוי עד {hr['price']:.2f} — {hr['atr']:.1f} ATR של מקום")
+                     f"clear to {hr['price']:.2f} — {hr['pct']:.1f}% of room",
+                     f"פנוי עד {hr['price']:.2f} — {hr['pct']:.1f}% של מקום")
             elif lvl == 'open' and live:
                 headroom = HEADROOM_MAX
                 note('structure', HEADROOM_MAX,
@@ -2648,9 +2741,9 @@ class Judgement:
             # (median 0.99 vs 0.98 ATR), and a term big enough to separate them
             # would have pushed well-built charts toward F.
             cap('no_room',
-                f"a {hr['touches']}-touch wall {hr['atr']:.1f} ATR above the entry "
+                f"a resistance line {hr['pct']:.1f}% above the entry "
                 f"({hr['price']:.2f}) — no room to run yet",
-                f"רמה עם {hr['touches']} נגיעות {hr['atr']:.1f} ATR מעל הכניסה "
+                f"קו התנגדות {hr['pct']:.1f}% מעל הכניסה "
                 f"({hr['price']:.2f}) — אין עדיין מקום לרוץ", 3)
         # Symmetric to `no_room`: that one reserves A for a chart with somewhere to
         # go WHEN a wall is what blocks it; this reserves A for a chart with
@@ -3040,19 +3133,16 @@ class Judgement:
         elif action == 'wait_trigger' and trigger:
             _stop_en = (f" Stop {best['stop']:.2f}." if best and best.get('stop') else "")
             _stop_he = (f" סטופ {best['stop']:.2f}." if best and best.get('stop') else "")
-            if s.break_level:
-                # This is the case the near-tier wall veto produces (see `_state`):
-                # a REAL break just happened — `s.break_level` only holds a fresh one
-                # — but a well-defended wall sits close enough overhead that it isn't
-                # a clean trigger yet. Saying only "break above X" here would erase
-                # what actually happened and read identically to a chart that has done
-                # nothing at all. Owner's ask: make this read as a WARNING — it broke
-                # something real, AND there is a hard wall right there — not as the
-                # generic "still coiled" copy.
-                call = (f"Broke {s.break_level:.2f}, but a hard wall is close — wait "
-                        f"for {trigger['price']:.2f} too.{_stop_en}")
-                call_he = (f"פרצה את {s.break_level:.2f}, אבל קיר קשה קרוב — להמתין "
-                           f"גם ל-{trigger['price']:.2f}.{_stop_he}")
+            d_atr = trigger.get('distance_atr')
+            atr_en = f" ({d_atr:.1f} ATR away)" if d_atr is not None else ''
+            atr_he = f" ({d_atr:.1f} ATR)" if d_atr is not None else ''
+            if trigger.get('overhead_pct') is not None:
+                # owner: name the resistance line and wait — no "broke X but a wall at Y"
+                op = trigger['overhead_pct']
+                call = (f"Resistance line at {trigger['price']:.2f} (+{op:.1f}%) right above — "
+                        f"wait for the break above it{atr_en}.{_stop_en}")
+                call_he = (f"קו התנגדות ב-{trigger['price']:.2f} (+{op:.1f}%) ממש מעל — "
+                           f"מחכים לפריצה מעליו{atr_he}.{_stop_he}")
             else:
                 # His own shape, and his own order: the price FIRST, then the refusal
                 # to act before it, then the stop — "פריצה משמעותית מעל 21.45$", "מעל
@@ -3061,16 +3151,21 @@ class Judgement:
                 # "אין כניסה עדיין — התראה על…", which is alert-console language: it
                 # buries the one number he always leads with and describes the
                 # mechanism instead of the trade.
-                call = (f"Break above {trigger['price']:.2f} — no trade before that."
+                call = (f"Break above {trigger['price']:.2f}{atr_en} — no trade before that."
                         f"{_stop_en}")
-                call_he = (f"פריצה מעל {trigger['price']:.2f} — לפני זה אין טרייד."
+                call_he = (f"פריצה מעל {trigger['price']:.2f}{atr_he} — לפני זה אין טרייד."
                            f"{_stop_he}")
         elif action == 'wait_buyers':
             call = "It reached the zone — wait for a buyers' candle before entering."
             call_he = "הגיעה לאזור — להמתין לנר קונים לפני כניסה."
-        elif action == 'wait_pullback' and s.ext.get('ran_hot') and not s.ext.get('stretched'):
+        elif (action == 'wait_pullback' and (s.ext.get('ran_hot') or s.ext.get('ran_5d'))
+              and not s.ext.get('stretched')):
             # his words for it: a run into the entry, not a distance from the average
-            r_en, r_he = bk.run_phrase(s.ext)
+            if s.ext.get('ran_hot'):
+                r_en, r_he = bk.run_phrase(s.ext)
+            else:
+                r5 = s.ext.get('run5_pct') or 0
+                r_en, r_he = f'up {r5:+.0f}% in 5 days', f'עלתה {r5:+.0f}% ב-5 ימים'
             at_en = f" around {hold['price']:.2f}" if hold else ''
             at_he = f" סביב {hold['price']:.2f}" if hold else ''
             call = (f"{r_en[0].upper()}{r_en[1:]} — too late to chase. Wait for a support "
@@ -3129,6 +3224,8 @@ class Judgement:
 
         return {
             'call': call, 'call_he': call_he,
+            # how he reads THIS chart, indicator by indicator — see _micha_read
+            'micha_read': self._micha_read(ctx, s, trigger, action),
             'read': read, 'read_he': read_he,
             'watch': watch, 'watch_he': watch_he,
             'why': why,
@@ -3136,6 +3233,206 @@ class Judgement:
             'invalidation_he': hold['label_he'] if hold else None,
             'warnings': warn,
         }
+
+    @staticmethod
+    def _micha_read(ctx, s: Signals, trigger, action) -> list:
+        """
+        Everything he would point at on this chart, in his words, one line each:
+        the 150 and the size, the breakout price (distance in ATR), the next
+        resistance line (room in %), the falling-highs / rising-lows lines, the
+        channel, the cup / cup & handle, other patterns, the Fibonacci pullback,
+        buyers, volume, the run, gaps and the report. Lines say where price is;
+        the call above is the decision. tone: pos / neg / neu.
+        """
+        out = []
+        price, atr = ctx.price, ctx.atr
+        ov = s.overlays or {}
+
+        def add(tone, en, he):
+            out.append({'tone': tone, 'en': en, 'he': he})
+
+        def pct(x):
+            return (x / price - 1) * 100
+
+        # ── the 150 ────────────────────────────────────────────────────────────
+        if ctx.sma150:
+            d = (price / ctx.sma150 - 1) * 100
+            md = getattr(ctx, 'ma150_dir', '')
+            dir_he = {'rising': 'העולה', 'flat': 'השטוח', 'falling': 'היורד'}.get(md, '')
+            dir_en = {'rising': 'rising', 'flat': 'flat', 'falling': 'falling'}.get(md, '')
+            if ctx.above_150 and md == 'falling':
+                add('neu', f'Above the 150MA ({d:+.1f}%), but the average is falling',
+                    f'מעל ממוצע 150 ({d:+.1f}%), אבל הממוצע יורד')
+            elif ctx.above_150 and d > 15:
+                add('neg', f'Above the {dir_en} 150MA but far from it ({d:+.0f}%) — no chasing',
+                    f'מעל ממוצע 150 {dir_he} אבל רחוקה ממנו ({d:+.0f}%) — לא רודפים')
+            elif ctx.above_150:
+                add('pos', f'Above the {dir_en} 150MA and close to it ({d:+.1f}%)',
+                    f'מעל ממוצע 150 {dir_he} וקרובה אליו ({d:+.1f}%)')
+            else:
+                add('neg', f'Under the 150MA ({d:+.1f}%) — he only buys above the line',
+                    f'מתחת לממוצע 150 ({d:+.1f}%) — קונים רק מעל הקו')
+
+        # ── size ───────────────────────────────────────────────────────────────
+        cap = ctx.market_cap
+        if cap:
+            b = cap / 1e9
+            if b < 1:
+                add('neg', f'Under $1B (${b:.2f}B) — outside the method',
+                    f'מתחת למיליארד דולר (${b:.2f}B) — מחוץ לשיטה')
+            elif b < 10:
+                add('neu', f'Mid-size company (${b:.1f}B)', f'חברה בינונית (${b:.1f}B)')
+            else:
+                add('pos', f'Big company (${b:,.0f}B)', f'חברה גדולה (${b:,.0f}B)')
+
+        # ── the breakout price (distance in ATR) / a fresh break ───────────────
+        trig_p = None
+        if trigger and trigger.get('price') and float(trigger['price']) > price:
+            trig_p = float(trigger['price'])
+            da = trigger.get('distance_atr')
+            w_en = '' if trigger['what'] == 'the breakout price' else f" ({trigger['what']})"
+            w_he = '' if trigger['what_he'] == 'מחיר הפריצה' else f" ({trigger['what_he']})"
+            add('neu', f"Breakout price {trig_p:.2f}{w_en} — {da:.1f} ATR above",
+                f"מחיר הפריצה {trig_p:.2f}{w_he} — {da:.1f} ATR מעל")
+        elif s.break_level and s.break_age is not None and s.break_age <= 10:
+            add('pos', f'Broke {s.break_level:.2f} {s.break_age} sessions ago and holds above it',
+                f'פרצה את {s.break_level:.2f} לפני {s.break_age} ימים ושומרת מעליו')
+
+        # ── the next resistance line (room in %) ───────────────────────────────
+        above = []
+        for lv in ov.get('levels') or []:
+            lo = lv.get('zone_bottom') or lv.get('price')
+            hi = lv.get('zone_top') or lv.get('price')
+            if lo and lo > price * 1.0005:
+                above.append((float(lo), float(hi or lo)))
+        if above:
+            lo_, hi_ = min(above)
+            q = pct(lo_)
+            band = f'{lo_:.2f}–{hi_:.2f}' if hi_ > lo_ * 1.003 else f'{lo_:.2f}'
+            same_as_trigger = trig_p is not None and lo_ * 0.995 <= trig_p <= hi_ * 1.005
+            tone = 'neg' if q <= RESISTANCE_OVERHEAD_PCT else 'neu'
+            if same_as_trigger:
+                # the breakout price IS this line: one line, room in %
+                out[-1] = {'tone': tone, 'en': out[-1]['en'] + f' — resistance band {band}, +{q:.1f}% away',
+                           'he': out[-1]['he'] + f' — קו ההתנגדות {band}, +{q:.1f}%'}
+            else:
+                add(tone, f'Next resistance line {band} (+{q:.1f}%)', f'קו ההתנגדות הבא {band} (+{q:.1f}%)')
+        elif s.ath and price >= s.ath * 0.98:
+            add('pos', 'At its all-time high — no resistance line above', 'בשיא כל הזמנים — אין קו התנגדות מעל')
+        else:
+            add('pos', 'No resistance line drawn above', 'אין קו התנגדות מסומן מעל')
+
+        # ── trendlines ─────────────────────────────────────────────────────────
+        fh = drawn_line(ov, 'falling_highs')
+        if fh:
+            v = (fh.get('p2') or {}).get('price')
+            if fh.get('broke') or (v and v < price):
+                add('pos', 'Broke the falling-highs line', 'פרצה את קו השיאים היורדים')
+            elif v:
+                add('neu', f'Under the falling-highs line (~{v:.2f}) — its break is the trigger',
+                    f'מתחת לקו השיאים היורדים (~{v:.2f}) — הפריצה שלו היא הטריגר')
+        rl = drawn_line(ov, 'rising_lows')
+        if rl:
+            if rl.get('broke'):
+                add('neu', 'Below the rising-lows line — on its own not an exit; the stop decides',
+                    'מתחת לקו השפלים העולים — לבד זה לא סימן יציאה; הסטופ מחליט')
+            else:
+                n = rl.get('touches') or 0
+                add('pos', f'Above the rising-lows line ({n} touches)', f'מעל קו השפלים העולים ({n} נגיעות)')
+
+        # ── channel ────────────────────────────────────────────────────────────
+        ch = s.channel
+        if ch:
+            k, z = ch.get('kind'), ch.get('zone')
+            lo_, up_ = ch.get('lower'), ch.get('upper')
+            if k == 'rising':
+                where = {'bottom': ('at the bottom', 'בתחתית'), 'top': ('at the top', 'בחלק העליון'),
+                         'middle': ('in the middle', 'באמצע')}.get(z, ('in', 'בתוך'))
+                tail_en = tail_he = ''
+                if z != 'top' and up_ and up_ > price:
+                    tail_en = f' — the upper rail {up_:.2f} (+{pct(up_):.1f}%) is the target'
+                    tail_he = f' — הרף העליון {up_:.2f} (+{pct(up_):.1f}%) הוא היעד'
+                add('neu', f'{where[0].capitalize()} of a rising channel{tail_en}',
+                    f'{where[1]} תעלה עולה{tail_he}')
+            else:
+                if up_ and price > up_:
+                    add('pos', f'Broke out of the falling channel (upper rail {up_:.2f})',
+                        f'פרצה את התעלה היורדת (הרף העליון {up_:.2f})')
+                elif z == 'upper_rail' and up_:
+                    add('neu', f'Pressing the upper rail of a falling channel ({up_:.2f}) — its break is the trigger',
+                        f'לוחצת על הרף העליון של תעלה יורדת ({up_:.2f}) — הפריצה שלו היא הטריגר')
+                elif z == 'lower' and lo_:
+                    add('neu', f'At the bottom of a falling channel ({lo_:.2f})', f'בתחתית תעלה יורדת ({lo_:.2f})')
+                else:
+                    add('neu', 'Inside a falling channel', 'בתוך תעלה יורדת')
+
+        # ── cup / cup & handle ─────────────────────────────────────────────────
+        cup = ov.get('cup')
+        if cup:
+            name_en, name_he = ('Cup & handle', 'קאפ אנד הנדל') if cup.get('has_handle') else ('Cup', 'קאפ')
+            rim, tb = cup['rim'], cup.get('target_big')
+            pot_en = pot_he = ''
+            if tb and tb > price:
+                pot_en = f', potential +{pct(tb):.0f}% to {tb:.2f}'
+                pot_he = f', פוטנציאל +{pct(tb):.0f}% עד {tb:.2f}'
+            if price >= rim:
+                add('pos', f'{name_en} — broke the rim {rim:.2f}{pot_en}', f'{name_he} — פרצה את השפה {rim:.2f}{pot_he}')
+            else:
+                add('pos', f'{name_en} — rim {rim:.2f} ({(rim - price) / atr:.1f} ATR above){pot_en}',
+                    f'{name_he} — השפה ב-{rim:.2f} ({(rim - price) / atr:.1f} ATR מעל){pot_he}')
+        elif s.pattern and not (ch and ('channel' in s.pattern[0].lower() or 'תעלה' in s.pattern[1])):
+            add('pos', s.pattern[0], s.pattern[1])
+
+        # ── Fibonacci ──────────────────────────────────────────────────────────
+        fb = ov.get('fib_bounce')
+        if s.golden:
+            add('pos', f'Pulled back {s.fib_r * 100:.0f}% of the rally — the 61.8% golden pocket',
+                f'תיקנה {s.fib_r * 100:.0f}% מהעלייה — בגולדן פוקט (61.8%)')
+        elif 0.33 <= (s.fib_r or 0) <= 0.85:
+            add('pos', f'Pulled back {s.fib_r * 100:.0f}% of the rally (Fibonacci)',
+                f'תיקנה {s.fib_r * 100:.0f}% מהעלייה (פיבונאצ\'י)')
+        elif fb and fb.get('levels'):
+            lv = ', '.join(f"{x['price']:.2f}" for x in fb['levels'][:3])
+            add('neu', f'Bounce targets of the last drop (Fib 38.2/50/61.8): {lv}',
+                f'יעדי תיקון לירידה (פיבונאצ\'י 38.2/50/61.8): {lv}')
+
+        # ── his pullback, buyers, volume ───────────────────────────────────────
+        pb = s.pullback or {}
+        if pb.get('ok') and pb.get('he'):
+            add('pos', pb.get('en', ''), pb['he'])
+        if s.candle.get('found'):
+            add('pos', s.candle.get('label', "Buyers' candle"), s.candle.get('label_he', 'נר קונים'))
+        elif action in ('wait_buyers',):
+            add('neg', "No buyers' candle yet", 'עוד אין נר קונים')
+        vt = (s.vol or {}).get('trend')
+        if vt == 'rising':
+            add('pos', 'Volume rising', 'ווליום עולה')
+        elif vt == 'falling':
+            add('neg' if ((s.vol or {}).get('falling_streak') or 0) > 2 else 'neu',
+                'Volume drying up', 'ווליום יורד')
+
+        # ── the run into today ────────────────────────────────────────────────
+        ext = s.ext or {}
+        if ext.get('ran_hot'):
+            r_en, r_he = bk.run_phrase(ext)
+            add('neg', f'{r_en} — too late to chase', f'{r_he} — מאוחר לרדוף')
+        elif ext.get('ran_5d'):
+            r5 = ext.get('run5_pct') or 0
+            add('neg', f'Up {r5:+.0f}% in 5 days — too late to chase', f'עלתה {r5:+.0f}% ב-5 ימים — מאוחר לרדוף')
+
+        # ── gaps ───────────────────────────────────────────────────────────────
+        up_gaps = [g for g in ov.get('gaps') or [] if g.get('dir') == 'down' and g.get('far')
+                   and g['far'] > price and not g.get('filled_pct')]
+        if up_gaps:
+            g = min(up_gaps, key=lambda g: g['near'])
+            add('neu', f"Open gap above — it closes at {g['far']:.2f} (+{pct(g['far']):.1f}%)",
+                f"גאפ פתוח מעל — נסגר ב-{g['far']:.2f} (+{pct(g['far']):.1f}%)")
+
+        # ── the report ─────────────────────────────────────────────────────────
+        e = ctx.earnings_days
+        if e is not None and e <= 14:
+            add('neg' if e <= EARNINGS_SOON_DAYS else 'neu', f'Earnings in {e} days', f'דיווח תוצאות בעוד {e} ימים')
+        return out
 
     @staticmethod
     def _read(ctx, s: Signals, state) -> tuple:

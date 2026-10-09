@@ -66,6 +66,14 @@
         </span>
         <span class="sym">{{ a.ticker }}</span>
         <span class="price">{{ a.meta.price | number: '1.2-2' }}</span>
+        <span class="day-chg" *ngIf="a.meta.quote?.change_pct != null"
+              [class.up]="a.meta.quote!.change_pct! >= 0" [class.down]="a.meta.quote!.change_pct! < 0">
+          {{ a.meta.quote!.change! >= 0 ? '+' : '' }}{{ a.meta.quote!.change | number: '1.2-2' }}
+          ({{ a.meta.quote!.change_pct! >= 0 ? '+' : '' }}{{ a.meta.quote!.change_pct | number: '1.2-2' }}%)
+        </span>
+        <span class="ext-px" *ngIf="extQuote(a.meta) as x" [class.up]="x.pct >= 0" [class.down]="x.pct < 0" dir="rtl">
+          {{ x.label }} {{ x.price | number: '1.2-2' }} ({{ x.pct >= 0 ? '+' : '' }}{{ x.pct | number: '1.2-2' }}%)
+        </span>
         <span class="sector-chip" *ngIf="a.meta.sector" [title]="a.meta.industry || ''">
           {{ a.meta.sector }}
         </span>
@@ -235,12 +243,26 @@
       <!-- his post, in one line: what to do and at what price -->
       <p class="bk-call" dir="rtl">{{ a.micha.report.call_he }}</p>
 
+      <!-- how he reads this chart, indicator by indicator -->
+      <ul class="bk-mread" *ngIf="a.micha.report.micha_read?.length" dir="rtl">
+        <li *ngFor="let r of a.micha.report.micha_read" [ngClass]="'mr-' + r.tone">
+          <span class="mr-ic">{{ r.tone === 'pos' ? '✓' : r.tone === 'neg' ? '✕' : '•' }}</span>
+          <span>{{ r.he }}</span>
+        </li>
+      </ul>
+
       <!-- the header card his 2026 charts carry: ATR / 150 / earnings -->
       <div class="bk-badges" *ngIf="a.micha.badges?.length">
         <span class="bk-badge" *ngFor="let b of a.micha.badges" [ngClass]="'tone-' + b.tone"
               [title]="b.note_he">
           <span class="bk-dot"></span><span dir="rtl">{{ b.label_he }}</span>
         </span>
+      </div>
+
+      <!-- his pullback pattern: "תיקנה לממוצע 150 + קו תמיכה + שפלים עולים" -->
+      <div class="bk-pattern" *ngIf="pullbackShown(a.micha) as pb" [ngClass]="'pb-' + pullbackTone(pb)">
+        <span class="bk-pattern-tag" dir="rtl">{{ pullbackTagHe(pb) }}</span>
+        <span class="bk-pattern-txt" dir="rtl">{{ pb.he }}</span>
       </div>
 
       <!-- ── 2. The plan: the prices ── -->
@@ -284,7 +306,7 @@
       <!-- "מתקרב להכרעה. שימו התראה" — a waiting stock close to its trigger -->
       <div class="bk-alert" *ngIf="a.micha.alert as al" [ngClass]="'tier-' + al.tier">
         <span class="bk-alert-t" dir="rtl">🔔 {{ a.micha.headline_action === 'READY' ? 'מוכנה — קרוב לפריצה' : alertTitleHe[al.tier] }}</span>
-        <span class="bk-sub">+{{ al.distance_pct | number: '1.1-1' }}% · {{ al.distance_atr | number: '1.1-1' }} ATR</span>
+        <span class="bk-sub">{{ al.distance_atr | number: '1.1-1' }} ATR</span>
       </div>
 
       <!-- ── 3. Why this grade: the checklist IS the grade ──

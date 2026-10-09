@@ -42,6 +42,8 @@ from config import (
     EXT20_STRETCHED_ATR,
     FAR_FROM_MA_PCT,
     RUN_UP_ATR,
+    RUN_UP_5D_BARS,
+    RUN_UP_5D_PCT,
     RUN_UP_DAYS,
     RUN_UP_LOOKBACK,
     RUN_UP_SHORT_ATR,
@@ -54,6 +56,16 @@ from config import (
     OFF_HIGH_VALUE_PCT,
     PACE_FAST_DAYS,
     PACE_NORMAL_DAYS,
+    PULLBACK_BOUNCED_ATR,
+    PULLBACK_DEEP_PCT,
+    PULLBACK_DEEP_RED,
+    PULLBACK_FIB_RATIOS,
+    PULLBACK_FLOOR_REACH_ATR,
+    PULLBACK_HOLD_ATR,
+    PULLBACK_LOOKBACK,
+    PULLBACK_MIN_ATR,
+    PULLBACK_TEST_ATR,
+    PULLBACK_TEST_BARS,
     ROUND_NEAR_ATR,
     STATION_MERGE_ATR,
     TREND_RECENT_BARS,
@@ -83,7 +95,6 @@ class MichaAnalyzer:
         nearest_res = next((r for r in res_levels if r.get('his_line')), None)
         nearest_sup = next((s for s in sup_levels if s.get('his_line')), None)
         vol = self._volume_trend(ctx)
-        candle = self._buyers_candle(ctx, nearest_sup)
         ext = self._ext20(ctx)
         trend = self._trend(ctx)
         momentum = self._momentum_days(ctx)
@@ -99,6 +110,9 @@ class MichaAnalyzer:
         pattern = self._pattern(codes, base)
         dir_change = self._direction_change(ctx, overlays, break_level is not None)
         channel = self._channel_state(ctx, overlays)
+        pullback = self._pullback_entry(ctx, nearest_sup, fib, overlays, break_level, channel)
+        candle = self._buyers_candle(ctx, nearest_sup,
+                                     near_floor=bool(pullback and pullback['floors']))
         targets, target = self._targets_ladder(ctx, res_levels, sup_levels, ath, base,
                                                overlays)
         # richer readings — the material reasons.py argues from
@@ -118,6 +132,7 @@ class MichaAnalyzer:
             ma150_reclaim=ma150_reclaim, lost_level=lost_level,
             overlays=overlays, codes=codes,
             dir_change=dir_change, channel=channel, targets=targets, pattern=pattern,
+            pullback=pullback,
             recent_low=float(np.min(ctx.lows[-5:])),
             vol_detail=vol_detail, duration=duration, rel_strength=rel_strength,
             pattern_detail=pattern_detail, level_context=level_ctx,
@@ -139,6 +154,7 @@ class MichaAnalyzer:
         trade_thesis = thesis.build(sig, j, reasons, best, growth)
         focus = self._chart_focus(ctx, j['state'], codes, fib, off_high, ext, overlays)
         key_levels = self._key_levels(ctx, j, target)
+        overlays['levels'] = self._used_levels(ctx, overlays.get('levels') or [], j, sig)
         notes = self._notes(ext, golden, base, capitulation, momentum, small_cap,
                             ctx, price, dir_change, channel, overlays)
         scenarios = self._scenarios(ctx, res_levels, sup_levels, targets, ath)
@@ -155,6 +171,9 @@ class MichaAnalyzer:
             'headline_action': j['headline_action'],
             # unconfirmed / pending / confirmed — see verdict._confirmation
             'confirmation': j['confirmation'],
+            # his pullback entry read as a pattern — the dip, the floors it touched,
+            # and whether it qualifies (`ok`); see _pullback_entry
+            'pullback': pullback,
             # the full pattern projection, labeled — see verdict._macro_target.
             # `target`/`targets` below stay the near-station ladder; this is the
             # separate "what is it worth" number
@@ -303,6 +322,52 @@ class MichaAnalyzer:
         return out
 
     # ── The lines that ARE the thesis ──────────────────────────────────────────
+
+    @staticmethod
+    def _used_levels(ctx, drawn: list, j: dict, s) -> list:
+        """
+        Only the horizontals a number on the panel is built from (owner, 2026-10-02:
+        "keep only the lines used for calculation, grade or recommendation"). A
+        level stays on the chart when it is his line on either side (the trigger /
+        the floor the stop and the scenarios read), or when its band carries a price
+        the verdict quotes: the trigger and its floor, the entry and stop of the plan
+        being graded, the must-hold level, the line that just broke, or the target.
+        Everything else was context the reader had to sort out for themselves.
+        """
+        atr = ctx.atr or 0.0
+        used: list[float] = []
+        stops: list[float] = []
+        trig = j.get('trigger') or {}
+        used += [trig.get('price'), trig.get('floor')]
+        best = Judgement._best_option(j.get('options') or [], j.get('action'))
+        if best:
+            used.append(best.get('entry'))
+            if best.get('stop'):
+                stops.append(float(best['stop']))
+        used.append((j.get('hold_level') or {}).get('price'))
+        used.append(s.break_level)
+        bt = (j.get('book') or {}).get('target') or {}
+        used += [bt.get('price'), bt.get('first_price')]
+        used = [float(u) for u in used if u]
+        his = [float(x['price']) for x in (s.nearest_res, s.nearest_sup) if x]
+        tol = max(atr * 0.03, 1e-6)
+
+        def keep(lv):
+            p = lv.get('price')
+            if p is None:
+                return False
+            if lv.get('his_line') or any(abs(float(p) - h) <= tol for h in his):
+                return True
+            # Built FROM this line: a quoted price equal to its centre or an edge, or
+            # a stop placed 0.5% under its bottom (`_stop`'s ±0.5%). Merely falling
+            # inside some other band is not use — AMZN kept two unrelated bands that
+            # way when the test was "the price lies within the band".
+            edges = [float(e) for e in (p, lv.get('zone_top'), lv.get('zone_bottom')) if e]
+            low = float(lv.get('zone_bottom') or p)
+            return (any(abs(e - u) <= tol for e in edges for u in used)
+                    or any(abs(low * 0.995 - u) <= tol for u in stops))
+
+        return [lv for lv in drawn if keep(lv)]
 
     def _key_levels(self, ctx, j, target):
         """
@@ -1003,21 +1068,28 @@ class MichaAnalyzer:
                 notes.append(self._n(
                     f'Direction change {d}/{t} — still missing: {", ".join(missing_en)}',
                     f'שינוי כיוון {d}/{t} — עוד חסר: {", ".join(missing)}'))
+        # Line STATE is reported, not judged: on 11,337 snapshots a rising-lows break
+        # was followed by +1.3% vs its volatility third (t 3.1) and channel position
+        # carried no edge except the bottom of a FALLING channel — so these notes say
+        # where price is, and leave the verdict to the stop and the 150.
         if dir_change and dir_change['rising_lows_broke']:
             notes.append(self._n(
-                'The rising-lows line has been lost — the structure that held it is gone',
-                'קו השפלים העולים נשבר — המבנה שהחזיק אותה נגמר'))
+                'Below the rising-lows line — on its own not an exit; the stop decides',
+                'מתחת לקו השפלים העולים — לבד זה לא סימן יציאה; הסטופ מחליט'))
         if channel:
             if channel['kind'] == 'rising' and channel['zone'] == 'bottom':
                 notes.append(self._n(
-                    f"At the bottom of a rising channel ({channel['lower']:.2f}) — the pullback he waits for",
-                    f"בתחתית תעלה עולה ({channel['lower']:.2f}) — התיקון שמחכים לו"))
+                    f"At the bottom of a rising channel ({channel['lower']:.2f})",
+                    f"בתחתית תעלה עולה ({channel['lower']:.2f})"))
             elif channel['kind'] == 'rising' and channel['zone'] == 'top':
-                notes.append(self._n('At the top of the channel — not where you open a position',
-                                     'בחלק העליון של התעלה — לא המקום לפתוח פוזיציה'))
+                notes.append(self._n('At the top of a rising channel',
+                                     'בחלק העליון של תעלה עולה'))
             elif channel['zone'] == 'middle':
-                notes.append(self._n('Mid-channel — nothing attractive, just movement inside the channel',
-                                     'באמצע התעלה — אין פה משהו אטרקטיבי, רק תנועה בתעלה'))
+                notes.append(self._n('Mid-channel', 'באמצע התעלה'))
+            elif channel['kind'] == 'descending' and channel['zone'] == 'lower':
+                notes.append(self._n(
+                    f"At the bottom of a falling channel ({channel['lower']:.2f})",
+                    f"בתחתית תעלה יורדת ({channel['lower']:.2f})"))
             elif channel['kind'] == 'descending' and channel['zone'] == 'upper_rail':
                 notes.append(self._n(
                     f"Pressing the upper rail of a falling channel ({channel['upper']:.2f}) — a break there is the trigger",
@@ -1069,6 +1141,100 @@ class MichaAnalyzer:
 
     # ── Signal computations ────────────────────────────────────────────────────
 
+    def _pullback_entry(self, ctx, nearest_sup, fib, overlays, break_level, channel):
+        """
+        His pullback entry, read as the pattern he writes it in — the dip, the floors
+        it stopped on, then the buyers (the candle is read separately):
+
+            "תיקנה משמעותית ישירות לממוצע 150 + קו תמיכה + לשפלים עולים. כניסת קונים" (ABNB)
+            "תיקנה 61.8% של הלג הזה / נעצרה בתמיכה של הממוצע 150 / כניסת קונים" (ANET)
+            "תיקן 38% מהעליה. נכנסים קונים. סטופ מתחת לקו הלבן" (BAC)
+
+        A floor counts only when the dip TOUCHED it in the last few bars and price
+        closed back above it — "נעצרה על", "קופצת על" — not merely because one sits
+        somewhere under price (that was true on 61% of random days). The floors are
+        every kind he names: the 150, his support band, the rising-lows line, a rising
+        channel's bottom, a 38-62% Fib of the last rally, the line the stock just
+        broke (the retest) and the top of an open gap. `deep` is whether the dip was
+        a real one; see PULLBACK_* in config for both measurements.
+        """
+        atr, price = ctx.atr, ctx.price
+        if not atr or ctx.M < 25:
+            return None
+        n = PULLBACK_TEST_BARS
+        lo = float(np.min(ctx.lows[-n:]))
+
+        def touched(top, bottom=None):
+            bottom = top if bottom is None else bottom
+            return (lo <= top + PULLBACK_TEST_ATR * atr
+                    and price >= bottom - PULLBACK_HOLD_ATR * atr
+                    and price - top <= PULLBACK_FLOOR_REACH_ATR * atr)
+
+        floors: list[dict] = []
+
+        def add(kind, top, en, he, bottom=None):
+            if top is None or any(f['kind'] == kind for f in floors):
+                return
+            if touched(float(top), None if bottom is None else float(bottom)):
+                floors.append({'kind': kind, 'price': jnum(float(top)), 'en': en, 'he': he})
+
+        if ctx.sma150:
+            add('ma150', ctx.sma150, 'the 150MA', 'ממוצע 150')
+        if nearest_sup:
+            top = float(nearest_sup.get('zone_top') or nearest_sup['price'])
+            bot = float(nearest_sup.get('zone_bottom') or nearest_sup['price'])
+            add('support', min(top, price), 'the support line', 'קו התמיכה', bottom=bot)
+        for tl in (overlays or {}).get('trendlines') or []:
+            if tl.get('kind') == 'rising_lows' and not tl.get('broke'):
+                add('rising_lows', (tl.get('p2') or {}).get('price'),
+                    'the rising-lows line', 'קו השפלים העולים')
+        if channel and channel.get('kind') == 'rising' and channel.get('lower'):
+            add('channel', channel['lower'], 'the bottom of the channel', 'תחתית התעלה')
+        if fib and fib.get('peak') and fib.get('base') and fib['peak'] > fib['base']:
+            for q in PULLBACK_FIB_RATIOS:
+                lvl = fib['peak'] - q * (fib['peak'] - fib['base'])
+                if touched(lvl):
+                    add('fib', lvl, f'the {q * 100:g}% Fib of the rally',
+                        f'פיבונאצי {q * 100:g}% מהעלייה')
+                    break
+        if break_level:
+            add('broken_line', break_level, 'the line it broke', 'הקו שהיא פרצה')
+        for g in (overlays or {}).get('gaps') or []:
+            if g.get('dir') == 'up' and g.get('near') is not None and g.get('far') is not None:
+                add('gap', max(g['near'], g['far']), 'the gap', 'הגאפ')
+        floors.sort(key=lambda f: -f['price'])
+
+        hi10 = float(np.max(ctx.highs[-PULLBACK_LOOKBACK:]))
+        hi20 = float(np.max(ctx.highs[-20:]))
+        depth = (hi10 - price) / atr
+        off20 = (1 - price / hi20) * 100 if hi20 > 0 else 0.0
+        c = ctx.closes
+        red = int(sum(1 for i in range(len(c) - 8, len(c) - 1) if c[i] < c[i - 1]))
+        deep = bool(depth >= PULLBACK_MIN_ATR or off20 >= PULLBACK_DEEP_PCT
+                    or red >= PULLBACK_DEEP_RED)
+        ref = float(c[-6]) if len(c) > 6 else float(c[0])
+        ret5 = ((price / ref - 1) * 100 / ctx.atr_pct) if (ref and ctx.atr_pct) else 0.0
+        # the pattern: a real dip, still at the floor (not already climbing back to the
+        # ceiling), on a floor other than only the line it just broke
+        real = [f for f in floors if f['kind'] != 'broken_line']
+        ok = bool(real and deep and ret5 <= PULLBACK_BOUNCED_ATR)
+        names_en = ' + '.join(f['en'] for f in floors)
+        names_he = ' + '.join(f['he'] for f in floors)
+        dip_en = f'pulled back {depth:.1f} ATR ({off20:.0f}% off the 20-day high)'
+        dip_he = f'תיקון של {depth:.1f} ATR ({off20:.0f}% מהגבוה של 20 יום)'
+        return {
+            'floors': floors,
+            'confluence': len(floors),
+            'depth_atr': jnum(depth),
+            'off_high20_pct': jnum(off20),
+            'red_days': red,
+            'deep': deep,
+            'ret5_atr': jnum(ret5),
+            'ok': ok,
+            'en': f'{dip_en} onto {names_en}' if floors else dip_en,
+            'he': f'{dip_he} אל {names_he}' if floors else dip_he,
+        }
+
     def _fib(self, ctx):
         mv = Geometry.fib_move(ctx.highs, ctx.lows, ctx.price, swing_lows=ctx.sl_idx)
         if mv is None or mv['retracement'] > 1.05:
@@ -1101,6 +1267,11 @@ class MichaAnalyzer:
         ran_hot = bool(run_days >= RUN_UP_DAYS
                        or (run_days >= RUN_UP_SHORT_DAYS and streak_atr >= RUN_UP_SHORT_ATR)
                        or run_atr >= RUN_UP_ATR)
+        # the same worry in money: a 5-session run of RUN_UP_5D_PCT+ blocks an entry
+        # (the action reads it) without being charged a second time in the grade
+        k5 = min(RUN_UP_5D_BARS, len(closes) - 1)
+        run5_pct = ((closes[-1] / closes[-1 - k5] - 1) * 100) if k5 > 0 else 0.0
+        ran_5d = run5_pct >= RUN_UP_5D_PCT
 
         # "מתוחה" is a spectrum in his hands, not a flag:
         #   "קצת מתוחה מהממוצע … אתם לא מאחרים" (AAPL) / "קצת מתוחה אז זהירות עם
@@ -1137,7 +1308,7 @@ class MichaAnalyzer:
                 'mild': mild, 'severe': severe, 'far_150': far150, 'level': level,
                 'd150_pct': d150 * 100, 'd200_pct': (d200 * 100) if d200 is not None else None,
                 'run_days': run_days, 'run_pct': run_pct, 'run_atr': run_atr,
-                'ran_hot': ran_hot}
+                'ran_hot': ran_hot, 'run5_pct': run5_pct, 'ran_5d': ran_5d}
 
     def _trend(self, ctx):
         """
@@ -1507,7 +1678,7 @@ class MichaAnalyzer:
         return {'trend': 'flat', 'falling_streak': streak,
                 'note': 'volume steady', 'note_he': 'ווליום יציב'}
 
-    def _buyers_candle(self, ctx, nearest_sup):
+    def _buyers_candle(self, ctx, nearest_sup, near_floor: bool = False):
         """
         Two DIFFERENT candles, which he treats differently and which the old version
         conflated into one flag:
@@ -1532,6 +1703,12 @@ class MichaAnalyzer:
         near_sup = True
         if nearest_sup:
             near_sup = (ctx.price - nearest_sup['price']) / atr <= 2.0
+        # ...or any floor the pullback actually touched. His support line can sit
+        # far under a dip that stopped on the 150, the rising-lows line or a Fib
+        # level, and the candle there is still "נכנסים קונים": AMZN 2025-02-25 "נר
+        # פטיש על קו השיאים", GEV "מתקנת 50% מהעליה ... נכנסים קונים", IREN "לפי
+        # שיטת ה-150" were all clean buyers candles this gate threw away.
+        near_sup = near_sup or near_floor
         turn = None
         for i in range(len(c) - 1, max(len(c) - 3, 0), -1):
             rng = h[i] - l[i]

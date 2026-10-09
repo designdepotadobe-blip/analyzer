@@ -1,6 +1,6 @@
 {
   "ADBE": {
-    "action": "wait_trigger",
+    "action": "enter",
     "axis_max": {
       "event": 33,
       "reward": 34,
@@ -9,11 +9,13 @@
     },
     "book_caps": [],
     "book_minus": [],
-    "bound_caps": [],
+    "bound_caps": [
+      "no_room"
+    ],
     "grade": "B",
-    "grade_score": 74.3,
-    "headline_action": "WAIT",
-    "rating": 7,
+    "grade_score": 78.3,
+    "headline_action": "ENTER",
+    "rating": 8,
     "setup_codes": [
       "bearish_to_bullish",
       "cup_handle",
@@ -24,7 +26,7 @@
       "support_test",
       "vcp"
     ],
-    "state": "at_trigger"
+    "state": "value_pullback"
   },
   "ARM": {
     "action": "enter",
@@ -104,7 +106,7 @@
     "state": "value_pullback"
   },
   "MRNA": {
-    "action": "wait_trigger",
+    "action": "wait_pullback",
     "axis_max": {
       "event": 33,
       "reward": 34,
@@ -128,7 +130,7 @@
       "resistance_retest",
       "support_test"
     ],
-    "state": "at_trigger"
+    "state": "breakout_now"
   },
   "NVDA": {
     "action": "wait_trigger",
@@ -195,7 +197,7 @@
     "bound_caps": [],
     "grade": "B",
     "grade_score": 74.8,
-    "headline_action": "WAIT",
+    "headline_action": "READY",
     "rating": 7,
     "setup_codes": [
       "cup_handle",
