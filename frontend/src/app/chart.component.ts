@@ -833,12 +833,14 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
         // the ladder just moved the same clutter into this fallback loop instead
         // of actually removing it.
         if (k.role === 'target') { continue; }
+        // Owner (2026-10-09): only the relevant line on the chart — the entry and
+        // the stop are numbers in the panel, not horizontals on the candles.
+        if (k.role === 'stop' || k.role === 'entry') { continue; }
         if (planPrices.some((p) => Math.abs(p - k.price) <= EPS)) { continue; }
         const style = k.role === 'trigger' ? LineStyle.Dashed : LineStyle.Dotted;
-        const color = k.role === 'stop' ? '#ef5350' : MICHA_CYAN;
-        // Cyan for trigger / entry / target — the colour he price-tags his
-        // actionable levels in (MARA: cyan 14.69 trigger, cyan target above it),
-        // against the yellow he uses for structural S/R underneath.
+        // Cyan — the colour he price-tags his actionable levels in (MARA: cyan
+        // 14.69 trigger), against the yellow he uses for structural S/R underneath.
+        const color = MICHA_CYAN;
         addPlanLine(k.role, k.price, color, 2, style, k.label);
         legend.push({ color, label: k.label, value: k.price.toFixed(2) });
       }

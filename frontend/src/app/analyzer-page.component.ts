@@ -558,10 +558,9 @@ export class AnalyzerPageComponent implements OnInit {
       // beside the grade, so the chart no longer has to carry it. Both checkboxes
       // stay available on every chart that has the overlay.
       triangles: f.triangles, fib: false, markers: false, gaps: false,
-      // Back ON wherever a cup exists (owner, 2026-10-09: "when there is a cup or a
-      // cup & handle we want to know it"). The drawing is now his minimal one — the
-      // rim, the depth arrow and the target arrow — not the old arc.
-      cup: !!a.overlays?.cup,
+      // Off by default (owner, 2026-10-09): the cup is named in the panel's read;
+      // the drawing — rim, depth and target arrows — appears only on request.
+      cup: false,
     };
   }
 
