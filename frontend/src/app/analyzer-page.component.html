@@ -244,7 +244,8 @@
            so the chart keeps the room; everything below unfolds on tap and scrolls. -->
       <button type="button" class="micha-expand-toggle" (click)="michaExpanded = !michaExpanded"
               [attr.aria-expanded]="michaExpanded" aria-controls="bk-more">
-        <span dir="rtl">{{ michaExpanded ? 'פחות פרטים' : 'עוד פרטים: התוכנית, הנימוקים והציון' }}</span>
+        <span class="lbl-long" dir="rtl">{{ michaExpanded ? 'פחות פרטים' : 'עוד פרטים: התוכנית, הנימוקים והציון' }}</span>
+        <span class="lbl-short" dir="rtl">{{ michaExpanded ? 'סגור' : 'פרטים' }}</span>
         <span class="chev" aria-hidden="true">{{ michaExpanded ? '▲' : '▼' }}</span>
       </button>
 
