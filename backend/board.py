@@ -38,6 +38,8 @@ BUILD_AFTER = (16, 40)                 # ET — the close has settled in the dai
 PREMARKET = ((7, 0), (9, 29))          # ET window for the quotes-only refresh
 KEEP_BOARDS = 15
 WORKERS = 8
+# (pause before, workers) for each pass over the names that failed — see Board.build
+RETRY_PASSES = ((20, 2), (60, 1))
 
 CHANGE_ORDER = ('new_enter', 'broke_out', 'near_trigger', 'setup_over')
 
@@ -156,16 +158,39 @@ class Board:
             def work(tk):
                 try:
                     r = self._analyze(tk)
-                    return self._to_row(tk, r) if r else None
+                    return tk, (self._to_row(tk, r) if r else None), r is not None
                 except Exception:
-                    return None
+                    return tk, None, False
 
+            # Full speed first. On a datacenter IP the data provider throttles a burst
+            # of parallel requests, and those names come back empty (2026-10-10: 357
+            # of 1120 on Railway, every one fine when asked again alone) — so the
+            # misses get slower retry passes instead of silently leaving the board.
+            failed = []
             with ThreadPoolExecutor(max_workers=WORKERS) as ex:
                 for fut in as_completed([ex.submit(work, tk) for tk in universe]):
                     self.status['done'] += 1
-                    row = fut.result()
+                    tk, row, ok = fut.result()
                     if row:
-                        hits[row['ticker']] = row
+                        hits[tk] = row
+                    elif not ok:
+                        failed.append(tk)
+            for attempt, (pause, workers) in enumerate(RETRY_PASSES, 1):
+                if not failed:
+                    break
+                self.status['retrying'] = len(failed)
+                time.sleep(pause)
+                again = []
+                with ThreadPoolExecutor(max_workers=workers) as ex:
+                    for fut in as_completed([ex.submit(work, tk) for tk in failed]):
+                        tk, row, ok = fut.result()
+                        if row:
+                            hits[tk] = row
+                        elif not ok:
+                            again.append(tk)
+                failed = again
+            self.status['retrying'] = 0
+            self.status['failed'] = len(failed)
             dates = [h.get('decided_on') for h in hits.values() if h.get('decided_on')]
             date = max(dates) if dates else last_session()
             prev_board = None
@@ -182,6 +207,7 @@ class Board:
                 'built_at': datetime.now(ET).isoformat(timespec='seconds'),
                 'prev_date': (prev_board or {}).get('date'),
                 'scanned': len(universe),
+                'failed': len(failed),
                 'hits': hits,
                 'changes': compute_changes(hits, (prev_board or {}).get('hits') or {}) if prev_board else [],
                 'extended': {},

@@ -44,3 +44,22 @@ def test_radar_rows_keep_entries_alerts_and_presets_only():
             'D': {**_h(), 'presets': []}}
     rows = radar_rows(hits)
     assert sorted(k for k, h in hits.items() if any(r is h for r in rows)) == ['A', 'B', 'C']
+
+
+def test_build_retries_names_the_provider_dropped(tmp_path, monkeypatch):
+    import board
+    monkeypatch.setattr(board, 'BOARD_DIR', str(tmp_path))
+    monkeypatch.setattr(board, 'RETRY_PASSES', ((0, 2), (0, 1)))
+    calls = {}
+
+    def analyze(tk):
+        calls[tk] = calls.get(tk, 0) + 1
+        if tk == 'FLAKY' and calls[tk] == 1:
+            raise RuntimeError('429')          # throttled on the first, parallel pass
+        return None if tk == 'DEAD' else {'ok': True}
+
+    b = board.Board(lambda: ['A', 'FLAKY', 'DEAD'], analyze,
+                    lambda tk, r: {**_h(), 'ticker': tk, 'decided_on': '2026-10-09'}, lambda tk: None)
+    out = b.build()
+    assert sorted(out['hits']) == ['A', 'FLAKY']
+    assert out['failed'] == 1 and calls['DEAD'] == 3   # retried twice, then counted

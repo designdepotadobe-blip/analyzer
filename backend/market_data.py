@@ -104,6 +104,7 @@ class MarketData:
         self._quote_cache: dict = {}
         self._earn_cache: dict[str, Optional[int]] = {}
         self._profile_cache: dict[str, dict] = {}
+        self._profile_retry_at: dict[str, float] = {}   # throttled lookups: try again later
         self._session = None            # yahooquery's own session, from the 1st Ticker
         self._tickers: dict[str, object] = {}
         self._lock = threading.Lock()
@@ -278,11 +279,16 @@ class MarketData:
         """
         if ticker in self._profile_cache:
             return self._profile_cache[ticker]
+        if time.monotonic() < self._profile_retry_at.get(ticker, 0):
+            return {'sector': None, 'industry': None, 'logo_url': None, 'sector_icon': DEFAULT_SECTOR_ICON}
+        settled = False   # an answer (a profile, or "none exists") — vs a failed request
         out = {'sector': None, 'industry': None, 'logo_url': None,
               'sector_icon': DEFAULT_SECTOR_ICON}
         try:
             prof = self._tk(ticker).asset_profile
             info = prof.get(ticker) if isinstance(prof, dict) else None
+            # a string here is the provider saying it has no profile (ETFs, indices)
+            settled = isinstance(info, (dict, str))
             if isinstance(info, dict):
                 sector = info.get('sector')
                 out['sector'] = sector
@@ -299,7 +305,13 @@ class MarketData:
                         out['logo_url'] = f'https://logo.clearbit.com/{domain}?size=64'
         except Exception:
             pass
-        self._profile_cache[ticker] = out
+        if settled:
+            self._profile_cache[ticker] = out
+        else:
+            # A throttled/failed request used to be cached for the life of the process,
+            # leaving the name sector-less until a restart (the Railway board build
+            # showed this). Remember it only briefly.
+            self._profile_retry_at[ticker] = time.monotonic() + 600
         return out
 
     def earnings_days(self, ticker: str) -> Optional[int]:
