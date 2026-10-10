@@ -6,10 +6,21 @@
    No row-reverse, no CSS grid, no %-widths in the repeated rows — see the
    headless-Edge invisible-text notes in the component header. */
 
-:host { display: block; min-height: 100%; background: var(--bg); }
+/* The shell (app.component.css) is a fixed-height column: the page takes what is
+   left after the nav and the legal footer, and scrolls INSIDE itself. Growing to
+   its content height instead hid the phone tab bar and stopped all scrolling. */
+:host {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg);
+}
 
 .bd {
-  min-height: 100%;
   max-width: 1480px;
   margin: 0 auto;
   padding: 18px 24px 40px;
@@ -331,7 +342,7 @@
 
 /* ── phone ──────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .bd { padding: 14px 16px calc(var(--tabbar-h) + 28px); }
+  .bd { padding: 14px 16px 28px; }   /* the tab bar is in the shell's flow, not over the page */
   .bd-head-row { flex-direction: column-reverse; align-items: flex-end; gap: 2px; }
   .bd-head h1 { font-size: 22px; }
   .bd-meta { font-size: 12.5px; }

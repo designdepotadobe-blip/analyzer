@@ -34,6 +34,7 @@ export class RadarPageComponent implements OnInit, OnDestroy {
   loading = false;
   error = '';
   scanned = 0;
+  failed = 0;
   private sub?: Subscription;
   private pollTimer?: ReturnType<typeof setTimeout>;
 
@@ -148,6 +149,7 @@ export class RadarPageComponent implements OnInit, OnDestroy {
         this.boardDate = b.date || '';
         this.prevDate = b.prev_date || '';
         this.scanned = b.scanned || 0;
+        this.failed = b.failed || 0;
         this.refresh();
       },
       error: () => {

@@ -4,7 +4,7 @@
 <div class="bd">
   <header class="bd-head">
     <div class="bd-head-row">
-      <p class="bd-meta" dir="rtl" *ngIf="boardDate">לפי סגירת {{ dayHe(boardDate) }}. נבדקו {{ scanned }} מניות.</p>
+      <p class="bd-meta" dir="rtl" *ngIf="boardDate">לפי סגירת {{ dayHe(boardDate) }}. {{ failed ? 'נבדקו ' + (scanned - failed) + ' מתוך ' + scanned + ' מניות (לשאר לא התקבלו נתונים).' : 'נבדקו ' + scanned + ' מניות.' }}</p>
       <h1>לוח יומי</h1>
     </div>
 

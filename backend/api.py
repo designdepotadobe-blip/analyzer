@@ -546,7 +546,7 @@ def get_board(request: Request = None):
     return {
         'ready': True, 'status': st,
         'date': b['date'], 'prev_date': b.get('prev_date'), 'built_at': b['built_at'],
-        'scanned': b.get('scanned'), 'count': len(b['hits']),
+        'scanned': b.get('scanned'), 'count': len(b['hits']), 'failed': b.get('failed'),
         'hits': radar_rows(b['hits']),
         'changes': b.get('changes') or [],
         'extended': b.get('extended') or {}, 'extended_at': b.get('extended_at'),

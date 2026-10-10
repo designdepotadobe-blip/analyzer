@@ -897,6 +897,8 @@ export interface BoardResponse {
   built_at?: string;
   scanned?: number;
   count?: number;
+  /** names the data provider never answered for, even after the retry passes */
+  failed?: number | null;
   hits?: ScanHit[];
   changes?: BoardChange[];
   extended?: { [ticker: string]: { price: number; change_pct: number | null } };

@@ -37,9 +37,12 @@ BOARD_DIR = os.environ.get('BOARD_DIR') or os.path.join(ROOT, '.data', 'board')
 BUILD_AFTER = (16, 40)                 # ET — the close has settled in the daily bars
 PREMARKET = ((7, 0), (9, 29))          # ET window for the quotes-only refresh
 KEEP_BOARDS = 15
-WORKERS = 8
-# (pause before, workers) for each pass over the names that failed — see Board.build
-RETRY_PASSES = ((20, 2), (60, 1))
+WORKERS = 4
+PACE_S = 0.5                           # min gap between starting two names (~10 min / 1120)
+THROTTLE_WINDOW = 30                   # half of the last 30 empty → the provider is throttling
+COOL_DOWN_S = 120                      # …so everyone waits this long before the next name
+# (pause before, workers) for each later pass over the names that got no data
+RETRY_PASSES = ((180, 2), (300, 1))
 
 CHANGE_ORDER = ('new_enter', 'broke_out', 'near_trigger', 'setup_over')
 
@@ -144,6 +147,45 @@ class Board:
         return self._latest
 
     # ── build ──────────────────────────────────────────────────────────────────
+    def _work(self, tk: str):
+        """(ticker, row or None, answered) — `answered` False when the data never came."""
+        try:
+            r = self._analyze(tk)
+            return tk, (self._to_row(tk, r) if r else None), r is not None
+        except Exception:
+            return tk, None, False
+
+    def _pass(self, names: list, workers: int, pace: float, hits: dict, count: bool = False) -> list:
+        """One paced pass over `names`; fills `hits`, returns the names that got no data."""
+        failed: list = []
+        recent: list = []                       # last outcomes, True = no data
+        gate = threading.Lock()
+        state = {'next_at': 0.0, 'cool_until': 0.0}
+
+        def paced(tk):
+            with gate:                          # one start per `pace`, and none while cooling
+                wait = max(state['next_at'], state['cool_until']) - time.monotonic()
+                if wait > 0:
+                    time.sleep(wait)
+                state['next_at'] = time.monotonic() + pace
+            return self._work(tk)
+
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for fut in as_completed([ex.submit(paced, tk) for tk in names]):
+                tk, row, ok = fut.result()
+                if count:
+                    self.status['done'] += 1
+                if row:
+                    hits[tk] = row
+                elif not ok:
+                    failed.append(tk)
+                recent = (recent + [not ok])[-THROTTLE_WINDOW:]
+                if len(recent) == THROTTLE_WINDOW and sum(recent) >= THROTTLE_WINDOW // 2                         and time.monotonic() >= state['cool_until']:
+                    state['cool_until'] = time.monotonic() + COOL_DOWN_S
+                    self.status['cooling'] = self.status.get('cooling', 0) + 1
+                    recent = []
+        return failed
+
     def build(self) -> Optional[dict]:
         with self._lock:
             if self.status['building']:
@@ -155,40 +197,19 @@ class Board:
             self.status['total'] = len(universe)
             hits: dict = {}
 
-            def work(tk):
-                try:
-                    r = self._analyze(tk)
-                    return tk, (self._to_row(tk, r) if r else None), r is not None
-                except Exception:
-                    return tk, None, False
-
-            # Full speed first. On a datacenter IP the data provider throttles a burst
-            # of parallel requests, and those names come back empty (2026-10-10: 357
-            # of 1120 on Railway, every one fine when asked again alone) — so the
-            # misses get slower retry passes instead of silently leaving the board.
-            failed = []
-            with ThreadPoolExecutor(max_workers=WORKERS) as ex:
-                for fut in as_completed([ex.submit(work, tk) for tk in universe]):
-                    self.status['done'] += 1
-                    tk, row, ok = fut.result()
-                    if row:
-                        hits[tk] = row
-                    elif not ok:
-                        failed.append(tk)
-            for attempt, (pause, workers) in enumerate(RETRY_PASSES, 1):
+            # Paced, not a burst. The data provider throttles an IP that asks too fast:
+            # measured 2026-10-10, eight unpaced workers got ~800 names in and then
+            # 8 of every 10 came back empty — and for minutes afterwards EVERY request
+            # from the server did, which is what made the app look dead after a long
+            # scan. So: few workers, a minimum gap between names, a shared cool-down
+            # when the recent results turn empty, and slower passes over the misses.
+            failed = self._pass(universe, WORKERS, PACE_S, hits, count=True)
+            for pause, workers in RETRY_PASSES:
                 if not failed:
                     break
                 self.status['retrying'] = len(failed)
                 time.sleep(pause)
-                again = []
-                with ThreadPoolExecutor(max_workers=workers) as ex:
-                    for fut in as_completed([ex.submit(work, tk) for tk in failed]):
-                        tk, row, ok = fut.result()
-                        if row:
-                            hits[tk] = row
-                        elif not ok:
-                            again.append(tk)
-                failed = again
+                failed = self._pass(failed, workers, PACE_S * 2, hits)
             self.status['retrying'] = 0
             self.status['failed'] = len(failed)
             dates = [h.get('decided_on') for h in hits.values() if h.get('decided_on')]

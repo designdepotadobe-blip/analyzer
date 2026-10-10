@@ -50,6 +50,7 @@ def test_build_retries_names_the_provider_dropped(tmp_path, monkeypatch):
     import board
     monkeypatch.setattr(board, 'BOARD_DIR', str(tmp_path))
     monkeypatch.setattr(board, 'RETRY_PASSES', ((0, 2), (0, 1)))
+    monkeypatch.setattr(board, 'PACE_S', 0)
     calls = {}
 
     def analyze(tk):
