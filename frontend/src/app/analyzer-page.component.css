@@ -2189,3 +2189,42 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
   .workspace.with-panel .micha { max-height: 34vh; }
   .workspace.with-panel .micha.expanded { max-height: 72vh; }
 }
+
+/* ── Compact panel (2026-10-10): the score + the recommendation; the rest on tap ──
+   Collapsed, the panel is the meter, the verdict word and his one-line call, then
+   one "more details" button. Expanded, the plan, the read and the checklist unfold
+   below it and the panel scrolls; on the phone it grows from a peek to most of the
+   screen. The score is deliberately quieter than the verdict word. */
+.bk-more { display: none; }
+.micha.expanded .bk-more { display: block; margin-top: 4px; }
+.micha.expanded .micha-details { display: block; }
+.bk-head { margin-bottom: 10px; }
+.bk-meter { gap: 4px; padding-top: 2px; }
+.bk-meter-n { font-size: 19px; }
+.bk-meter-n small { font-size: 11px; }
+.bk-notches { gap: 2px; }
+.bk-notches i { width: 5px; height: 12px; }
+.bk-verdict-word { font-size: 38px; }
+.bk-call { margin: 0 0 10px; }
+.micha-expand-toggle {
+  display: flex; flex-direction: row-reverse; justify-content: space-between; align-items: center;
+  width: 100%; margin: 4px 0 6px; padding: 10px 12px;
+  background: var(--raise); border: 1px solid var(--rule); border-radius: var(--radius-m);
+  color: var(--text); font-family: var(--font); font-size: 13.5px; font-weight: 500;
+  cursor: pointer; touch-action: manipulation;
+}
+.micha-expand-toggle:hover { border-color: var(--text-faint); }
+.micha-expand-toggle .chev { color: var(--text-faint); font-size: 10px; }
+/* desktop: a slimmer column while it only holds the verdict — the chart gets the width */
+@media (min-width: 1151px) {
+  .workspace.with-panel .micha:not(.expanded) { width: 300px; }
+  .workspace.with-panel:not(.panel-collapsed) .panel-collapse-btn.slim { right: 300px; }
+}
+@media (max-width: 768px) {
+  .bk-verdict-word { font-size: 30px; }
+  .bk-meter-n { font-size: 17px; }
+  .bk-call { font-size: 14.5px; margin-bottom: 8px; }
+  .workspace.with-panel .micha { max-height: none; padding: 12px 16px 10px; }
+  .workspace.with-panel .micha.expanded { max-height: 72vh; overflow-y: auto; }
+  .micha-expand-toggle { min-height: 44px; }
+}

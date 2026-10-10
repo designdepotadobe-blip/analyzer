@@ -184,7 +184,7 @@
            whether the text is showing. Media-query gated to the same ≥1151px
            range where the panel is a fixed-width sidebar rather than a
            stacked/peek panel, so it never fights the mobile expand toggle. -->
-      <button type="button" class="panel-collapse-btn" *ngIf="michaMode && analysis"
+      <button type="button" class="panel-collapse-btn" *ngIf="michaMode && analysis" [class.slim]="!michaExpanded"
               [attr.aria-label]="panelCollapsed ? 'הצג ניתוח' : 'הסתר ניתוח'"
               (click)="togglePanelCollapsed()"
               [title]="panelCollapsed ? 'הצג ניתוח' : 'הסתר ניתוח — הצג את הגרף'">
@@ -239,6 +239,16 @@
 
       <!-- his post, in one line: what to do and at what price -->
       <p class="bk-call" dir="rtl">{{ a.micha.report.call_he }}</p>
+
+      <!-- The panel opens as the score + the recommendation only (owner, 2026-10-10)
+           so the chart keeps the room; everything below unfolds on tap and scrolls. -->
+      <button type="button" class="micha-expand-toggle" (click)="michaExpanded = !michaExpanded"
+              [attr.aria-expanded]="michaExpanded" aria-controls="bk-more">
+        <span dir="rtl">{{ michaExpanded ? 'פחות פרטים' : 'עוד פרטים: התוכנית, הנימוקים והציון' }}</span>
+        <span class="chev" aria-hidden="true">{{ michaExpanded ? '▲' : '▼' }}</span>
+      </button>
+
+      <div class="bk-more" id="bk-more">
 
       <!-- how he reads this chart, indicator by indicator -->
       <ul class="bk-mread" *ngIf="a.micha.report.micha_read?.length" dir="rtl">
@@ -346,12 +356,6 @@
         </div>
       </div>
 
-      <!-- the rest opens on tap -->
-      <button type="button" class="micha-expand-toggle" (click)="michaExpanded = !michaExpanded">
-        <span dir="rtl">{{ michaExpanded ? 'הצג פחות' : 'עוד פרטים' }}</span>
-        <span class="chev">{{ michaExpanded ? '▲' : '▼' }}</span>
-      </button>
-
       <!-- ── 4. The rest: the read, if-then, and what he'd point out ── -->
       <div class="micha-details">
         <p class="bk-read" dir="rtl">{{ a.micha.report.read_he }}</p>
@@ -366,6 +370,7 @@
           <span dir="rtl">ציון 4-הצירים הקודם, להשוואה בלבד: {{ a.micha.legacy_rating }}/10 · {{ a.micha.legacy_grade }}</span>
         </div>
       </div>
+      </div><!-- /bk-more -->
     </aside>
     </div><!-- /workspace -->
 

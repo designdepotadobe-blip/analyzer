@@ -103,7 +103,6 @@ const MAX_VISIBLE_BARS = 220;
               [class.up]="a.meta.quote!.change_pct! >= 0" [class.down]="a.meta.quote!.change_pct! < 0">
           {{ a.meta.quote!.change_pct! >= 0 ? '+' : '' }}{{ a.meta.quote!.change_pct | number: '1.2-2' }}%
         </span>
-        <span class="ci-ext" *ngIf="extLine(a) as x">{{ x }}</span>
         <span class="ci-break"></span>
         <span class="ci-badge"
               [class.up]="a.meta.ma_context === 'bull'"
@@ -389,18 +388,6 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
   }
 
   /** Full redraw of everything derived from `analysis` + `toggles`. */
-  /** "After 229.45 +0.07%" / "Pre ..." when the session is not regular. */
-  extLine(a: Analysis): string | null {
-    const q = (a.meta as any)?.quote;
-    if (!q || !q.state) return null;
-    const pre = q.state.startsWith('PRE') && q.pre_price != null;
-    const post = (q.state.startsWith('POST') || q.state === 'CLOSED') && q.post_price != null;
-    if (!pre && !post) return null;
-    const px = pre ? q.pre_price : q.post_price;
-    const pc = (pre ? q.pre_change_pct : q.post_change_pct) ?? 0;
-    return `${pre ? 'פרה' : 'אפטר'} ${px.toFixed(2)} ${pc >= 0 ? '+' : ''}${pc.toFixed(2)}%`;
-  }
-
   private render(): void {
     if (!this.chart || !this.candle || !this.volume) {
       return;
@@ -439,31 +426,8 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
         close: b.close,
       }))
     );
-    // today's change on the live price, and the pre-market / after-hours price as
-    // its own dashed line — the reader sees the latest price, not only the close
-    const q = a.meta?.quote;
-    if (q && q.change_pct != null && sortedBars.length) {
-      const last = sortedBars[sortedBars.length - 1].close;
-      const up = q.change_pct >= 0;
-      this.priceLines.push(this.candle.createPriceLine({
-        price: last, color: up ? '#26a69a' : '#ef5350', lineWidth: 1,
-        lineStyle: LineStyle.Dotted, axisLabelVisible: false,
-        title: `${up ? '+' : ''}${q.change_pct.toFixed(2)}% היום`,
-      }));
-    }
-    if (q && q.state) {
-      const pre = q.state.startsWith('PRE') && q.pre_price != null;
-      const post = (q.state.startsWith('POST') || q.state === 'CLOSED') && q.post_price != null;
-      if (pre || post) {
-        const px = (pre ? q.pre_price : q.post_price) as number;
-        const pc = (pre ? q.pre_change_pct : q.post_change_pct) ?? 0;
-        this.priceLines.push(this.candle.createPriceLine({
-          price: px, color: '#b39ddb', lineWidth: 1, lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: `${pre ? 'פרה' : 'אפטר'} ${pc >= 0 ? '+' : ''}${pc.toFixed(2)}%`,
-        }));
-      }
-    }
+    // Only the series' own last-price label marks the current price (owner,
+    // 2026-10-10): no pre-market / after-hours line, no titled change line.
     this.volume.setData(
       sortedBars.map((b) => ({
         time: b.time as Time,
