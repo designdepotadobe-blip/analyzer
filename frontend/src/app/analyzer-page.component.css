@@ -2228,3 +2228,29 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
   .workspace.with-panel .micha.expanded { max-height: 72vh; overflow-y: auto; }
   .micha-expand-toggle { min-height: 44px; }
 }
+
+/* ── Panel type scale (2026-10-10, ui-ux-pro-max `font-scale`: 12 / 14 / 16 / 24) ──
+   One scale for the whole panel, smaller than before (owner: "too big"). The
+   verdict word is the only 24; the score is 16; prices 14; everything else 12. */
+.bk-verdict-word { font-size: 24px; line-height: 1; }
+.bk-meter-n { font-size: 16px; }
+.bk-meter-n small { font-size: 12px; }
+.bk-notches i { width: 4px; height: 10px; }
+.bk-band, .bk-state, .bk-badge { font-size: 12px; }
+.bk-band .bk-band-letter { font-size: 12px; }
+.bk-call { font-size: 14px; font-weight: 500; line-height: 1.5; }
+.micha-expand-toggle { font-size: 12px; padding: 8px 12px; }
+.bk-mread, .bk-why, .bk-read, .bk-item-txt, .bk-sc, .bk-note, .bk-alt, .bk-pattern-txt { font-size: 12px; }
+.bk-pattern-tag, .bk-sec, .bk-k, .bk-pct, .bk-sub, .bk-alert-t, .bk-pts { font-size: 12px; }
+.bk-px { font-size: 14px; }
+.bk-tile-l { font-size: 16px; }
+.bk-tile-t, .bk-tile-p { font-size: 12px; }
+.bk-head { gap: 10px; margin-bottom: 8px; }
+.bk-verdict { gap: 2px; }
+@media (max-width: 768px) {
+  .bk-verdict-word { font-size: 24px; }
+  .bk-meter-n { font-size: 16px; }
+  .bk-call { font-size: 14px; margin-bottom: 8px; }
+  .micha-expand-toggle { font-size: 12px; min-height: 40px; }
+  .workspace.with-panel .micha { padding: 10px 16px 8px; }
+}
