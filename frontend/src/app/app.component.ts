@@ -1,4 +1,5 @@
 import { Component } from '@angular/core';
+import { NavigationEnd, Router } from '@angular/router';
 import { LEGAL } from './legal-config';
 
 // Versioned: bumping LEGAL.version asks every visitor to accept the updated Terms
@@ -18,6 +19,18 @@ const LEGAL_KEY = `micha_legal_ack_v${LEGAL.version}`;
   styleUrls: ['./app.component.css'],
 })
 export class AppComponent {
+  /** the stock page draws brand + tabs inside its own single toolbar */
+  onStockPage = true;
+
+  constructor(router: Router) {
+    router.events.subscribe((e) => {
+      if (e instanceof NavigationEnd) {
+        const path = e.urlAfterRedirects.split('?')[0].split('#')[0];
+        this.onStockPage = path === '/' || path === '';
+      }
+    });
+  }
+
   readonly L = LEGAL;
   agreeChecked = false;
 

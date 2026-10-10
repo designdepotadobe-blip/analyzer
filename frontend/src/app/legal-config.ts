@@ -12,7 +12,7 @@
  */
 export const LEGAL = {
   /** Site / service name as shown to users. */
-  siteName: 'Micha Stocks Analyzer',
+  siteName: 'Breakline',
   /** Legal name of the operator (person or company). */
   operatorName: '[להשלמה: שם המפעיל / החברה]',
   /** ח.פ. / ע.מ. / ת.ז. of the operator. */

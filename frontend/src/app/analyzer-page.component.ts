@@ -2,6 +2,7 @@ import { Component, Input, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { ApiService } from './api.service';
 import { Analysis, BookCap, BookItem, Meta, Micha, MichaOption, MichaPullback, MichaReasonGroup, MichaState, Toggles } from './models';
+import { SECTOR_HE } from './sectors';
 
 @Component({
   selector: 'app-analyzer-page',
@@ -77,6 +78,8 @@ export class AnalyzerPageComponent implements OnInit {
   // own overlay set, which isn't what "just let me see more of the graph"
   // means.
   panelCollapsed = false;
+  /** the chart-layers popover in the toolbar */
+  layersOpen = false;
 
   togglePanelCollapsed(): void {
     this.panelCollapsed = !this.panelCollapsed;
@@ -162,20 +165,20 @@ export class AnalyzerPageComponent implements OnInit {
   };
 
   readonly toggleKeys: { key: keyof Toggles; label: string }[] = [
-    { key: 'sma20', label: 'SMA20' },
-    { key: 'sma50', label: 'SMA50' },
-    { key: 'sma150', label: 'SMA150' },
-    { key: 'sma200', label: 'SMA200' },
-    { key: 'levels', label: 'S/R levels' },
-    { key: 'trendlines', label: 'Trendlines' },
-    { key: 'channels', label: 'Channels' },
-    { key: 'triangles', label: 'Triangles' },
-    { key: 'fib', label: 'Fibonacci' },
-    { key: 'markers', label: 'Markers' },
+    { key: 'sma20', label: 'ממוצע 20' },
+    { key: 'sma50', label: 'ממוצע 50' },
+    { key: 'sma150', label: 'ממוצע 150' },
+    { key: 'sma200', label: 'ממוצע 200' },
+    { key: 'levels', label: 'קווי תמיכה והתנגדות' },
+    { key: 'trendlines', label: 'קווי מגמה' },
+    { key: 'channels', label: 'תעלות' },
+    { key: 'triangles', label: 'משולשים' },
+    { key: 'fib', label: "פיבונאצ'י" },
+    { key: 'markers', label: 'סימוני פריצה' },
     // The yellow band. Its own control because it answers a question of its own —
     // "what is that yellow range?" — and `hasOverlay` hides the checkbox entirely
     // on a chart with no unfilled gap, so it only appears when there is one.
-    { key: 'gaps', label: 'Gap' },
+    { key: 'gaps', label: 'גאפים' },
     { key: 'cup', label: 'Cup / target' },
   ];
 
@@ -325,6 +328,12 @@ export class AnalyzerPageComponent implements OnInit {
 
   /** Pre-market / after-hours price when the session is not regular — shown beside
    *  the live price, never instead of it. */
+  /** Sector names in Hebrew, for the stock line. */
+  readonly sectorHe = SECTOR_HE;
+
+  /** the ten notches of the rating meter */
+  readonly notches = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
   extQuote(meta: Meta): { label: string; price: number; pct: number } | null {
     const q = meta.quote;
     if (!q || !q.state) return null;
@@ -341,11 +350,11 @@ export class AnalyzerPageComponent implements OnInit {
     const pct = meta.sma150_dist_pct != null
       ? ` (${meta.sma150_dist_pct.toFixed(1)}%)` : '';
     switch (meta.ma_context) {
-      case 'bull':       return `Above 150 & 200${pct}`;
-      case 'transition': return `Above 150 · below 200${pct}`;
-      case 'weak':       return `Below 150 · above 200${pct}`;
-      case 'bear':       return `Below 150 & 200${pct}`;
-      default:           return meta.above_150 ? `Above 150MA${pct}` : `Below 150MA${pct}`;
+      case 'bull':       return `מעל ממוצע 150 ו-200${pct}`;
+      case 'transition': return `מעל 150, מתחת ל-200${pct}`;
+      case 'weak':       return `מתחת ל-150, מעל 200${pct}`;
+      case 'bear':       return `מתחת לממוצע 150 ו-200${pct}`;
+      default:           return meta.above_150 ? `מעל ממוצע 150${pct}` : `מתחת לממוצע 150${pct}`;
     }
   }
 

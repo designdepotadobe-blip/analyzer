@@ -2,7 +2,13 @@
   <main class="main">
     <!-- ── Top bar: ticker search + Micha toggle — always visible ────────── -->
     <div class="topbar">
-      <span class="brand" aria-hidden="true">📈</span>
+      <!-- one toolbar, TradingView-style: brand + places, then the symbol and the chart controls -->
+      <a routerLink="/" class="tb-wordmark" aria-label="Breakline — דף הבית">BREAKLINE</a>
+      <nav class="tb-tabs" aria-label="ניווט ראשי">
+        <a routerLink="/" class="on">ניתוח מניה</a>
+        <a routerLink="/radar">רדאר</a>
+        <a routerLink="/portfolio">בניית תיק</a>
+      </nav>
       <div class="search-wrap">
         <input
           [(ngModel)]="ticker"
@@ -10,7 +16,7 @@
           (input)="onTickerInput()"
           (focus)="onTickerFocus()"
           (blur)="onBlur()"
-          placeholder="Ticker e.g. GTLB"
+          placeholder="סימול מניה, למשל NVDA"
           aria-label="סימול מניה לניתוח"
           spellcheck="false"
           autocomplete="off"
@@ -28,30 +34,22 @@
         </div>
       </div>
       <button (click)="load()" [disabled]="loading">
-        {{ loading ? '…' : 'Analyze' }}
+        {{ loading ? 'טוען…' : 'נתח' }}
       </button>
-      <!-- Links to the other two pages — the shell carries no nav chrome of its
-           own (see app.component.ts), so each page owns getting to the others. -->
-      <!-- Icons, not the plain colour dots this used to be — on phone width
-           `.radar-link-label` hides (see the mobile media query), which left a
-           bare, meaningless coloured circle as the ENTIRE tap target. 📡 and 🏗️
-           read as "Radar" and "Builder" on their own, so the icon-only mobile
-           state now says something instead of nothing. -->
-      <a routerLink="/radar" class="radar-link" title="Radar — stocks close to a decision" aria-label="רדאר — מניות קרובות להחלטה">
-        <span class="radar-icon">📡</span>
-        <span class="radar-link-label">Radar</span>
-      </a>
-      <a routerLink="/portfolio" class="radar-link portfolio-link" title="Portfolio — build a diverse basket" aria-label="בניית תיק">
-        <span class="radar-icon portfolio-icon">🏗️</span>
-        <span class="radar-link-label">Portfolio</span>
-      </a>
+      <button type="button" class="layers-btn" *ngIf="analysis" [class.on]="layersOpen"
+              (click)="layersOpen = !layersOpen" [attr.aria-expanded]="layersOpen">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5 9-5z" /><path d="M3 13l9 5 9-5" /></svg>
+        <span>שכבות</span>
+      </button>
       <label class="micha-toggle">
         <input type="checkbox" [(ngModel)]="michaMode" (ngModelChange)="onMichaModeChange()" />
-        <span>📊 <span class="toggle-en">Analyze</span> <span class="he">ניתוח</span></span>
+        <span>תצוגת ניתוח</span>
       </label>
     </div>
 
-    <header class="header" *ngIf="analysis as a">
+    <!-- the stock line now lives ON the chart (chart.component .chart-info); this block is
+         the layers popover, opened from the toolbar -->
+    <header class="header" *ngIf="analysis as a" [class.open]="layersOpen">
       <div class="title">
         <span class="ticker-icon">
           <img
@@ -60,9 +58,6 @@
             (error)="logoFailed = true"
             alt=""
           />
-          <span class="icon-emoji" *ngIf="!a.meta.logo_url || logoFailed">{{
-            a.meta.sector_icon || '📈'
-          }}</span>
         </span>
         <span class="sym">{{ a.ticker }}</span>
         <span class="price">{{ a.meta.price | number: '1.2-2' }}</span>
@@ -75,7 +70,7 @@
           {{ x.label }} {{ x.price | number: '1.2-2' }} ({{ x.pct >= 0 ? '+' : '' }}{{ x.pct | number: '1.2-2' }}%)
         </span>
         <span class="sector-chip" *ngIf="a.meta.sector" [title]="a.meta.industry || ''">
-          {{ a.meta.sector }}
+          {{ sectorHe[a.meta.sector] || a.meta.sector }}
         </span>
         <span
           class="badge"
@@ -93,7 +88,7 @@
              on desktop it stays up in the topbar as its own control. -->
         <label class="tgl mode-tgl">
           <input type="checkbox" [(ngModel)]="michaMode" (ngModelChange)="onMichaModeChange()" />
-          📊 ניתוח
+          תצוגת ניתוח
         </label>
         <ng-container *ngFor="let t of toggleKeys">
           <label class="tgl" *ngIf="hasOverlay(t.key)">
@@ -105,54 +100,54 @@
       <div class="toggles" *ngIf="michaMode && analysis as a">
         <label class="tgl mode-tgl">
           <input type="checkbox" [(ngModel)]="michaMode" (ngModelChange)="onMichaModeChange()" />
-          📊 ניתוח
+          תצוגת ניתוח
         </label>
         <label class="tgl">
           <input type="checkbox" [(ngModel)]="michaToggles.sma150" (ngModelChange)="onMichaToggleChange()" />
-          150MA
+          ממוצע 150
         </label>
         <label class="tgl" *ngIf="a.micha.chart_focus.sma200">
           <input type="checkbox" [(ngModel)]="michaToggles.sma200" (ngModelChange)="onMichaToggleChange()" />
-          200MA
+          ממוצע 200
         </label>
         <label class="tgl" *ngIf="a.micha.chart_focus.sma20">
           <input type="checkbox" [(ngModel)]="michaToggles.sma20" (ngModelChange)="onMichaToggleChange()" />
-          20MA
+          ממוצע 20
         </label>
         <label class="tgl">
           <input type="checkbox" [(ngModel)]="michaToggles.levels" (ngModelChange)="onMichaToggleChange()" />
-          S/R
+          קווי תמיכה והתנגדות
         </label>
         <label class="tgl" *ngIf="a.micha.chart_focus.fib">
           <input type="checkbox" [(ngModel)]="michaToggles.fib" (ngModelChange)="onMichaToggleChange()" />
-          Fib
+          פיבונאצ'י
         </label>
         <label class="tgl" *ngIf="a.micha.chart_focus.trendlines">
           <input type="checkbox" [(ngModel)]="michaToggles.trendlines" (ngModelChange)="onMichaToggleChange()" />
-          Trend line
+          קווי מגמה
         </label>
         <label class="tgl" *ngIf="a.micha.chart_focus.channels">
           <input type="checkbox" [(ngModel)]="michaToggles.channels" (ngModelChange)="onMichaToggleChange()" />
-          Channel
+          תעלה
         </label>
         <label class="tgl" *ngIf="a.micha.chart_focus.triangles">
           <input type="checkbox" [(ngModel)]="michaToggles.triangles" (ngModelChange)="onMichaToggleChange()" />
-          Triangle
+          משולש
         </label>
         <label class="tgl" *ngIf="a.overlays.gaps?.length">
           <input type="checkbox" [(ngModel)]="michaToggles.gaps" (ngModelChange)="onMichaToggleChange()" />
-          Gap
+          גאפים
         </label>
         <!-- Only where one exists. Most charts have neither a qualifying cup nor a
              reclaimed correction to project from, and a checkbox that draws nothing
              is worse than no checkbox — same rule as the Gap band above. -->
         <label class="tgl" *ngIf="a.overlays.cup || a.overlays.fib_ext">
           <input type="checkbox" [(ngModel)]="michaToggles.cup" (ngModelChange)="onMichaToggleChange()" />
-          {{ a.overlays.cup ? (a.overlays.cup.has_handle ? 'Cup & handle' : 'Cup') : 'Fib ext' }}
+          {{ a.overlays.cup ? (a.overlays.cup.has_handle ? 'קאפ אנד הנדל' : 'קאפ') : 'הרחבת פיבונאצ׳י' }}
         </label>
         <label class="tgl">
           <input type="checkbox" [(ngModel)]="michaToggles.markers" (ngModelChange)="onMichaToggleChange()" />
-          Markers
+          סימוני פריצה
         </label>
       </div>
     </header>
@@ -179,7 +174,7 @@
              workspace height — "let me just see the graph". -->
         <button type="button" class="mobile-panel-toggle" *ngIf="michaMode && analysis"
                 (click)="togglePanelCollapsed()">
-          {{ panelCollapsed ? '📊 הצג ניתוח' : '🔼 הסתר ניתוח' }}
+          {{ panelCollapsed ? 'הצג ניתוח' : 'הסתר ניתוח' }}
         </button>
       </div>
 
@@ -210,12 +205,14 @@
            it (the TipRanks / Seeking Alpha pattern — "8, Outperform" reads faster
            than a bare 8). The letter stays as a small tag for the scan filters. -->
       <div class="bk-head" [ngClass]="'act-' + a.micha.action">
-        <div class="bk-ring" [style.background]="ringStyle(a.micha)"
-             [title]="a.micha.grade_why_he" (click)="onGradeBadgeClick()">
-          <div class="bk-ring-in">
-            <span class="bk-ring-n">{{ a.micha.rating }}</span>
-            <span class="bk-ring-of">מתוך 10</span>
-          </div>
+        <!-- the rating as a 10-notch level meter — the count IS the reading -->
+        <div class="bk-meter" [ngClass]="'tone-' + ratingBand(a.micha.rating).tone"
+             [title]="a.micha.grade_why_he" (click)="onGradeBadgeClick()"
+             role="img" [attr.aria-label]="'דירוג ' + a.micha.rating + ' מתוך 10'">
+          <span class="bk-meter-n">{{ a.micha.rating }}<small>/10</small></span>
+          <span class="bk-notches" aria-hidden="true">
+            <i *ngFor="let n of notches" [class.on]="n <= a.micha.rating"></i>
+          </span>
         </div>
         <div class="bk-verdict">
           <span class="bk-band" [ngClass]="'band-' + ratingBand(a.micha.rating).tone">

@@ -97,19 +97,21 @@ const MAX_VISIBLE_BARS = 220;
            back to the chart. Desktop keeps the normal <header>, unchanged — this
            block is display:none until the mobile breakpoint. -->
       <div class="chart-info" *ngIf="analysis as a">
-        <span class="ci-emoji">{{ a.meta.sector_icon || '📈' }}</span>
         <span class="ci-sym">{{ a.ticker }}</span>
         <span class="ci-price">{{ a.meta.price | number: '1.2-2' }}</span>
-        <span
-          class="ci-badge"
-          [class.up]="a.meta.ma_context === 'bull'"
-          [class.transition]="a.meta.ma_context === 'transition' || a.meta.ma_context === 'weak'"
-          [class.down]="a.meta.ma_context === 'bear'"
-        >{{ metaBadge }}</span>
+        <span class="ci-chg" *ngIf="a.meta.quote?.change_pct != null"
+              [class.up]="a.meta.quote!.change_pct! >= 0" [class.down]="a.meta.quote!.change_pct! < 0">
+          {{ a.meta.quote!.change_pct! >= 0 ? '+' : '' }}{{ a.meta.quote!.change_pct | number: '1.2-2' }}%
+        </span>
+        <span class="ci-ext" *ngIf="extLine(a) as x">{{ x }}</span>
+        <span class="ci-break"></span>
+        <span class="ci-badge"
+              [class.up]="a.meta.ma_context === 'bull'"
+              [class.transition]="a.meta.ma_context === 'transition' || a.meta.ma_context === 'weak'"
+              [class.down]="a.meta.ma_context === 'bear'">{{ metaBadge }}</span>
         <span class="ci-atr" [ngClass]="'vol-' + a.meta.vol_tier">
           ATR {{ a.meta.atr_pct != null ? ((a.meta.atr_pct | number: '1.1-1') + '%') : (a.meta.atr | number: '1.2-2') }}
         </span>
-        <span class="ci-sector" *ngIf="a.meta.sector">{{ a.meta.sector }}</span>
       </div>
     </div>
   `,
@@ -140,9 +142,9 @@ const MAX_VISIBLE_BARS = 220;
         flex-direction: column;
         gap: 1px;
         pointer-events: none;
-        background: rgba(19, 23, 34, 0.6);
-        border-radius: 5px;
-        padding: 4px 8px;
+        background: rgba(19, 23, 34, 0.72);
+        border-radius: 6px;
+        padding: 5px 9px;
         max-width: calc(100% - 90px);
       }
       .lg-row {
@@ -162,11 +164,11 @@ const MAX_VISIBLE_BARS = 220;
         flex: 0 0 auto;
       }
       .lg-label {
-        color: #9aa0aa;
+        color: var(--text-dim);
         flex: 0 0 auto;
       }
       .lg-value {
-        color: #d1d4dc;
+        color: var(--text);
         font-weight: 600;
         flex: 0 0 auto;
       }
@@ -184,66 +186,61 @@ const MAX_VISIBLE_BARS = 220;
          rules are duplicated from app.component.css rather than shared, because
          Angular's per-component style encapsulation means that stylesheet's
          classes don't reach into this component's template. */
+      /* The stock line, TradingView-style, top-left ON the chart at every width:
+         symbol + price + today, then the facts as dot + word. It replaced the
+         separate header row the page used to spend above the chart. */
       .chart-info {
-        display: none;
+        display: flex;
+        position: absolute;
+        top: 8px;
+        left: 10px;
+        z-index: 4;
+        align-items: baseline;
+        gap: 4px 10px;
+        flex-wrap: wrap;
+        max-width: calc(100% - 90px);
+        padding: 5px 10px 6px;
+        background: rgba(19, 23, 34, 0.8);
+        border-radius: 6px;
+        pointer-events: none;
+        direction: ltr;
       }
+      .ci-break { flex-basis: 100%; height: 0; }
+      .ci-sym { font-size: 18px; font-weight: 700; color: var(--text); letter-spacing: 0.01em; }
+      .ci-price { font-size: 18px; font-weight: 500; color: var(--text); }
+      .ci-chg { font-size: 14px; font-weight: 600; }
+      .ci-chg.up { color: var(--up-text); }
+      .ci-chg.down { color: var(--down-text); }
+      .ci-ext { font-size: 12.5px; color: var(--text-dim); }
+      .ci-badge, .ci-atr {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 12px;
+        color: var(--text-dim);
+        white-space: nowrap;
+      }
+      .ci-badge::before, .ci-atr::before {
+        content: '';
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--text-faint);
+      }
+      .ci-badge.up::before { background: var(--up); }
+      .ci-badge.transition::before { background: var(--wait); }
+      .ci-badge.down::before { background: var(--down); }
+      .ci-atr.vol-low::before { background: var(--up); }
+      .ci-atr.vol-medium::before { background: var(--wait); }
+      .ci-atr.vol-high::before { background: var(--down); }
+      /* the line legend sits under the stock line, not on top of it */
+      .chart-legend { top: 68px; }
       @media (max-width: 768px) {
-        .chart-info {
-          display: flex;
-          position: absolute;
-          top: 6px;
-          left: 6px;
-          right: 6px;
-          z-index: 4;
-          align-items: center;
-          gap: 7px;
-          flex-wrap: wrap;
-          background: rgba(19, 23, 34, 0.72);
-          border-radius: 6px;
-          padding: 5px 8px;
-          pointer-events: none;
-        }
-        .ci-emoji {
-          font-size: 13px;
-          line-height: 1;
-        }
-        .ci-sym {
-          font-size: 12.5px;
-          font-weight: 700;
-          color: #fff;
-        }
-        .ci-price {
-          font-size: 12.5px;
-          font-weight: 700;
-          color: #fff;
-        }
-        .ci-badge {
-          font-size: 9.5px;
-          padding: 2px 6px;
-          border-radius: 4px;
-          color: #9aa0aa;
-          background: rgba(255, 255, 255, 0.08);
-          white-space: nowrap;
-        }
-        .ci-badge.up { background: rgba(38, 166, 154, 0.24); color: #26a69a; }
-        .ci-badge.transition { background: rgba(255, 152, 0, 0.24); color: #ff9800; }
-        .ci-badge.down { background: rgba(239, 83, 80, 0.24); color: #ef5350; }
-        .ci-atr {
-          font-size: 10px;
-          font-weight: 600;
-          white-space: nowrap;
-        }
-        .ci-atr.vol-low { color: #26a69a; }
-        .ci-atr.vol-medium { color: #9aa0aa; }
-        .ci-atr.vol-high { color: #ef5350; }
-        .ci-sector {
-          font-size: 9.5px;
-          color: #9aa0aa;
-          background: rgba(255, 255, 255, 0.08);
-          border-radius: 4px;
-          padding: 2px 6px;
-          white-space: nowrap;
-        }
+        .chart-info { top: 6px; left: 8px; max-width: calc(100% - 70px); padding: 4px 8px 5px; gap: 3px 8px; }
+        .ci-sym, .ci-price { font-size: 15px; }
+        .ci-chg { font-size: 12.5px; }
+        .ci-ext { font-size: 11px; }
+        .ci-badge, .ci-atr { font-size: 11px; }
       }
     `,
   ],
@@ -392,6 +389,18 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
   }
 
   /** Full redraw of everything derived from `analysis` + `toggles`. */
+  /** "After 229.45 +0.07%" / "Pre ..." when the session is not regular. */
+  extLine(a: Analysis): string | null {
+    const q = (a.meta as any)?.quote;
+    if (!q || !q.state) return null;
+    const pre = q.state.startsWith('PRE') && q.pre_price != null;
+    const post = (q.state.startsWith('POST') || q.state === 'CLOSED') && q.post_price != null;
+    if (!pre && !post) return null;
+    const px = pre ? q.pre_price : q.post_price;
+    const pc = (pre ? q.pre_change_pct : q.post_change_pct) ?? 0;
+    return `${pre ? 'פרה' : 'אפטר'} ${px.toFixed(2)} ${pc >= 0 ? '+' : ''}${pc.toFixed(2)}%`;
+  }
+
   private render(): void {
     if (!this.chart || !this.candle || !this.volume) {
       return;
@@ -488,7 +497,7 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
       if (last) {
         legend.push({
           color: this.smaColors[key],
-          label: key.replace('sma', 'SMA '),
+          label: key.replace('sma', 'ממוצע '),
           value: last.value.toFixed(2),
         });
       }
@@ -767,8 +776,9 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
       const trig = (m.key_levels || []).find((k) => k.role === 'trigger')
         || (m.key_levels || []).find((k) => k.role === 'entry');
       if (trig && trig.price != null) {
-        addPlanLine('trigger', trig.price, MICHA_LINE, 2, LineStyle.Solid, trig.label);
-        legend.push({ color: MICHA_LINE, label: trig.label, value: trig.price.toFixed(2) });
+        const trigLabel = (trig as any).label_he || trig.label;
+        addPlanLine('trigger', trig.price, MICHA_LINE, 2, LineStyle.Solid, trigLabel);
+        legend.push({ color: MICHA_LINE, label: trigLabel, value: trig.price.toFixed(2) });
 
         // ── …and its FLOOR, so the breakout reads as a BAND ─────────────────
         // This is the shape his charts are built on, and both of his labelled
@@ -841,8 +851,9 @@ export class ChartComponent implements AfterViewInit, OnChanges, OnDestroy {
         // Cyan — the colour he price-tags his actionable levels in (MARA: cyan
         // 14.69 trigger), against the yellow he uses for structural S/R underneath.
         const color = MICHA_CYAN;
-        addPlanLine(k.role, k.price, color, 2, style, k.label);
-        legend.push({ color, label: k.label, value: k.price.toFixed(2) });
+        const kLabel = (k as any).label_he || k.label;
+        addPlanLine(k.role, k.price, color, 2, style, kLabel);
+        legend.push({ color, label: kLabel, value: k.price.toFixed(2) });
       }
 
       // ── Unfilled gaps ──────────────────────────────────────────────────

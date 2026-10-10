@@ -29,3 +29,6 @@ corpus/
 # personal commentary, reviewed locally on demand, never auto-processed or
 # committed. See backend/api.py's `add_note`/`list_notes`.
 analyst_notes.jsonl
+
+# daily board store (backend/board.py)
+.data/

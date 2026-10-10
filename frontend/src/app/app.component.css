@@ -141,3 +141,76 @@ router-outlet {
 }
 .legal-modal-agree input { margin-top: 4px; width: 16px; height: 16px; flex: 0 0 auto; }
 .legal-modal-agree a { color: #9ccaf8; }
+
+/* ── Redesign 2026-10: the shared shell ───────────────────────────────────── */
+.shell-bar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row-reverse;   /* RTL without `dir` on a flex container */
+  align-items: center;
+  gap: 28px;
+  height: var(--shell-h);
+  padding: 0 20px;
+  background: var(--bg-deep);
+  border-bottom: 1px solid var(--rule-soft);
+}
+.wordmark {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  color: var(--ma150);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.shell-tabs { display: flex; flex-direction: row-reverse; gap: 4px; height: 100%; }
+.shell-tabs a {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-dim);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.shell-tabs a:hover { color: var(--text); }
+.shell-tabs a.on { color: var(--text); border-bottom-color: var(--ma150); }
+
+.legal-footer { background: var(--bg-deep); border-top-color: var(--rule-soft); color: var(--text-faint); }
+.legal-footer-links { gap: 14px; }
+
+.tabbar { display: none; }
+
+@media (max-width: 768px) {
+  .shell-bar { display: none; }
+  .legal-footer { min-height: 22px; padding: 2px 12px; font-size: 10.5px; }
+  .legal-footer-links { gap: 10px; }
+  .tabbar {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: row-reverse;
+    height: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: var(--bg-deep);
+    border-top: 1px solid var(--rule);
+  }
+  .tabbar a {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-faint);
+    text-decoration: none;
+  }
+  .tabbar svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .tabbar a.on { color: var(--text); }
+  .tabbar a.on svg { stroke: var(--ma150); }
+}
+
+/* the footer: one quiet 22px line on desktop too — every pixel is the chart's */
+.legal-footer { min-height: 24px; padding: 2px 16px; font-size: 11.5px; }

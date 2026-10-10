@@ -1993,3 +1993,199 @@ button:disabled {
 .title .ext-px { font-weight: 500; opacity: 0.85; border: 1px solid #2a2e39; border-radius: 4px; padding: 1px 6px; }
 .title .up { color: #26a69a; }
 .title .down { color: #ef5350; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Redesign 2026-10 — the stock page in his chart's language (tokens in
+   styles.css). The chart is the hero; the panel is quiet except for ONE loud
+   thing: the verdict word, set in the condensed board face.
+   ════════════════════════════════════════════════════════════════════════════ */
+:host { color: var(--text); background: var(--bg-deep); }
+
+/* search row */
+.topbar { background: var(--bg-deep); border-bottom: 1px solid var(--rule-soft); padding: 10px 20px; gap: 10px; }
+input, select, button { border-radius: var(--radius-s); font-family: var(--font); }
+input, select { background: var(--raise); border-color: var(--rule); color: var(--text); }
+.search-wrap { width: 260px; }
+.search-wrap input { padding: 8px 11px; font-size: 14px; font-weight: 500; letter-spacing: 0.02em; }
+.search-wrap input::placeholder { color: var(--text-faint); font-weight: 400; letter-spacing: 0; }
+.suggestions { background: var(--raise); border-color: var(--rule); }
+.suggestion { color: var(--text); }
+.suggestion:hover, .suggestion.highlighted { background: var(--ma150-soft); color: var(--text); }
+button { background: var(--ma150); border-color: var(--ma150); color: #fff; font-weight: 600; padding: 8px 16px; }
+button:hover:not(:disabled) { filter: brightness(1.08); }
+.micha-toggle { background: transparent; border: 1px solid var(--rule); color: var(--text-dim); font-weight: 500; border-radius: var(--radius-s); }
+.micha-toggle input, .tgl input { accent-color: var(--ma150); }
+
+/* the stock line: name, price, today — then the facts as dot + word */
+.header { background: var(--bg); border-bottom: 1px solid var(--rule-soft); padding: 10px 20px; }
+.title { align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.title .sym { font-size: 24px; font-weight: 700; letter-spacing: 0.01em; color: var(--text); }
+.title .price { font-size: 24px; font-weight: 500; color: var(--text); }
+.title .day-chg { font-size: 15px; font-weight: 600; }
+.title .ext-px { border: none; padding: 0; font-size: 13px; color: var(--text-dim); }
+.title .up { color: var(--up-text); }
+.title .down { color: var(--down-text); }
+.ticker-icon img { border-radius: var(--radius-s); }
+.sector-chip { background: none; border: none; padding: 0; font-size: 13px; font-weight: 400; color: var(--text-dim); }
+.badge, .atr {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none !important; padding: 0; border-radius: 0;
+  font-size: 13px; font-weight: 500; color: var(--text-dim) !important;
+}
+.badge::before, .atr::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); }
+.badge.up::before, .atr.vol-low::before { background: var(--up); }
+.badge.transition::before, .atr.vol-medium::before { background: var(--wait); }
+.badge.down::before, .atr.vol-high::before { background: var(--down); }
+
+/* chart layers */
+.toggles { gap: 4px 16px; }
+.tgl { font-size: 13px; color: var(--text-dim); gap: 6px; }
+.tgl:hover { color: var(--text); }
+
+/* the panel */
+.workspace { background: var(--bg); }
+.micha { background: var(--panel); }
+.workspace.with-panel .micha { width: 400px; padding: 18px 20px 24px; border-left: 1px solid var(--rule); }
+@media (min-width: 1151px) {
+  .workspace.with-panel .panel-collapse-btn { right: 400px; background: var(--panel); border-color: var(--rule); color: var(--text-dim); }
+  .panel-collapse-btn:hover { background: var(--raise); color: var(--text); }
+}
+
+/* 1 — the verdict: board-face word, the meter beside it */
+.bk-head { display: flex; flex-direction: row-reverse; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 14px; padding: 0; background: none; border: none; }
+.bk-verdict { align-items: flex-end; gap: 4px; }
+.bk-verdict-word { font-family: var(--font-board); font-weight: 700; font-size: 46px; line-height: 0.9; letter-spacing: 0.005em; color: var(--text); }
+.bk-verdict-word.hl-ENTER { color: var(--up-text); }
+.bk-verdict-word.hl-READY, .bk-verdict-word.hl-WAIT { color: var(--wait); }
+.bk-verdict-word.hl-WATCH { color: var(--text-dim); }
+.bk-verdict-word.hl-AVOID { color: var(--down-text); }
+.bk-state { font-size: 13px; color: var(--text-dim); }
+.bk-band { background: none !important; padding: 0; font-size: 12.5px; font-weight: 500; color: var(--text-dim) !important; gap: 6px; }
+.bk-band .bk-band-letter { background: var(--raise) !important; color: var(--text) !important; border-radius: 3px; padding: 0 5px; font-size: 11.5px; }
+
+.bk-meter { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; cursor: default; padding-top: 4px; }
+.bk-meter-n { font-size: 30px; font-weight: 700; line-height: 1; color: var(--text); direction: ltr; unicode-bidi: isolate; }
+.bk-meter-n small { font-size: 13px; font-weight: 500; color: var(--text-faint); margin-left: 1px; }
+.bk-notches { display: flex; gap: 3px; direction: ltr; }
+.bk-notches i { width: 7px; height: 18px; border-radius: 1.5px; background: var(--rule); }
+.bk-meter.tone-strong .bk-notches i.on { background: var(--up); }
+.bk-meter.tone-good .bk-notches i.on { background: #7cc98f; }
+.bk-meter.tone-watch .bk-notches i.on { background: var(--wait); }
+.bk-meter.tone-weak .bk-notches i.on { background: var(--down); }
+
+/* the call, in his words */
+.bk-call { font-size: 17px; font-weight: 600; line-height: 1.5; color: var(--text); margin: 0 0 10px; padding: 0; background: none; border: none; }
+
+/* how he reads it */
+.bk-mread { margin: 0 0 16px; font-size: 13.5px; line-height: 1.55; color: var(--text); }
+.bk-mread li { padding: 2px 0; }
+.bk-mread .mr-pos .mr-ic { color: var(--up-text); }
+.bk-mread .mr-neg .mr-ic { color: var(--down-text); }
+.bk-mread .mr-neu .mr-ic { color: var(--text-faint); }
+.bk-mread .mr-neu span:last-child { color: var(--text-dim); }
+
+.bk-badges { margin-bottom: 14px; gap: 6px 14px; }
+.bk-badge { background: none; border: none; padding: 0; font-size: 12.5px; color: var(--text-dim); }
+
+.bk-pattern { background: none; border: none; border-right: 2px solid var(--rule); border-radius: 0; padding: 2px 10px 2px 0; margin: 0 0 16px; }
+.bk-pattern.pb-good { border-right-color: var(--up); }
+.bk-pattern.pb-warn { border-right-color: var(--wait); }
+.bk-pattern-tag { color: var(--text); font-weight: 600; }
+.bk-pattern-txt { color: var(--text-dim); }
+
+/* section heads: a rule and a quiet word, no boxes */
+.bk-sec { margin: 18px 0 6px; padding-top: 12px; border-top: 1px solid var(--rule); font-size: 13px; font-weight: 600; color: var(--text-dim); background: none; }
+.bk-sec-aside { color: var(--text-faint); font-weight: 500; }
+
+/* 2 — the plan as a ledger */
+.bk-plan { background: none; border: none; border-radius: 0; overflow: visible; }
+.bk-row { padding: 9px 0; background: none; border-bottom: 1px solid var(--rule-soft); }
+.bk-row.active, .bk-row:hover { background: rgba(255, 255, 255, 0.03); }
+.bk-k { flex: 0 0 92px; font-size: 13px; font-weight: 600; color: var(--text-dim); }
+.bk-row.role-entry .bk-k { color: var(--text); }
+.bk-row.role-stop .bk-k { color: var(--down-text); }
+.bk-row.role-target .bk-k { color: var(--up-text); }
+.bk-px { font-size: 17px; font-weight: 600; color: var(--text); }
+.bk-pct.pos { color: var(--up-text); }
+.bk-pct.neg { color: var(--down-text); }
+.bk-sub { color: var(--text-faint); }
+.bk-alt { background: none; padding: 8px 0; color: var(--text-dim); }
+
+/* the one coloured block: close to the decision */
+.bk-alert { background: var(--wait-soft); border: none; border-right: 3px solid var(--wait); border-radius: 0 var(--radius-s) var(--radius-s) 0; padding: 9px 12px; margin: 14px 0 4px; }
+.bk-alert-t { color: var(--wait); }
+
+/* 3 — the grade */
+.bk-grade { background: none; border: none; padding: 0; }
+.bk-why { color: var(--text); font-size: 13.5px; }
+.bk-tile { background: none !important; border: 1px solid var(--rule-soft) !important; border-radius: var(--radius-s) !important; }
+.micha-expand-toggle { background: none; border: none; border-top: 1px solid var(--rule); border-radius: 0; color: var(--text-dim); font-weight: 500; margin-top: 16px; padding: 12px 0 4px; width: 100%; }
+.micha-expand-toggle:hover { color: var(--text); }
+.bk-read { color: var(--text); }
+.bk-note { color: var(--text-dim); }
+
+/* phone */
+@media (max-width: 768px) {
+  .topbar { padding: 8px 12px; }
+  .search-wrap { width: auto; }
+  .header { padding: 6px 12px; background: var(--bg); }
+  .workspace.with-panel .micha { width: auto; padding: 14px 16px 20px; border-left: none; border-top: 1px solid var(--rule); }
+  .bk-verdict-word { font-size: 40px; }
+  .bk-call { font-size: 16px; }
+  .mode-tgl { border-color: var(--ma150); border-radius: var(--radius-s); color: var(--text); }
+  .mobile-panel-toggle { background: rgba(19, 23, 34, 0.94); border-color: var(--rule); color: var(--text); border-radius: var(--radius-s); box-shadow: none; }
+}
+
+.badge, .atr { border: none !important; box-shadow: none !important; }
+
+/* ── Chart as the hero (2026-10): one toolbar, the stock line on the chart,
+      layers in a popover, the panel as a peek on the phone ─────────────────── */
+.main { position: relative; }
+.topbar { flex-direction: row-reverse; height: 46px; padding: 0 14px; gap: 10px; }
+.tb-wordmark { font-weight: 700; font-size: 15px; letter-spacing: 0.06em; color: var(--ma150); text-decoration: none; white-space: nowrap; }
+.tb-tabs { display: flex; flex-direction: row-reverse; height: 100%; margin-left: 8px; }
+.tb-tabs a { display: flex; align-items: center; padding: 0 11px; font-size: 14px; font-weight: 500; color: var(--text-dim); text-decoration: none; border-bottom: 2px solid transparent; }
+.tb-tabs a:hover { color: var(--text); }
+.tb-tabs a.on { color: var(--text); border-bottom-color: var(--ma150); }
+.topbar .search-wrap { width: 200px; margin-right: auto; }
+.topbar .search-wrap input { height: 32px; padding: 5px 10px; }
+.topbar > button:not(.layers-btn) { height: 32px; padding: 0 14px; }
+.layers-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 11px;
+  background: none; border: 1px solid var(--rule); color: var(--text-dim); font-weight: 500;
+}
+.layers-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; }
+.layers-btn:hover, .layers-btn.on { color: var(--text); border-color: var(--text-faint); filter: none; }
+.layers-btn.on { background: var(--raise); }
+.topbar .micha-toggle { height: 32px; padding: 0 10px; }
+
+/* the stock line moved onto the chart; this element is now the layers popover */
+.header { display: none; position: absolute; top: 52px; left: 14px; z-index: 50;
+  width: 240px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--rule);
+  border-radius: var(--radius-m); box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45); }
+.header.open { display: block; }
+.header .title { display: none; }
+.header .toggles { flex-direction: column; align-items: flex-end; gap: 2px; flex-wrap: nowrap; overflow: visible; }
+.header .tgl { padding: 7px 0; font-size: 14px; flex-direction: row-reverse; }
+.header .mode-tgl { display: flex; border: none; border-bottom: 1px solid var(--rule); border-radius: 0; padding-bottom: 9px; margin-bottom: 4px; width: 100%; justify-content: flex-start; flex-direction: row-reverse; color: var(--text); font-weight: 600; }
+
+.workspace.with-panel .micha { width: 380px; }
+@media (min-width: 1151px) {
+  .workspace.with-panel .panel-collapse-btn { right: 380px; }
+}
+
+@media (max-width: 768px) {
+  .topbar { height: 52px; padding: 0 10px; gap: 8px; }
+  .tb-wordmark, .tb-tabs, .topbar .micha-toggle { display: none; }
+  .topbar .search-wrap { width: auto; flex: 1 1 auto; margin-right: 0; }
+  .topbar .search-wrap input { height: 38px; font-size: 16px; }
+  .topbar > button:not(.layers-btn) { height: 38px; font-size: 15px; }
+  .layers-btn { height: 38px; padding: 0 10px; }
+  .layers-btn span { display: none; }
+  .header { top: 56px; left: 10px; width: 230px; padding: 6px 14px; }
+  .header .toggles { flex-direction: column; overflow: visible; }
+  .header .tgl { padding: 9px 0; }
+  /* the panel opens as a peek — verdict and call — so the chart keeps the screen */
+  .workspace.with-panel .micha { max-height: 34vh; }
+  .workspace.with-panel .micha.expanded { max-height: 72vh; }
+}

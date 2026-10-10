@@ -667,3 +667,68 @@
   direction: ltr;
   unicode-bidi: isolate;
 }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Redesign 2026-10 — Portfolio in the app's chart language (tokens in styles.css)
+   ════════════════════════════════════════════════════════════════════════════ */
+:host { color: var(--text); }
+.main { background: var(--bg); }
+.pf-header { background: var(--bg); border-bottom: none; padding: 18px 22px 6px; }
+.pf-title-text h1 { font-size: 24px; font-weight: 700; color: var(--text); }
+.pf-sub { color: var(--text-dim); font-size: 13.5px; }
+
+.pf-input-bar { border-bottom: 1px solid var(--rule); }
+.pf-input { background: var(--raise); border: 1px solid var(--rule); border-radius: var(--radius-s); color: var(--text); font-family: var(--font); font-size: 14px; }
+.pf-input::placeholder { color: var(--text-faint); }
+.pf-ctrl-label { font-size: 12.5px; font-weight: 500; color: var(--text-faint); }
+.pf-chips { background: none; border: none; padding: 0; gap: 2px; }
+.pf-chip { background: none; border-radius: 0; border-bottom: 2px solid transparent; padding: 6px 10px; font-size: 13.5px; font-weight: 500; color: var(--text-dim); }
+.pf-chip.active { background: none; color: var(--text); border-bottom-color: var(--ma150); }
+.pf-build-btn, .pf-step-next, .pf-review-accept { background: var(--ma150); border: 1px solid var(--ma150); color: #fff; border-radius: var(--radius-s); font-weight: 600; }
+.pf-build-btn:hover:not(:disabled), .pf-step-next:hover:not(:disabled) { filter: brightness(1.08); }
+.pf-step-back, .pf-review-reject, .pf-edit-prefs { background: none; border: 1px solid var(--rule); color: var(--text-dim); border-radius: var(--radius-s); }
+
+.pf-steps { border-bottom: 1px solid var(--rule-soft); }
+.pf-step { color: var(--text-faint); font-weight: 500; }
+.pf-step.active { color: var(--text); }
+.pf-step.done { color: var(--up-text); }
+.pf-step-sep { color: var(--rule); }
+.pf-step-title { color: var(--text); font-size: 19px; font-weight: 700; }
+.pf-step-sub { color: var(--text-dim); }
+
+.pf-risk-card, .pf-review-card, .pf-card, .pf-sector-check {
+  background: var(--panel) !important;
+  border: 1px solid var(--rule-soft) !important;
+  border-radius: var(--radius-m) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+.pf-risk-card.active, .pf-risk-card.selected { border-color: var(--ma150) !important; }
+.pf-risk-label { color: var(--text); font-weight: 700; }
+.pf-risk-desc { color: var(--text-dim); }
+.pf-sector-check.excluded { border-color: var(--down) !important; color: var(--down-text); }
+.pf-sc-mark { color: var(--down-text); }
+
+.pf-card-tk { color: var(--text); font-weight: 700; }
+.pf-card-price { color: var(--text); }
+.pf-card-sector { color: var(--text-faint); }
+.pf-card-call { color: var(--text-dim); }
+.pf-section-head h2 { color: var(--text); font-size: 17px; font-weight: 700; }
+.pf-section-sub, .pf-section-count { color: var(--text-faint); background: none; }
+.pf-section-dot.dot-suggest { background: var(--up); box-shadow: none; }
+.pf-section-dot.dot-held { background: var(--text-dim); box-shadow: none; }
+.pf-summary { background: none; border: none; border-bottom: 1px solid var(--rule); border-radius: 0; }
+.pf-sum-k { color: var(--text-faint); }
+.pf-sum-v { color: var(--text); }
+.pf-sum-v.warn, .pf-warn { color: var(--wait); }
+.pf-warn { background: var(--wait-soft); border: none; border-right: 3px solid var(--wait); border-radius: 0; }
+.pf-loading-txt, .pf-intro-txt { color: var(--text); }
+.pf-intro-sub { color: var(--text-dim); }
+.pf-empty-suggest { color: var(--up-text); }
+.pf-ring { border-color: rgba(242, 56, 110, 0.25); }
+
+@media (max-width: 768px) {
+  .pf-header { padding: 14px 14px 4px; }
+  .pf-title-text h1 { font-size: 22px; }
+  .pf-input { font-size: 16px; min-height: 96px; }
+}

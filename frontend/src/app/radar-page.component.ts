@@ -1,24 +1,30 @@
 import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { ApiService } from './api.service';
-import { ScanHit } from './models';
+import { BoardChange, ScanHit } from './models';
+import { sectorHe } from './sectors';
 
-type SortKey = 'expectancy' | 'risk' | 'gain' | 'rr' | 'grade';
+type SortKey = 'rating' | 'dist' | 'risk' | 'gain';
 type RadarPreset = 'aggressive' | 'ready' | 'conservative' | 'reversal' | null;
-type Grade = 'A' | 'B' | 'C' | 'D' | 'F';
+type Tab = 'enter' | 'wait' | 'changes';
 
 const MOBILE_BREAKPOINT = 768;
 
-interface SectorGroup {
-  sector: string;
-  icon: string;
-  rows: ScanHit[];
-  /** Precomputed `{ list: rows }` — see `computeSectorGroups` for why the template
-   *  must bind to this instead of building the context object inline. */
-  ctx: { list: ScanHit[] };
-}
+interface Group { sector: string; rows: ScanHit[]; }
 
+/**
+ * The daily board (backend/board.py): the universe is analysed once after the close
+ * and stored; this page reads it instantly and filters it here — no rescan.
+ *
+ * Desktop is a dense watchlist table (sortable columns) with "what changed since
+ * the last board" as a side column; the phone is the same data as tabs over
+ * two-line list rows. Every row keeps the quick-look (hover on desktop, tap → sheet).
+ *
+ * Headless-Edge render constraints (memory: micha-radar-page) still hold for the
+ * repeated rows: plain flex with the DOM order reversed for RTL (no row-reverse),
+ * no CSS grid ancestors, no %-widths, `dir="rtl"` only on text-only leaves.
+ */
 @Component({
   selector: 'app-radar-page',
   templateUrl: './radar-page.component.html',
@@ -26,289 +32,155 @@ interface SectorGroup {
 })
 export class RadarPageComponent implements OnInit, OnDestroy {
   loading = false;
-  /** True from the first hit until the closing `done` frame — drives the small
-   *  "נסרקו X…" progress line, distinct from `loading` (which only covers the
-   *  initial blank-screen wait before anything has arrived at all). */
-  streaming = false;
   error = '';
-  results: ScanHit[] = [];
   scanned = 0;
-  matched = 0;
-  lastScan: Date | null = null;
-  private scanSub?: Subscription;
+  private sub?: Subscription;
+  private pollTimer?: ReturnType<typeof setTimeout>;
 
-  limit = 250;
-  // 1120 = the full universe (Dow + Nasdaq100 + S&P500 + S&P600 — see
-  // ticker_finder.py). Was 517 before S&P 600 was added; this sentinel and the
-  // matching `=== 1120` checks in the template must move together with any
-  // future universe change or "scan everything" silently stops meaning that.
-  readonly limitOptions = [60, 120, 250, 1120];
+  private allHits: ScanHit[] = [];
+  boardDate = '';
+  prevDate = '';
+  building: { done: number; total: number } | null = null;
+  extended: { [t: string]: { price: number; change_pct: number | null } } = {};
 
-  minGrade: Grade = 'B';
-  readonly gradeOptions: Grade[] = ['A', 'B', 'C', 'D'];
+  // ── what the page shows (stable references, refreshed only on data/filter change)
+  tab: Tab = 'enter';
+  enterRows: ScanHit[] = [];
+  waitRows: ScanHit[] = [];
+  rows: ScanHit[] = [];
+  groups: Group[] = [];
+  changeGroups: { kind: string; title: string; list: BoardChange[] }[] = [];
+  changeCount = 0;
+  concentration: { sector: string; count: number } | null = null;
 
-  sort: SortKey = 'expectancy';
-  readonly sortOptions: { key: SortKey; label: string }[] = [
-    { key: 'expectancy', label: 'Expectancy' },
-    { key: 'risk', label: 'סיכון' },
-    { key: 'gain', label: 'רווח' },
-    { key: 'rr', label: 'יחס R' },
-    { key: 'grade', label: 'ציון' },
-  ];
-
-  /** A distinct trading profile, not another grade floor — sorting by grade alone
-   *  converges on the same calm large-caps every time, since they satisfy every
-   *  axis at once. `null` is today's existing behaviour (unchanged): the
-   *  `actionable`-only sweep. See api.py's `_preset_ok` for what each one means. */
+  // ── filters
   preset: RadarPreset = null;
   readonly presetOptions: { key: RadarPreset; label: string }[] = [
     { key: null, label: 'הכל' },
-    { key: 'aggressive', label: '🔥 אגרסיבי' },
-    { key: 'ready', label: '🔔 מוכן עכשיו' },
-    { key: 'conservative', label: '🛡️ סווינג שמרני' },
-    { key: 'reversal', label: '↩️ מהפך' },
+    { key: 'aggressive', label: 'אגרסיבי' },
+    { key: 'ready', label: 'מוכן עכשיו' },
+    { key: 'conservative', label: 'סווינג שמרני' },
+    { key: 'reversal', label: 'מהפך' },
   ];
+  /** rating floor — 7+ is the old "B and up" default */
+  minRating = 7;
+  readonly ratingOptions = [5, 6, 7, 8];
+  sort: SortKey = 'rating';
+  readonly sortOptions: { key: SortKey; label: string }[] = [
+    { key: 'rating', label: 'דירוג' },
+    { key: 'dist', label: 'קרוב לקו' },
+    { key: 'risk', label: 'סטופ צמוד' },
+    { key: 'gain', label: 'פוטנציאל' },
+  ];
+  bySector = false;
+  // the same lists in DOM order for the hand-built RTL rows
+  readonly presetOptionsR = [...this.presetOptions].reverse();
+  readonly ratingOptionsR = [...this.ratingOptions].reverse();
+  readonly sortOptionsR = [...this.sortOptions].reverse();
+  showFilters = false;
 
-  /** How many cards render per bucket, live — as better hits stream in and get
-   *  re-sorted to the top, weaker ones fall off this cap automatically. Independent
-   *  from `limit` (how many tickers get SCANNED — a performance/breadth control);
-   *  this is purely a display cap. `Infinity` is "הכל". */
-  displayCap = 30;
-  readonly displayCapOptions = [20, 30, 50, Infinity];
-  /** Angular templates can't reference the bare global `Infinity` identifier —
-   *  only component-instance members are in scope — so it's exposed here the same
-   *  way `limitOptions` exposes its own "show everything" sentinel (1120). */
-  readonly INFINITY = Infinity;
+  readonly changeTitles: { [k: string]: string } = {
+    new_enter: 'חדש לכניסה', broke_out: 'פרצה', near_trigger: 'התקרבה לפריצה', setup_over: 'הסט-אפ נגמר',
+  };
+  private readonly changeKinds = ['new_enter', 'broke_out', 'near_trigger', 'setup_over'];
+  readonly sectorHe = sectorHe;
+  readonly notches = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1];   // DOM order reversed: 1 sits on the right
 
-  /** "sitting on the correct price to enter, or ready for it" — the exact question
-   *  this page answers, split into the two buckets that answer it: already there,
-   *  or one clean break away. Grouping by sector inside each is what stops a
-   *  single-factor bet (4 semiconductor A-grades) from reading as 4 independent
-   *  opportunities. */
-  bySector = true;
-
-  // ── Mobile: sector tiles → drill down, instead of one long scrolling grid ────
-  selectedBucketMobile: 'enteringNow' | 'ready' | null = null;
-  selectedSectorMobile: string | null = null;
-
-  // ── Quick-look preview (hover on desktop, tap on mobile) ──────────────────────
+  // ── quick-look (hover on desktop, tap → full sheet)
   previewTicker: string | null = null;
   previewAnchor: DOMRect | null = null;
   previewMode: 'popover' | 'sheet' = 'popover';
   private hoverTimer: ReturnType<typeof setTimeout> | null = null;
   private closeTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly HOVER_OPEN_DELAY = 280;
-  private readonly CLOSE_GRACE = 220;
 
-  // Re-renders the "updated Xs ago" line without a fresh scan.
-  private clockTimer?: ReturnType<typeof setInterval>;
-  now = Date.now();
-
-  constructor(private api: ApiService, private route: ActivatedRoute) {}
+  constructor(private api: ApiService, private route: ActivatedRoute, private router: Router) {}
 
   ngOnInit(): void {
-    // Mirrors AnalyzerPageComponent's `?ticker=` pattern — mainly for deep-linking
-    // a specific scan breadth, validated against the known chip values so a
-    // malformed/arbitrary query param can't request something the backend wasn't
-    // asked to support.
-    const qLimit = Number(this.route.snapshot.queryParamMap.get('limit'));
-    if (this.limitOptions.includes(qLimit)) {
-      this.limit = qLimit;
-    }
-    this.runScan();
-    this.clockTimer = setInterval(() => { this.now = Date.now(); }, 1000);
+    const q = this.route.snapshot.queryParamMap;
+    const tab = q.get('tab');
+    if (tab === 'enter' || tab === 'wait' || tab === 'changes') this.tab = tab;
+    const p = q.get('profile');
+    if (this.presetOptions.some((o) => o.key === p)) this.preset = p as RadarPreset;
+    const m = Number(q.get('min'));
+    if (this.ratingOptions.includes(m)) this.minRating = m;
+    this.loadBoard();
   }
 
   ngOnDestroy(): void {
-    if (this.clockTimer) clearInterval(this.clockTimer);
+    this.sub?.unsubscribe();
+    if (this.pollTimer) clearTimeout(this.pollTimer);
     if (this.hoverTimer) clearTimeout(this.hoverTimer);
     if (this.closeTimer) clearTimeout(this.closeTimer);
-    this.scanSub?.unsubscribe();
-    this.cancelScheduledRefresh();
   }
 
+  /** zone-tracked event so `isMobileNow` re-reads the width on rotate/resize */
   @HostListener('window:resize')
   onResize(): void {
-    // no-op body — just gives Angular a zone-tracked event to re-run change
-    // detection on, so `isMobileNow`'s window.innerWidth read stays current
-    // across an orientation change or a devtools resize while testing.
+    if (!this.isMobileNow && this.tab === 'changes') this.setTab('enter');
   }
 
   get isMobileNow(): boolean {
     return typeof window !== 'undefined' && window.innerWidth <= MOBILE_BREAKPOINT;
   }
 
-  runScan(): void {
-    this.scanSub?.unsubscribe();
-    this.loading = true;
-    this.streaming = true;
+  loadBoard(): void {
+    this.sub?.unsubscribe();
+    if (this.pollTimer) clearTimeout(this.pollTimer);
     this.error = '';
-    this.results = [];
-    this.scanned = 0;
-    this.matched = 0;
-    this.cancelScheduledRefresh();
-    this.refreshBuckets();
-    this.scanSub = this.api.scanStream({
-      limit: this.limit,
-      // A preset already defines its own population (e.g. `reversal` wants
-      // `turning`, which the `actionable` sweep's own "at_trigger + imminent"
-      // definition of "ready" does not cover) — forcing `actionable` on top
-      // would silently exclude exactly the names a preset exists to surface.
-      actionable: this.preset == null,
-      preset: this.preset ?? undefined,
-      minGrade: this.minGrade,
-      sort: this.sort === 'grade' ? 'grade' : this.sort,
-      workers: 8,
-    }).subscribe({
-      next: (msg) => {
-        if ('done' in msg && msg.done) {
-          this.scanned = msg.scanned;
-          this.matched = msg.matched;
-          this.streaming = false;
-          this.lastScan = new Date();
-          this.loading = false;
-          this.cancelScheduledRefresh();
-          this.refreshBuckets();
+    this.loading = !this.allHits.length;
+    this.sub = this.api.board().subscribe({
+      next: (b) => {
+        this.loading = false;
+        if (!b.ready) {
+          // first build of the day still running (a fresh server) — look again soon
+          this.building = { done: b.status.done, total: b.status.total };
+          this.pollTimer = setTimeout(() => this.loadBoard(), 8000);
           return;
         }
-        const hit = msg as ScanHit;
-        const i = this.results.findIndex((r) => r.ticker === hit.ticker);
-        if (i >= 0) { this.results[i] = hit; } else { this.results.push(hit); }
-        // first hit: drop the full-screen loader, buckets start rendering live
-        this.loading = false;
-        this.scheduleRefresh();
+        this.building = null;
+        this.allHits = b.hits || [];
+        const changes = b.changes || [];
+        this.changeCount = changes.length;
+        this.changeGroups = this.changeKinds
+          .map((k) => ({ kind: k, title: this.changeTitles[k], list: changes.filter((c) => c.kind === k) }))
+          .filter((g) => g.list.length);
+        this.extended = b.extended || {};
+        this.boardDate = b.date || '';
+        this.prevDate = b.prev_date || '';
+        this.scanned = b.scanned || 0;
+        this.refresh();
       },
       error: () => {
-        this.cancelScheduledRefresh();
-        this.error = 'הסריקה נכשלה — האם ה-API רץ?';
         this.loading = false;
-        this.streaming = false;
+        this.error = 'הלוח היומי לא נטען. בדקו את החיבור ונסו שוב.';
       },
     });
   }
 
-  setLimit(n: number): void {
-    if (n === this.limit) return;
-    this.limit = n;
-    this.runScan();
-  }
-
-  setMinGrade(g: Grade): void {
-    if (g === this.minGrade) return;
-    this.minGrade = g;
-    this.runScan();
-  }
-
-  setSort(s: SortKey): void {
-    if (s === this.sort) return;
-    this.sort = s;
-    this.runScan();
-  }
-
-  setPreset(p: RadarPreset): void {
-    if (p === this.preset) return;
-    this.preset = p;
-    this.runScan();
-  }
-
-  setDisplayCap(n: number): void {
-    this.displayCap = n;
-    this.refreshBuckets();
-  }
-
-  toggleSector(): void {
-    this.bySector = !this.bySector;
-  }
-
-  // ── The two buckets: entering now vs coiled at the trigger, ready ─────────
-  //
-  // These used to be getters, recomputed (and reallocated — `[...rows].sort()`,
-  // a fresh array every call) on EVERY Angular change-detection cycle, including
-  // the ones the 1-second clock timer triggers for `timeAgo()`. That fed a fresh
-  // `{ list: enteringNow }` OBJECT LITERAL into `*ngTemplateOutlet`'s context on
-  // every cycle — and `NgTemplateOutlet` tears down and recreates its ENTIRE
-  // embedded view whenever that context reference changes, so the whole card grid
-  // was being destroyed and rebuilt about once a second regardless of whether the
-  // data had actually changed. Invisible before hover existed; with it, a card
-  // being replaced out from under the cursor mid-hover meant `onCardEnter` kept
-  // re-firing and its open timer never survived long enough to complete — found
-  // via a live console trace showing dozens of re-fires per hover, not by
-  // inspection. Fixed by making these (and the derived sector groups, and the
-  // template's context objects) explicitly-refreshed fields with STABLE
-  // references, updated only when the underlying data genuinely changes.
-  enteringNow: ScanHit[] = [];
-  ready: ScanHit[] = [];
-  enteringNowCtx: { list: ScanHit[] } = { list: [] };
-  readyCtx: { list: ScanHit[] } = { list: [] };
-  enteringNowGroups: SectorGroup[] = [];
-  readyGroups: SectorGroup[] = [];
-
+  // ── filters → rows ──────────────────────────────────────────────────────────
   private isReady(h: ScanHit): boolean {
     return h.state === 'at_trigger' && (h.alert?.tier === 'imminent' || h.alert?.tier === 'close');
   }
 
-  // A full-size scan streams a hit every few hundred ms, and each `refreshBuckets()`
-  // re-sorts both buckets and swaps the template-outlet contexts — which rebuilds
-  // every card. Done per hit that is quadratic work on the main thread, enough to
-  // freeze the page mid-scan so that search and navigation stop responding.
-  // Coalesced here so the grid is rebuilt a few times a second at most.
-  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly REFRESH_EVERY_MS = 400;
-
-  private scheduleRefresh(): void {
-    if (this.refreshTimer) return;
-    this.refreshTimer = setTimeout(() => {
-      this.refreshTimer = null;
-      this.refreshBuckets();
-    }, this.REFRESH_EVERY_MS);
-  }
-
-  private cancelScheduledRefresh(): void {
-    if (this.refreshTimer) { clearTimeout(this.refreshTimer); this.refreshTimer = null; }
-  }
-
-  private refreshBuckets(): void {
-    // `headline_action` is the single source of truth for "is this an entering
-    // card" (verdict.HEADLINE_ACTION) — this used to re-declare the same three
-    // states independently as `ACTIONABLE_NOW`, which is exactly the kind of
-    // duplicated decision that drifts the day one of them changes and the other
-    // doesn't.
-    this.enteringNow = this.sortRows(this.results.filter((h) => h.headline_action === 'ENTER')).slice(0, this.displayCap);
-    this.ready = this.sortRows(this.results.filter((h) => this.isReady(h))).slice(0, this.displayCap);
-    this.enteringNowCtx = { list: this.enteringNow };
-    this.readyCtx = { list: this.ready };
-    this.enteringNowGroups = this.computeSectorGroups(this.enteringNow);
-    this.readyGroups = this.computeSectorGroups(this.ready);
-    this.refreshSelectedSector();
-  }
-
-  /** How full the proximity gauge reads — closer to the trigger = fuller.
-   *  `ALERT_NEAR_ATR` (backend) caps this signal at 2.0 ATR, so that is the empty
-   *  end of the scale. */
-  fillPct(hit: ScanHit): number {
-    const d = hit.alert?.distance_atr;
-    if (d == null) return 0;
-    return Math.max(4, Math.min(100, (1 - d / 2) * 100));
-  }
-
-  /** A short instruction for the same tier `verdict._alert` already computed —
-   *  "READY" rather than a bare percentage, so a card this close to its trigger
-   *  does not read as inactive under a blanket WAIT styling. */
-  readyLabel(tier: 'imminent' | 'close' | 'near'): string {
-    return { imminent: 'מוכנה — ממש קרוב', close: 'מוכנה — קרוב', near: 'מתקרבת' }[tier];
+  private refresh(): void {
+    const keep = this.allHits.filter((h) =>
+      (!this.preset || (h.presets || []).includes(this.preset)) && h.rating >= this.minRating);
+    this.enterRows = this.sortRows(keep.filter((h) => h.headline_action === 'ENTER'));
+    this.waitRows = this.sortRows(keep.filter((h) => h.headline_action !== 'ENTER' && this.isReady(h)));
+    this.rows = this.tab === 'wait' ? this.waitRows : this.enterRows;
+    // always rendered through groups — one unnamed group when not split by sector
+    this.groups = this.bySector ? this.group(this.rows) : [{ sector: '', rows: this.rows }];
+    this.concentration = this.sectorWarning(this.rows);
   }
 
   private sortRows(rows: ScanHit[]): ScanHit[] {
-    const key = this.sort;
+    const k = this.sort;
     return [...rows].sort((a, b) => {
       let d = 0;
-      switch (key) {
-        case 'expectancy': d = (b.expectancy_r ?? -9) - (a.expectancy_r ?? -9); break;
-        case 'risk': d = (a.stop_atr ?? 1e9) - (b.stop_atr ?? 1e9); break;
-        case 'gain': d = (b.gain_pct ?? -1e9) - (a.gain_pct ?? -1e9); break;
-        case 'rr': d = (b.risk_reward ?? -1e9) - (a.risk_reward ?? -1e9); break;
-        case 'grade': d = b.grade_score - a.grade_score; break;
-      }
+      if (k === 'rating') d = b.rating - a.rating || (b.expectancy_r ?? -9) - (a.expectancy_r ?? -9);
+      if (k === 'dist') d = (a.alert?.distance_atr ?? 0) - (b.alert?.distance_atr ?? 0);
+      if (k === 'risk') d = (a.stop_atr ?? 1e9) - (b.stop_atr ?? 1e9);
+      if (k === 'gain') d = (b.gain_pct ?? -1e9) - (a.gain_pct ?? -1e9);
       return d !== 0 ? d : this.preferCompare(a, b);
     });
   }
@@ -321,80 +193,142 @@ export class RadarPageComponent implements OnInit, OnDestroy {
     return Math.abs(a.sma150_dist_pct ?? 1e9) - Math.abs(b.sma150_dist_pct ?? 1e9);
   }
 
-  /** Sector groups for a bucket, each already internally sorted, groups ordered by
-   *  their own best row so the sector with the single best opportunity leads. Also
-   *  the source for the mobile sector TILES — `rows[0]` is already the top pick in
-   *  that sector for the current sort. Private + called only from `refreshBuckets`
-   *  now — see the comment there for why this can't be a template-invoked method
-   *  returning a fresh array/objects on every change-detection cycle. */
-  private computeSectorGroups(rows: ScanHit[]): SectorGroup[] {
+  private group(rows: ScanHit[]): Group[] {
     const by = new Map<string, ScanHit[]>();
     for (const h of rows) {
       const key = h.sector || 'אחר';
       if (!by.has(key)) by.set(key, []);
       by.get(key)!.push(h);
     }
-    // `ctx` is precomputed here, once, rather than built inline in the template as
-    // `{ list: sg.rows }` — that would be a fresh object literal on every change-
-    // detection cycle even though `sg.rows` itself is now a stable reference, and
-    // `*ngTemplateOutlet` tears down and rebuilds its whole view whenever the
-    // context object it's given has a new identity (see `refreshBuckets`'s comment
-    // for the full story — this is the same bug one level deeper).
-    const groups = Array.from(by.entries()).map(([sector, rs]) => ({
-      sector, icon: rs[0].sector_icon || '📈', rows: rs, ctx: { list: rs },
-    }));
-    const rank = (rs: ScanHit[]) => (rs[0]?.expectancy_r ?? rs[0]?.grade_score ?? -1e9);
-    groups.sort((a, b) => rank(b.rows) - rank(a.rows));
-    return groups;
+    return Array.from(by.entries()).map(([sector, rs]) => ({ sector, rows: rs }));
   }
 
-  /** Grade concentration warning — the actual "4 stocks all graded A, all
-   *  semiconductors" case named on the page instead of left for the reader to
-   *  notice card by card. Flags a sector once it is 3+ of the actionable set. */
-  sectorWarning(rows: ScanHit[]): { sector: string; count: number } | null {
+  /** One sector making up 3+ names (and a third or more) of the list is one bet, not several. */
+  private sectorWarning(rows: ScanHit[]): { sector: string; count: number } | null {
     const by = new Map<string, number>();
-    for (const h of rows) {
-      const key = h.sector || 'אחר';
-      by.set(key, (by.get(key) || 0) + 1);
-    }
+    for (const h of rows) by.set(h.sector || 'אחר', (by.get(h.sector || 'אחר') || 0) + 1);
     let worst: { sector: string; count: number } | null = null;
     for (const [sector, count] of by.entries()) {
-      if (count >= 3 && (!worst || count > worst.count)) worst = { sector, count };
+      if (count >= 3 && count * 3 >= rows.length && (!worst || count > worst.count)) worst = { sector, count };
     }
     return worst;
   }
 
-  // ── Mobile sector drill-down ───────────────────────────────────────────────
-  selectedSectorRows: ScanHit[] = [];
-  selectedSectorCtx: { list: ScanHit[] } = { list: [] };
-
-  openSector(bucket: 'enteringNow' | 'ready', sector: string): void {
-    this.selectedBucketMobile = bucket;
-    this.selectedSectorMobile = sector;
-    this.refreshSelectedSector();
+  setTab(t: Tab): void {
+    if (t === this.tab) return;
+    this.tab = t;
+    this.refresh();
+    this.syncUrl();
   }
 
-  closeSector(): void {
-    this.selectedBucketMobile = null;
-    this.selectedSectorMobile = null;
-    this.selectedSectorRows = [];
-    this.selectedSectorCtx = { list: [] };
+  setPreset(p: RadarPreset): void {
+    if (p === this.preset) return;
+    this.preset = p;
+    this.refresh();
+    this.syncUrl();
   }
 
-  /** Re-derived every time `refreshBuckets()` runs (not a snapshot taken when the
-   *  tile was tapped) — a better hit streaming in for the open sector shows up in
-   *  the drill-down list without the user backing out and re-entering. Same
-   *  stable-reference reasoning as `enteringNow`/`ready` above. */
-  private refreshSelectedSector(): void {
-    if (!this.selectedBucketMobile || !this.selectedSectorMobile) return;
-    const rows = this.selectedBucketMobile === 'enteringNow' ? this.enteringNow : this.ready;
-    this.selectedSectorRows = rows.filter((h) => (h.sector || 'אחר') === this.selectedSectorMobile);
-    this.selectedSectorCtx = { list: this.selectedSectorRows };
+  setMinRating(n: number): void {
+    if (n === this.minRating) return;
+    this.minRating = n;
+    this.refresh();
+    this.syncUrl();
   }
 
-  // ── Quick-look: hover (desktop) or tap (mobile) instead of navigating away ───
-  onCardEnter(ticker: string, ev: MouseEvent): void {
-    if (this.isMobileNow) return; // no hover on touch — onCardTap handles it
+  setSort(s: SortKey): void {
+    if (s === this.sort) return;
+    this.sort = s;
+    this.refresh();
+  }
+
+  toggleSector(): void {
+    this.bySector = !this.bySector;
+    this.refresh();
+  }
+
+  private syncUrl(): void {
+    this.router.navigate([], {
+      relativeTo: this.route,
+      replaceUrl: true,
+      queryParams: {
+        tab: this.tab === 'enter' ? null : this.tab,
+        profile: this.preset,
+        min: this.minRating === 7 ? null : this.minRating,
+      },
+    });
+  }
+
+  // ── row text ────────────────────────────────────────────────────────────────
+  /** "9 באוקטובר" */
+  dayHe(iso: string): string {
+    if (!iso) return '';
+    return new Date(iso + 'T12:00:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'long' });
+  }
+
+  /** The one price this row is about: the entry when it is in, the line to cross when it waits. */
+  lineKey(h: ScanHit): string {
+    return h.headline_action === 'ENTER' || h.trigger == null ? 'כניסה' : 'פריצה מעל';
+  }
+
+  lineVal(h: ScanHit): number | null {
+    return h.headline_action === 'ENTER' || h.trigger == null ? h.entry : h.trigger;
+  }
+
+  /** closeness to a breakout is in ATR (owner rule, 2026-10-09) */
+  distTxt(h: ScanHit): string {
+    if (h.headline_action === 'ENTER') return 'על הקו';
+    const d = h.alert?.distance_atr;
+    return d == null ? '' : `${d.toFixed(2)} ATR`;
+  }
+
+  tierClass(h: ScanHit): string {
+    if (h.headline_action === 'ENTER') return 'on';
+    return h.alert?.tier === 'imminent' ? 'hot' : 'warm';
+  }
+
+  /** phone: the row's second line, one bidi-safe text leaf */
+  planTxt(h: ScanHit): string {
+    const v = this.lineVal(h);
+    const parts: string[] = [];
+    if (v != null) parts.push(`${this.lineKey(h)} ${v.toFixed(2)}`);
+    if (h.headline_action !== 'ENTER' && h.alert) parts.push(`במרחק ${h.alert.distance_atr.toFixed(2)} ATR`);
+    if (h.stop != null) parts.push(`סטופ ${h.stop.toFixed(2)}`);
+    return parts.join(', ');
+  }
+
+  /** The waiting rows all share one generic read ("coiled under the breakout
+   *  price"), so their "why" names the line itself and where the 150 is instead. */
+  whyTxt(h: ScanHit): string {
+    if (h.headline_action === 'ENTER' || h.trigger == null) return h.read_he;
+    const what = h.trigger_what_he || 'מחיר הפריצה';
+    const d = h.sma150_dist_pct;
+    const ma = d == null ? '' : d >= 0 ? ` המחיר ${d.toFixed(1)}% מעל ממוצע 150.` : ` המחיר ${(-d).toFixed(1)}% מתחת לממוצע 150.`;
+    return `ממתינה לפריצה של ${what}.${ma}`;
+  }
+
+  /** phone: the folded filter button still says what is active */
+  filtersLabel(): string {
+    const on: string[] = [];
+    if (this.preset) on.push(this.presetOptions.find((o) => o.key === this.preset)!.label);
+    if (this.minRating !== 7) on.push(`דירוג ${this.minRating}+`);
+    if (this.bySector) on.push('לפי סקטור');
+    return on.length ? `סינון: ${on.join(', ')}` : 'סינון ומיון';
+  }
+
+  gainTxt(h: ScanHit): string {
+    return h.gain_pct == null ? '' : `+${Math.round(h.gain_pct)}%`;
+  }
+
+  ratingColor(r: number): string {
+    return r >= 8 ? 'var(--up)' : r >= 6 ? '#7cc98f' : r >= 4 ? 'var(--wait)' : 'var(--down)';
+  }
+
+  trackByTicker(_i: number, h: ScanHit): string { return h.ticker; }
+  trackBySector(_i: number, g: Group): string { return g.sector; }
+
+  // ── quick-look ──────────────────────────────────────────────────────────────
+  onRowEnter(ticker: string, ev: MouseEvent): void {
+    if (this.isMobileNow) return;
     this.cancelClose();
     if (this.hoverTimer) clearTimeout(this.hoverTimer);
     const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
@@ -402,21 +336,17 @@ export class RadarPageComponent implements OnInit, OnDestroy {
       this.previewTicker = ticker;
       this.previewAnchor = rect;
       this.previewMode = 'popover';
-    }, this.HOVER_OPEN_DELAY);
+    }, 280);
   }
 
-  onCardLeave(): void {
+  onRowLeave(): void {
     if (this.hoverTimer) clearTimeout(this.hoverTimer);
-    if (this.isMobileNow) return;
-    this.scheduleClose();
+    if (!this.isMobileNow) this.scheduleClose();
   }
 
-  onCardTap(ticker: string): void {
-    // A click — mobile tap or desktop click alike — always jumps straight to the
-    // full-screen sheet: the same embedded Analyzer page, closable back to this
-    // exact scan with `close()`, never a `router.navigate` that would lose it.
-    // Desktop's hover popover (`onCardEnter`) is untouched — still a quick trimmed
-    // glance — this only changes what commits to the FULL analysis.
+  /** A click always opens the full analysis as a sheet over this page — never a
+   *  navigation that would lose the board's filters. */
+  openFull(ticker: string): void {
     if (this.hoverTimer) clearTimeout(this.hoverTimer);
     this.cancelClose();
     this.previewTicker = ticker;
@@ -424,15 +354,8 @@ export class RadarPageComponent implements OnInit, OnDestroy {
     this.previewMode = 'sheet';
   }
 
-  /** The popover's own "→ ניתוח מלא" button (desktop hover) asking to escalate the
-   *  ticker already being previewed into the same full sheet `onCardTap` opens. */
-  onQuicklookRequestFull(): void {
-    this.previewMode = 'sheet';
-  }
+  onQuicklookRequestFull(): void { this.previewMode = 'sheet'; }
 
-  /** The popover reports its own hover state so moving the mouse FROM the card
-   *  INTO the popover doesn't read as "left" and close it out from under the
-   *  pointer. */
   onQuicklookHover(hovering: boolean): void {
     if (hovering) this.cancelClose(); else this.scheduleClose();
   }
@@ -446,68 +369,10 @@ export class RadarPageComponent implements OnInit, OnDestroy {
 
   private scheduleClose(): void {
     if (this.closeTimer) clearTimeout(this.closeTimer);
-    this.closeTimer = setTimeout(() => {
-      this.previewTicker = null;
-      this.previewAnchor = null;
-    }, this.CLOSE_GRACE);
+    this.closeTimer = setTimeout(() => { this.previewTicker = null; this.previewAnchor = null; }, 220);
   }
 
   private cancelClose(): void {
     if (this.closeTimer) clearTimeout(this.closeTimer);
-  }
-
-  timeAgo(): string {
-    if (!this.lastScan) return '';
-    const s = Math.max(0, Math.round((this.now - this.lastScan.getTime()) / 1000));
-    if (s < 5) return 'ממש עכשיו';
-    if (s < 60) return `לפני ${s} שניות`;
-    const m = Math.round(s / 60);
-    return `לפני ${m} ${m === 1 ? 'דקה' : 'דקות'}`;
-  }
-
-  readonly stateLabelHe: { [k: string]: string } = {
-    breakout_now: 'פריצה עכשיו',
-    buyers_at_level: 'קונים נכנסו על הרמה',
-    value_pullback: 'השקעת ערך בתיקון',
-    at_trigger: 'מתכנסת לפני פריצה',
-    needs_buyers: 'על הרמה, מחכים לקונים',
-    holding: 'בתוך המהלך, שומרת',
-    nothing_yet: 'עוד לא עשתה כלום',
-    broken: 'הסט אפ נגמר',
-    avoid: 'מתחת ל-150 במגמה יורדת',
-  };
-  readonly actionLabelHe: { [k: string]: string } = {
-    enter: 'כניסה',
-    wait_trigger: 'להמתין לפריצה',
-    wait_buyers: 'להמתין לקונים',
-    wait_pullback: 'להמתין לתיקון',
-    wait_event: 'להמתין לדיווח',
-    hold: 'להחזיק',
-    watch: 'מעקב + התראה',
-    out: 'בחוץ',
-    avoid: 'לא להיכנס',
-  };
-  readonly optionKindHe: { [k: string]: string } = {
-    now: 'כניסה כאן', breakout: 'בפריצה', pullback: 'בתיקון',
-  };
-
-  readonly gradeColors: { [g: string]: string } = {
-    A: '#26a69a', B: '#66bb6a', C: '#ffa726', D: '#ff7043', F: '#ef5350',
-  };
-  gradeColor(g: string): string {
-    return this.gradeColors[g] || '#787b86';
-  }
-
-  expClass(e: number | null): string {
-    if (e == null) return '';
-    return e >= 0.25 ? 'exp-good' : e < 0 ? 'exp-bad' : '';
-  }
-
-  /** Identity by ticker rather than Angular's default (object reference, which is
-   *  already stable here — see `refreshBuckets`) or array index — belt-and-
-   *  suspenders so a card's DOM node survives re-sorts even if some future change
-   *  ever reintroduces a fresh object per hit. */
-  trackByTicker(_index: number, h: ScanHit): string {
-    return h.ticker;
   }
 }

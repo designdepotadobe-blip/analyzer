@@ -33,6 +33,7 @@ from datetime import datetime, timezone
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import StreamingResponse
 
 # make both this dir (analyzer.py) and the project root (ticker_finder.py) importable,
@@ -58,6 +59,8 @@ app = FastAPI(title="Stock Analyzer API", version="1.0",
 
 # CORS restricted to the app's own frontends (was "*") — see security.cors_kwargs
 app.add_middleware(CORSMiddleware, **sec.cors_kwargs())
+# the daily board is ~1-2 MB of JSON; compressed it is a fraction of that on a phone
+app.add_middleware(GZipMiddleware, minimum_size=2048)
 app.middleware('http')(sec.security_headers_middleware)
 
 analyzer = StockAnalyzer()
@@ -197,6 +200,92 @@ def _preset_ok(preset: str, m: dict, meta: dict, best: dict | None, al: dict | N
     return True
 
 
+PRESETS = ('aggressive', 'ready', 'conservative', 'reversal')
+
+
+def _row(tk: str, r: dict) -> dict:
+    """One scan / board row for an analysed ticker — the same shape both read."""
+    m = r['micha']
+    al = m.get('alert')
+    best = Judgement._best_option(m['options'], m['action'])
+    g = m.get('growth')
+    row = {
+        'ticker': tk,
+        'price': r['meta']['price'],
+        'above_150': r['meta']['above_150'],
+        'market_cap': m.get('market_cap'),
+        'sma150_dist_pct': r['meta']['sma150_dist_pct'],
+        # the verdict, so a scan row is readable without a second request
+        'state': m['state'],
+        'action': m['action'],
+        # the 4-value ENTER/WAIT/WATCH/AVOID bucket — see verdict.HEADLINE_ACTION
+        'headline_action': m.get('headline_action'),
+        # unconfirmed / pending / confirmed — see verdict._confirmation
+        'confirmation': m.get('confirmation'),
+        # the full pattern projection, labeled — see verdict._macro_target
+        'macro_target': m.get('macro_target'),
+        'grade': m['grade'],
+        'grade_score': m['grade_score'],
+        # the headline 1-10 the cards lead with — see verdict._rating
+        'rating': m.get('rating'), 'rating_max': m.get('rating_max'),
+        'call_he': m['report']['call_he'],
+        # The WHY. `call_he` restates the entry and the stop, which the row
+        # already prints as prices — on a card the two together said the
+        # same number three times. `read_he` is the half of his post that
+        # is not a number ("נכנסו קונים על הרמה, ממוצע 150 מתחת").
+        'read_he': m['report']['read_he'],
+        # "close to becoming relevant", independent of the grade
+        'alert': al,
+        'setup_count': len(r['setups']),
+        'setups': [{'code': s['code'], 'label': s['label'], 'active': s['active']}
+                   for s in r['setups']],
+        # ── everything the watchlist and the portfolio builder rank on ──
+        # Sector is free here: analyze() already fetched the profile for
+        # the header, so this is a dict lookup, not another request.
+        'sector': r['meta'].get('sector'),
+        'sector_icon': r['meta'].get('sector_icon'),
+        'atr_pct': r['meta'].get('atr_pct'),
+        # the option the reader is actually being pointed at, flattened —
+        # a scan row has to be rankable without a second request per name
+        'entry': (best or {}).get('entry'),
+        'stop': (best or {}).get('stop'),
+        'stop_atr': (best or {}).get('stop_atr'),
+        'risk_pct': (best or {}).get('risk_pct'),
+        'risk_reward': (best or {}).get('risk_reward'),
+        'size_pct_of_account': (best or {}).get('size_pct_of_account'),
+        'p_win': (best or {}).get('p_win'),
+        'expectancy_r': (best or {}).get('expectancy_r'),
+        'option_kind': (best or {}).get('kind'),
+        # potential gain, priced with its own odds (see micha._growth)
+        'gain_pct': (g or {}).get('gain_pct'),
+        'gain_days': (g or {}).get('days'),
+        'gain_hit_rate': (g or {}).get('hit_rate'),
+        'pct_per_day': (g or {}).get('pct_per_day'),
+        # how well-defended the price that starts the trade is — a
+        # horizontal level carries a touch history, a trendline or an
+        # average does not
+        'trigger_wall': (m.get('trigger') or {}).get('wall'),
+        # The line the stock has to CROSS, and his own name for it. This is
+        # the headline of essentially every post he writes ("פריצה מעל
+        # 21.45$", "מעל 552. אם לא עוברת מעל אין טרייד") and the scan row
+        # was ranking on expectancy while never showing it — the reader got
+        # "E +0.53R" where he would have written a price.
+        'trigger': (m.get('trigger') or {}).get('price'),
+        'trigger_what_he': (m.get('trigger') or {}).get('what_he'),
+        # what the rating becomes if the trigger clears — slim on purpose:
+        # a scan row is 60-517 of these, and the full grade_if_break
+        # breakdown (axis-by-axis, caps, why text) is the single-stock
+        # view's job. See verdict._grade_if_break.
+        'if_break_rating': (m.get('grade_if_break') or {}).get('rating'),
+        'if_break_moves': (m.get('grade_if_break') or {}).get('moves'),
+    }
+    # which trading profiles this row belongs to, so the Radar filters the stored
+    # board client-side instead of rescanning per preset
+    row['presets'] = [p for p in PRESETS if _preset_ok(p, m, r['meta'], best, al)]
+    row['decided_on'] = r['meta'].get('decided_on')
+    return row
+
+
 def _prefer_key(h: dict) -> tuple:
     """Tie-break: bigger company first, then closer to the 150 (owner, 2026-10-09)."""
     cap = h.get('market_cap') or 0
@@ -292,76 +381,7 @@ def scan(
             g = m.get('growth')
             if preset and not _preset_ok(preset, m, r['meta'], best, al):
                 return None
-            return {
-                'ticker': tk,
-                'price': r['meta']['price'],
-                'above_150': r['meta']['above_150'],
-                'market_cap': m.get('market_cap'),
-                'sma150_dist_pct': r['meta']['sma150_dist_pct'],
-                # the verdict, so a scan row is readable without a second request
-                'state': m['state'],
-                'action': m['action'],
-                # the 4-value ENTER/WAIT/WATCH/AVOID bucket — see verdict.HEADLINE_ACTION
-                'headline_action': m.get('headline_action'),
-                # unconfirmed / pending / confirmed — see verdict._confirmation
-                'confirmation': m.get('confirmation'),
-                # the full pattern projection, labeled — see verdict._macro_target
-                'macro_target': m.get('macro_target'),
-                'grade': m['grade'],
-                'grade_score': m['grade_score'],
-                # the headline 1-10 the cards lead with — see verdict._rating
-                'rating': m.get('rating'), 'rating_max': m.get('rating_max'),
-                'call_he': m['report']['call_he'],
-                # The WHY. `call_he` restates the entry and the stop, which the row
-                # already prints as prices — on a card the two together said the
-                # same number three times. `read_he` is the half of his post that
-                # is not a number ("נכנסו קונים על הרמה, ממוצע 150 מתחת").
-                'read_he': m['report']['read_he'],
-                # "close to becoming relevant", independent of the grade
-                'alert': al,
-                'setup_count': len(r['setups']),
-                'setups': [{'code': s['code'], 'label': s['label'], 'active': s['active']}
-                           for s in r['setups']],
-                # ── everything the watchlist and the portfolio builder rank on ──
-                # Sector is free here: analyze() already fetched the profile for
-                # the header, so this is a dict lookup, not another request.
-                'sector': r['meta'].get('sector'),
-                'sector_icon': r['meta'].get('sector_icon'),
-                'atr_pct': r['meta'].get('atr_pct'),
-                # the option the reader is actually being pointed at, flattened —
-                # a scan row has to be rankable without a second request per name
-                'entry': (best or {}).get('entry'),
-                'stop': (best or {}).get('stop'),
-                'stop_atr': (best or {}).get('stop_atr'),
-                'risk_pct': (best or {}).get('risk_pct'),
-                'risk_reward': (best or {}).get('risk_reward'),
-                'size_pct_of_account': (best or {}).get('size_pct_of_account'),
-                'p_win': (best or {}).get('p_win'),
-                'expectancy_r': (best or {}).get('expectancy_r'),
-                'option_kind': (best or {}).get('kind'),
-                # potential gain, priced with its own odds (see micha._growth)
-                'gain_pct': (g or {}).get('gain_pct'),
-                'gain_days': (g or {}).get('days'),
-                'gain_hit_rate': (g or {}).get('hit_rate'),
-                'pct_per_day': (g or {}).get('pct_per_day'),
-                # how well-defended the price that starts the trade is — a
-                # horizontal level carries a touch history, a trendline or an
-                # average does not
-                'trigger_wall': (m.get('trigger') or {}).get('wall'),
-                # The line the stock has to CROSS, and his own name for it. This is
-                # the headline of essentially every post he writes ("פריצה מעל
-                # 21.45$", "מעל 552. אם לא עוברת מעל אין טרייד") and the scan row
-                # was ranking on expectancy while never showing it — the reader got
-                # "E +0.53R" where he would have written a price.
-                'trigger': (m.get('trigger') or {}).get('price'),
-                'trigger_what_he': (m.get('trigger') or {}).get('what_he'),
-                # what the rating becomes if the trigger clears — slim on purpose:
-                # a scan row is 60-517 of these, and the full grade_if_break
-                # breakdown (axis-by-axis, caps, why text) is the single-stock
-                # view's job. See verdict._grade_if_break.
-                'if_break_rating': (m.get('grade_if_break') or {}).get('rating'),
-                'if_break_moves': (m.get('grade_if_break') or {}).get('moves'),
-            }
+            return _row(tk, r)
         except Exception:
             return None
 
@@ -494,3 +514,40 @@ def list_notes(request: Request):
         rows = [json.loads(line) for line in f if line.strip()]
     rows.reverse()
     return {'count': len(rows), 'notes': rows}
+
+
+
+# ── The daily board (backend/board.py) ───────────────────────────────────────
+# The Radar reads this instead of rescanning: the universe is analysed once after
+# the close, stored, and compared with the previous board ("what changed today").
+from board import Board, radar_rows  # noqa: E402
+
+board = Board(universe=_universe, analyze=lambda tk: analyzer.analyze(tk), to_row=_row,
+              quote=lambda tk: analyzer.data.quote(tk))
+
+
+@app.on_event("startup")
+def _start_board() -> None:
+    # off under tests and when explicitly disabled — a build is ~1,100 network calls
+    if os.environ.get('BOARD_SCHEDULER', '1') == '1' and 'PYTEST_CURRENT_TEST' not in os.environ:
+        board.start()
+
+
+@app.get("/api/board")
+def get_board(request: Request = None):
+    """Today's board: the Radar's rows, what changed since the previous board, and
+    the pre-market prices. Instant — nothing is analysed on request."""
+    if request is not None:
+        sec.limiter.check(request, cost=1)
+    b = board.latest()
+    st = dict(board.status)
+    if not b:
+        return {'ready': False, 'status': st}
+    return {
+        'ready': True, 'status': st,
+        'date': b['date'], 'prev_date': b.get('prev_date'), 'built_at': b['built_at'],
+        'scanned': b.get('scanned'), 'count': len(b['hits']),
+        'hits': radar_rows(b['hits']),
+        'changes': b.get('changes') or [],
+        'extended': b.get('extended') or {}, 'extended_at': b.get('extended_at'),
+    }

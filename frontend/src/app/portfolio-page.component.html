@@ -3,21 +3,10 @@
     <!-- ── Header ──────────────────────────────────────────────────────── -->
     <header class="pf-header">
       <div class="pf-title-wrap">
-        <span class="pf-icon">📊</span>
         <div class="pf-title-text">
-          <h1>בניית תיק <span class="pf-title-en">Portfolio</span></h1>
-          <p class="pf-sub">4-6 מניות מגוונות, לא הימור אחד עם כמה כובעים — לפי Expectancy וסיכון</p>
+          <h1>בניית תיק</h1>
+          <p class="pf-sub">4–6 מניות מסקטורים שונים, נבחרות לפי תוחלת וסיכון</p>
         </div>
-      </div>
-      <div class="pf-nav">
-        <a routerLink="/radar" class="pf-back">
-          <span>📡</span>
-          <span class="pf-back-label">רדאר</span>
-        </a>
-        <a routerLink="/" class="pf-back">
-          <span>📈</span>
-          <span class="pf-back-label">ניתוח</span>
-        </a>
       </div>
     </header>
 
@@ -51,7 +40,6 @@
           </div>
         </div>
         <button class="pf-build-btn" [disabled]="loading" (click)="build()">
-          <span class="pf-build-icon" [class.spin]="loading">🔄</span>
           {{ loading ? 'בונה…' : (tickerInput.trim() ? 'המשך' : 'בנה תיק חדש') }}
         </button>
       </div>
@@ -71,17 +59,14 @@
 
       <!-- ── Error ─────────────────────────────────────────────────────── -->
       <div class="pf-error" *ngIf="error">
-        <span class="pf-error-icon">⚠</span>
         <p>{{ error }}</p>
         <button (click)="wizardStep === 'review' ? confirmSectors() : build()">נסה שוב</button>
       </div>
 
       <!-- ── Intro ─────────────────────────────────────────────────────── -->
       <div class="pf-intro" *ngIf="!loading && !error && !ran">
-        <span class="pf-intro-icon">📊</span>
-        <p>הקלידו את המניות שכבר יש לכם, או השאירו ריק ולחצו "בנה תיק חדש".</p>
-        <p class="pf-intro-sub">אחרי זה — כמה שאלות קצרות (סיכון, סקטורים להימנע מהם), ואז נעבור מועמד
-          מועמד יחד, לא רשימה סטטית אחת.</p>
+        <p>הקלידו את המניות שכבר יש לכם, או השאירו את השדה ריק כדי לבנות תיק חדש.</p>
+        <p class="pf-intro-sub">אחר כך נשאל על רמת הסיכון ועל סקטורים שתרצו לדלג עליהם, ונעבור על ההצעות אחת אחת.</p>
       </div>
 
       <div class="pf-failed" *ngIf="failedTickers.length && wizardStep === 'holdings'">
@@ -109,8 +94,7 @@
         <div class="pf-sector-checks">
           <button type="button" class="pf-sector-check" *ngFor="let s of knownSectors"
                   [class.excluded]="excludedSectors.has(s.name)" (click)="toggleExcludedSector(s.name)">
-            <span class="pf-sc-icon">{{ s.icon }}</span>
-            <span class="pf-sc-name">{{ s.name }}</span>
+            <span class="pf-sc-name">{{ sectorHe(s.name) }}</span>
             <span class="pf-sc-mark">{{ excludedSectors.has(s.name) ? '✕' : '' }}</span>
           </button>
         </div>
@@ -123,7 +107,7 @@
       <!-- ── Step 4: review, one candidate at a time ────────────────────── -->
       <div class="pf-review-step" *ngIf="wizardStep === 'review'" dir="rtl">
         <div class="pf-review-progress" *ngIf="reviewStreaming">
-          <span class="pf-scan-dot"></span><span class="pf-scan-emoji">🔍</span> מחפש מועמדים… {{ reviewFoundCount }} נמצאו עד כה
+          <span class="pf-scan-dot"></span> מחפש מועמדים… {{ reviewFoundCount }} נמצאו עד כה
         </div>
 
         <ng-container *ngIf="currentCandidateRow as c">
@@ -137,7 +121,7 @@
               <span class="pf-card-tk">{{ c.ticker }}</span>
             </div>
             <div class="pf-card-meta">
-              <span class="pf-card-sector" *ngIf="c.sector">{{ c.sector_icon }} {{ c.sector }}</span>
+              <span class="pf-card-sector" *ngIf="c.sector">{{ sectorHe(c.sector) }}</span>
               <span class="pf-card-price">{{ c.price | number: '1.2-2' }}</span>
             </div>
             <div class="pf-card-entry" *ngIf="c.entry != null">
@@ -195,20 +179,20 @@
         </div>
 
         <div class="pf-warn" *ngIf="worstSectorConcentration as w">
-          ⚠ {{ w.count }} מתוך {{ allRows.length }} מאותו סקטור ({{ w.sector }}) —
+          ⚠ {{ w.count }} מתוך {{ allRows.length }} מאותו סקטור ({{ sectorHe(w.sector) }}) —
           תנועה נגד הסקטור הזה פוגעת ביותר ממניה אחת בבת אחת.
         </div>
 
         <div class="pf-sectors">
           <span class="pf-sector-chip" *ngFor="let s of sectorBreakdown()">
-            {{ s.icon }} {{ s.sector }} · {{ s.count }}
+            {{ sectorHe(s.sector) }} {{ s.count }}
           </span>
         </div>
 
         <!-- ── Holdings ────────────────────────────────────────────────── -->
         <section class="pf-section" *ngIf="holdings.length">
           <div class="pf-section-head">
-            <span class="pf-section-dot dot-held"></span><span class="pf-section-emoji">💼</span>
+            <span class="pf-section-dot dot-held"></span>
             <h2>מה כבר יש לכם</h2>
             <span class="pf-section-count">{{ holdings.length }}</span>
           </div>
@@ -220,7 +204,7 @@
         <!-- ── Suggestions ─────────────────────────────────────────────── -->
         <section class="pf-section" *ngIf="suggestions.length">
           <div class="pf-section-head">
-            <span class="pf-section-dot dot-suggest"></span><span class="pf-section-emoji">✨</span>
+            <span class="pf-section-dot dot-suggest"></span>
             <h2>{{ holdings.length ? 'נבחרו להשלמה' : 'התיק המוצע' }}</h2>
             <span class="pf-section-sub">מהסקירה שלכם</span>
             <span class="pf-section-count">{{ suggestions.length }}</span>
@@ -269,7 +253,7 @@
     </div>
 
     <div class="pf-card-meta">
-      <span class="pf-card-sector" *ngIf="h.sector">{{ h.sector_icon }} {{ h.sector }}</span>
+      <span class="pf-card-sector" *ngIf="h.sector">{{ sectorHe(h.sector) }}</span>
       <span class="pf-card-price">{{ h.price | number: '1.2-2' }}</span>
     </div>
 

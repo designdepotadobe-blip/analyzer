@@ -46,3 +46,11 @@
 .lg-doc li { margin-bottom: 6px; }
 .lg-doc strong { color: #fff; }
 .lg-updated { margin: 0 0 18px; font-size: 13px; color: #9ba3b1; }
+
+/* Redesign 2026-10 — tokens from styles.css */
+.lg-page { background: var(--bg); color: var(--text); }
+.lg-nav { border-bottom: 1px solid var(--rule); }
+.lg-nav a { color: var(--text-dim); border-bottom: 2px solid transparent; border-radius: 0; background: none; }
+.lg-nav a.active { color: var(--text); border-bottom-color: var(--ma150); background: none; }
+.lg-doc { max-width: 72ch; color: var(--text); line-height: 1.75; }
+.lg-updated { color: var(--text-faint); }

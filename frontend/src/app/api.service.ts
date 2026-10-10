@@ -2,7 +2,7 @@ import { Injectable, NgZone } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../environments/environment';
-import { Analysis, ScanHit, ScanResponse } from './models';
+import { Analysis, ScanHit, ScanResponse, BoardResponse } from './models';
 
 /** The `done` sentinel closing a `scanStream()` — the SSE equivalent of the blocking
  *  endpoint's `{scanned, matched}` summary, since a live stream has no other moment
@@ -36,6 +36,11 @@ export class ApiService {
 
   analyze(ticker: string): Observable<Analysis> {
     return this.http.get<Analysis>(`${this.base}/api/analyze/${ticker.trim().toUpperCase()}`);
+  }
+
+  /** The stored daily board — instant, nothing is analysed on request. */
+  board(): Observable<BoardResponse> {
+    return this.http.get<BoardResponse>(`${this.base}/api/board`);
   }
 
   scan(limit = 60, setup?: string): Observable<ScanResponse> {

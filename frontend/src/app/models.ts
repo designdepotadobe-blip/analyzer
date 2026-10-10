@@ -849,6 +849,9 @@ export interface ScanHit {
    *  verdict._grade_if_break. */
   if_break_rating: number | null;
   if_break_moves: boolean | null;
+  /** board rows only: the trading profiles this row belongs to */
+  presets?: string[];
+  decided_on?: string | null;
 }
 
 export interface ScanResponse {
@@ -872,4 +875,30 @@ export interface Toggles {
   gaps: boolean;
   /** the cup outline + its two targets, and the open-sky Fib projection */
   cup: boolean;
+}
+
+/** One event between the previous board and today's — "what changed today". */
+export interface BoardChange {
+  ticker: string;
+  kind: 'new_enter' | 'broke_out' | 'near_trigger' | 'setup_over';
+  text_he: string;
+  price: number | null;
+  rating: number | null;
+  sector: string | null;
+  action: string | null;
+}
+
+/** GET /api/board — the stored daily board (backend/board.py). */
+export interface BoardResponse {
+  ready: boolean;
+  status: { building: boolean; done: number; total: number; started_at: string | null; error: string | null };
+  date?: string;
+  prev_date?: string | null;
+  built_at?: string;
+  scanned?: number;
+  count?: number;
+  hits?: ScanHit[];
+  changes?: BoardChange[];
+  extended?: { [ticker: string]: { price: number; change_pct: number | null } };
+  extended_at?: string | null;
 }

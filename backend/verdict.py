@@ -234,25 +234,30 @@ class Signals:
     level_context: Optional[dict] = None
 
 
-def extended_hours(micha: dict, quote: dict, last: float) -> None:
+def extended_hours(micha: dict, quote: Optional[dict], last: float,
+                   live_price: Optional[float] = None) -> None:
     """
-    Pre-market / after-hours: the price the reader sees before the bell is not the
-    close the chart ends on. Said out loud at the top of the read — and on the call
-    when it already crossed the breakout price or the stop, because that changes
-    what he would say ("בפרה-מרקט כבר מעל 104 — מי שמחכה לפריצה, היא קורית").
+    The price the reader sees is not always the close the verdict was decided on:
+    the live session (the verdict waits for the close), pre-market and after hours.
+    Said at the top of the read — and on the call when it already crossed the
+    breakout price or the stop, because that is what he would say ("כבר מעל 104 —
+    מי שמחכה לפריצה, היא נספרת בסגירה").
     """
     st = (quote or {}).get('state') or ''
-    if st.startswith('PRE'):
-        px, ch, he_w, en_w = quote.get('pre_price'), quote.get('pre_change_pct'), 'בפרה-מרקט', 'Pre-market'
+    if live_price is not None:
+        px, ch = live_price, None
+        he_w, en_w, sess = 'במסחר כעת', 'Live now', 'live'
+    elif st.startswith('PRE'):
+        px, ch, he_w, en_w, sess = quote.get('pre_price'), quote.get('pre_change_pct'), 'בפרה-מרקט', 'Pre-market', 'pre'
     elif st.startswith('POST') or st == 'CLOSED':
-        px, ch, he_w, en_w = quote.get('post_price'), quote.get('post_change_pct'), 'באפטר-מרקט', 'After hours'
+        px, ch, he_w, en_w, sess = quote.get('post_price'), quote.get('post_change_pct'), 'באפטר-מרקט', 'After hours', 'post'
     else:
         return
     if not px or not last:
         return
     if ch is None:
         ch = (px / last - 1) * 100
-    if abs(px / last - 1) < 0.001:
+    if abs(px / last - 1) < 0.001 and sess != 'live':
         return
     tone, en, he = 'neu', f'{en_w} {px:.2f} ({ch:+.1f}%)', f'{he_w} {px:.2f} ({ch:+.1f}%)'
     trig = (micha.get('trigger') or {}).get('price')
@@ -261,16 +266,18 @@ def extended_hours(micha: dict, quote: dict, last: float) -> None:
     crossed = None
     if trig and last < trig <= px:
         tone, crossed = 'pos', True
-        en += f' — already above the breakout price {trig:.2f}; the break counts only on a close above it'
-        he += f' — כבר מעל מחיר הפריצה {trig:.2f}; הפריצה נספרת רק בסגירה מעליו'
+        en += f' — already above the breakout price {trig:.2f}; it counts on a close above it'
+        he += f' — כבר מעל מחיר הפריצה {trig:.2f}; נספר רק בסגירה מעליו'
     elif stop and px <= stop < last:
         tone, crossed = 'neg', True
         en += f' — under the stop {stop:.2f}'
         he += f' — מתחת לסטופ {stop:.2f}'
+    elif sess == 'live':
+        en += ' — the call is set on the close'
+        he += ' — ההחלטה נקבעת בסגירה'
     rep = micha.setdefault('report', {})
     rep.setdefault('micha_read', []).insert(0, {'tone': tone, 'en': en, 'he': he})
-    rep['extended'] = {'session': 'pre' if st.startswith('PRE') else 'post', 'price': px,
-                       'change_pct': ch, 'crossed': bool(crossed)}
+    rep['extended'] = {'session': sess, 'price': px, 'change_pct': ch, 'crossed': bool(crossed)}
     if crossed:
         rep['call_he'] = (rep.get('call_he') or '') + f' ⚠ {he}.'
         rep['call'] = (rep.get('call') or '') + f' ⚠ {en}.'

@@ -77,12 +77,29 @@ class StockAnalyzer:
                                'volume': quote.get('volume') or 0}
                 raw = raw.sort_index()
 
+        # ── The decision is made on CLOSED bars ───────────────────────────────
+        # During the session today's daily bar is unfinished: its close, its range
+        # and its volume move every minute, and every rule that reads the last bar
+        # (the buyers' candle, the floor touch, volume, the % to a line, the 5-day
+        # run) flipped with it — measured: 3 of 40 names changed state and 19 of 40
+        # changed score inside 9 minutes on 0.1-0.3% moves. He decides on the close
+        # ("הפריצה נספרת בסגירה"), so the engine reads the bars up to yesterday's
+        # close while the session runs; the chart, the header price and a "live now"
+        # line still show today. The verdict changes once a day, after the close.
+        partial = self._partial_today(raw, quote)
+        closed = raw.iloc[:-1] if partial else raw
+
         # Indicators are computed on the full 3-year fetch, so SMA150 is already
         # warmed up by the time the display window begins — no NaN gap.
-        full = self.data.add_indicators(raw).sort_index()
+        full = self.data.add_indicators(closed).sort_index()
         w = full.tail(self.window_bars).copy()
         if len(w) < MIN_BARS:
             return None
+        if partial:
+            full_d = self.data.add_indicators(raw).sort_index()
+            w_d = full_d.tail(self.window_bars).copy()
+        else:
+            full_d, w_d = full, w
 
         market_cap = self.data.market_cap(ticker)
         earnings_days = self.data.earnings_days(ticker)
@@ -92,6 +109,10 @@ class StockAnalyzer:
         ctx = AnalysisContext.build(ticker, full, w, market_cap=market_cap,
                                     earnings_days=earnings_days, bench=bench,
                                     profile=profile)
+        # what the reader SEES: today's live candle included
+        dctx = (AnalysisContext.build(ticker, full_d, w_d, market_cap=market_cap,
+                                      earnings_days=earnings_days, bench=bench,
+                                      profile=profile) if partial else ctx)
 
         overlays = {
             'levels': [], 'trendlines': [], 'channels': [],
@@ -119,19 +140,36 @@ class StockAnalyzer:
 
         # ── Micha-style verdict (read-only side service) ───────────────────────
         micha = self.micha.evaluate(ctx, res_levels, sup_levels, setups, overlays)
-        if quote:
+        if quote or partial:
             from verdict import extended_hours
-            extended_hours(micha, quote, float(ctx.price))
+            extended_hours(micha, quote, float(ctx.price),
+                           live_price=float(dctx.price) if partial else None)
 
         return {
             'ticker': ticker,
-            'meta': {**self._meta(ctx, setups), 'quote': quote},
-            'bars': self._bars(ctx),
-            'indicators': self._indicators(ctx),
+            'meta': {**self._meta(dctx, setups), 'quote': quote,
+                     # the verdict's own reference: the last CLOSED bar
+                     'decided_on': ctx.times[-1], 'decided_close': jnum(ctx.price),
+                     'session_live': bool(partial)},
+            'bars': self._bars(dctx),
+            'indicators': self._indicators(dctx),
             'overlays': overlays,
             'setups': setups,
             'micha': micha,
         }
+
+    @staticmethod
+    def _partial_today(raw, quote) -> bool:
+        """Is the last daily bar today's UNFINISHED session bar?"""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo('America/New_York'))
+        if raw is None or raw.empty or raw.index[-1].date() != now.date():
+            return False
+        st = (quote or {}).get('state')
+        if st:
+            return st == 'REGULAR'
+        return now.weekday() < 5 and (now.hour, now.minute) < (16, 0)
 
     # ── JSON serialization ────────────────────────────────────────────────────
 

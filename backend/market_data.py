@@ -317,7 +317,9 @@ class MarketData:
                     today = pd.Timestamp.now().normalize()
                     future = []
                     for d in dates:
-                        ts = pd.to_datetime(d, errors='coerce')
+                        # yahooquery returns malformed strings like
+                        # '2026-10-28 22:00:S' — the date part is what counts
+                        ts = pd.to_datetime(str(d)[:10], errors='coerce')
                         if ts is not None and not pd.isna(ts):
                             delta = (ts.normalize() - today).days
                             if delta >= 0:

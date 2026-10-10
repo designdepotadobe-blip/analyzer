@@ -1,3 +1,36 @@
+/* ── Design tokens (redesign 2026-10) ─────────────────────────────────────────
+   The app speaks the language of his own charts: the chart night he trades on,
+   white for the lines that matter, his 150MA pink as the one brand / action
+   colour, and the green / red / amber a trader already reads without a legend.
+   Rubik carries everything (it won the small-size test on this dark ground);
+   Karantina, a condensed board face, is spent in ONE place — the verdict word. */
+:root {
+  --bg: #131722;          /* chart night */
+  --bg-deep: #0f121b;     /* page edges, the shell */
+  --panel: #1a1f2b;       /* the verdict panel */
+  --raise: #212736;       /* inputs, pressed controls */
+  --rule: #2b3142;        /* every divider */
+  --rule-soft: #222837;
+  --text: #e7e9ee;
+  --text-dim: #9098a9;
+  --text-faint: #6b7385;
+  --ma150: #f2386e;       /* his 150 line — the brand and action colour */
+  --ma150-soft: rgba(242, 56, 110, 0.14);
+  --band: #ffffff;        /* his horizontal lines */
+  --up: #26a69a;
+  --up-text: #3fc3a8;
+  --down: #ef5350;
+  --down-text: #ff7b78;
+  --wait: #f5b942;
+  --wait-soft: rgba(245, 185, 66, 0.13);
+  --radius-s: 4px;
+  --radius-m: 8px;
+  --font: 'Rubik', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-board: 'Karantina', 'Rubik', sans-serif;
+  --shell-h: 44px;
+  --tabbar-h: 58px;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -6,18 +39,19 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
-  background: #0e1117;
-  font-family: 'Rubik', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica,
-    Arial, sans-serif;
+  background: var(--bg-deep);
+  color: var(--text);
+  font-family: var(--font);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
 }
-
 
 /* ── Accessibility (IS 5568 / WCAG 2.x AA) ─────────────────────────────────
    A clearly visible keyboard focus ring on everything focusable, and motion
    switched off for users who ask their OS for less of it. Stated in the
    accessibility statement (/legal/accessibility) — keep the two in sync. */
 :focus-visible {
-  outline: 2px solid #ffc46b;
+  outline: 2px solid var(--wait);
   outline-offset: 2px;
 }
 @media (prefers-reduced-motion: reduce) {

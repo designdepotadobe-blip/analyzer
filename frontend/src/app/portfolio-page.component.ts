@@ -1,4 +1,5 @@
 import { Component, OnDestroy } from '@angular/core';
+import { sectorHe } from './sectors';
 import { Router } from '@angular/router';
 import { forkJoin, of, Subscription } from 'rxjs';
 import { catchError } from 'rxjs/operators';
@@ -159,6 +160,7 @@ function fromScanHit(h: ScanHit, why?: string): PortfolioRow {
   styleUrls: ['./portfolio-page.component.css'],
 })
 export class PortfolioPageComponent implements OnDestroy {
+  readonly sectorHe = sectorHe;
   tickerInput = '';
   targetSize = 6;
   readonly targetOptions = [4, 5, 6];

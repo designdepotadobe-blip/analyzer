@@ -1,3 +1,15 @@
+<!-- Shared navigation. Desktop: a slim bar on top — brand + the three places.
+     Phone: the same three as a bottom tab bar (thumb reach), and no top bar at
+     all, so the chart keeps the screen. -->
+<header class="shell-bar" *ngIf="!onStockPage">
+  <a routerLink="/" class="wordmark" aria-label="Breakline — דף הבית">BREAKLINE</a>
+  <nav class="shell-tabs" aria-label="ניווט ראשי">
+    <a routerLink="/" routerLinkActive="on" [routerLinkActiveOptions]="{ exact: true }">ניתוח מניה</a>
+    <a routerLink="/radar" routerLinkActive="on">רדאר</a>
+    <a routerLink="/portfolio" routerLinkActive="on">בניית תיק</a>
+  </nav>
+</header>
+
 <router-outlet></router-outlet>
 
 <!-- Persistent legal footer — every route, every width. In normal document flow
@@ -13,16 +25,30 @@
        Terms (/legal/terms) — a 300-character paragraph squeezed into a sideways-
        scrolling strip was neither readable nor good-looking. -->
   <p class="legal-footer-txt" dir="rtl">
-    <span class="lf-lead">למטרות מחקר ולימוד בלבד · </span><span class="lf-core">אינו ייעוץ השקעות</span><span class="lf-more"> · המסחר בשוק ההון כרוך בסיכון</span>
+    <span class="lf-lead">למטרות מחקר ולימוד בלבד. </span><span class="lf-core">אינו ייעוץ השקעות.</span><span class="lf-more"> המסחר בשוק ההון כרוך בסיכון.</span>
   </p>
   <nav class="legal-footer-links" aria-label="מסמכים משפטיים">
     <a routerLink="/legal/terms">תנאי שימוש</a>
-    <span class="lf-dot" aria-hidden="true">·</span>
     <a routerLink="/legal/privacy">פרטיות</a>
-    <span class="lf-dot" aria-hidden="true">·</span>
     <a routerLink="/legal/accessibility">נגישות</a>
   </nav>
 </footer>
+
+
+<nav class="tabbar" aria-label="ניווט ראשי">
+  <a routerLink="/" routerLinkActive="on" [routerLinkActiveOptions]="{ exact: true }">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l5-6 4 3 6-8 3 3" /><path d="M3 21h18" /></svg>
+    <span>ניתוח</span>
+  </a>
+  <a routerLink="/radar" routerLinkActive="on">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3.5" /><path d="M12 12l5-5" /></svg>
+    <span>רדאר</span>
+  </a>
+  <a routerLink="/portfolio" routerLinkActive="on">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="13" width="4" height="7" /><rect x="10" y="9" width="4" height="11" /><rect x="16" y="5" width="4" height="15" /></svg>
+    <span>תיק</span>
+  </a>
+</nav>
 
 <!-- First-visit clickwrap. Blocks interaction with everything behind it
      (backdrop, no close-on-click-outside) until acknowledged — that is the
